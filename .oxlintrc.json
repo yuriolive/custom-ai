@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "env": {
+    "es2024": true,
+    "node": true,
+    "browser": true
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    ".next/**",
+    "out/**",
+    "next-env.d.ts",
+    "tools/runpod/**",
+    "tools/modal/**",
+    "supabase/migrations/**"
+  ],
+  "rules": {},
+  "overrides": [
+    {
+      "files": ["supabase/functions/**/*.ts"],
+      "globals": {
+        "Deno": "readonly"
+      }
+    },
+    {
+      "files": ["**/test/**", "**/tests/**", "**/*.test.ts", "**/*_test.ts"],
+      "rules": {
+        "no-empty-function": "off"
+      }
+    }
+  ]
+}

@@ -31,8 +31,35 @@
 -- TS interface rather than a SQL caller.
 -- ============================================================================
 
--- Serves the unfiltered hot-path lookup (see NON-filter 1 above).
-create index if not exists api_keys_hash_idx on public.api_keys (key_hash);
+-- Index for the unfiltered hot-path lookup.
+--
+-- The coordinator asked for a plain (key_hash) index because
+-- api_keys_hash_active_idx is partial on `revoked_at is null` and so cannot serve
+-- NON-filter 1. That is correct — but the index already exists: `key_hash text
+-- not null UNIQUE` in 20260817000500 created `api_keys_key_hash_key`, a plain
+-- b-tree on exactly (key_hash), which serves this lookup for every key, revoked
+-- or not. A second one would be pure write amplification on the same column, so
+-- none is added here.
+--
+-- CONSEQUENCE, worth knowing before anyone "cleans up" the schema: the partial
+-- api_keys_hash_active_idx is now dead weight for the gateway path. It is kept
+-- only for its uniqueness semantics over live keys. Dropping the UNIQUE
+-- constraint on key_hash — e.g. to allow hash reuse after revocation — would
+-- silently remove the only index this function can use.
+do $$
+begin
+  if not exists (
+    select 1 from pg_index i
+      join pg_class c on c.oid = i.indexrelid
+      join pg_class t on t.oid = i.indrelid
+     where t.relname = 'api_keys'
+       and i.indpred is null                                   -- not partial
+       and i.indnatts = 1
+       and pg_get_indexdef(i.indexrelid) like '%(key_hash)%')
+  then
+    execute 'create index api_keys_hash_idx on public.api_keys (key_hash)';
+  end if;
+end $$;
 
 create or replace function public.gateway_resolve(
   p_key_hash       text,

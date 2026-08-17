@@ -382,6 +382,18 @@ HeroUI v3 is a **breaking rewrite** of NextUI/HeroUI v2. Any engineer or code ge
 @import "@heroui/styles"; /* MUST follow Tailwind */
 ```
 
+> **`@heroui/react` is client-only.** The package barrel pulls in `react-aria-components`'
+> Toast, which carries the `client-only` marker. Importing *anything* from `@heroui/react`
+> into a React Server Component fails the build outright:
+> `'client-only' cannot be imported from a Server Component module`.
+>
+> Every HeroUI surface must therefore sit behind a `"use client"` boundary. This does
+> **not** weaken FR-MKT-006 (SSR + SEO for the public catalog): Next.js still renders
+> client components to HTML on the server, so the catalog remains indexable. What it
+> dictates is the composition — a Server Component does the data fetching and passes
+> plain serializable props down to a client component that renders the HeroUI tree.
+> Never reach for HeroUI inside a module that also touches secrets or the database.
+
 ```
 FR-UI-000 (P0)  Tailwind CSS v4 + @tailwindcss/postcss configured. HeroUI v3 does not
                 function on Tailwind v3.
@@ -394,7 +406,7 @@ FR-UI-004 (P1)  Semantic variants only. A lint rule rejects raw color utilities 
                 HeroUI variant props.
 ```
 
-**Verified v3 component anatomies used by this PRD** (`@heroui/react` v3.0.5, 71 components):
+**Verified v3 component anatomies used by this PRD** (verified against `@heroui/react` **3.2.4** as installed — an earlier revision of this document cited 3.0.5):
 
 | Component | Required composition |
 |---|---|
@@ -409,7 +421,11 @@ FR-UI-004 (P1)  Semantic variants only. A lint rule rejects raw color utilities 
 | `Tabs` | `Tabs.ListContainer` › `Tabs.List` › `Tabs.Tab` › `Tabs.Indicator`, `Tabs.Panel` |
 | `Dropdown` | `Dropdown.Trigger` › `Button`, `Dropdown.Popover` › `Dropdown.Menu` › `Dropdown.Item` |
 | `Badge` | `Badge.Anchor` wrapping the anchored element + `Badge` (standalone labels use `Chip`) |
-| `Chip` | plain-text children auto-wrap in `Chip.Label` |
+| `Chip` | plain-text children auto-wrap in `Chip.Label`. **Two independent axes**: `color` is `default \| accent \| success \| warning \| danger`, `variant` is `primary \| secondary \| tertiary \| soft`. One prop does not carry both. |
+| `Alert` | `Alert.Indicator` (optional) + **`Alert.Content`** › `Alert.Title` + `Alert.Description`. The prop is **`status`** (`default \| accent \| success \| warning \| danger`) — there is **no** `variant` and **no** `color` on Alert. Title/Description must not be direct children of `Alert`. |
+| `ProgressBar` | **Compound, not a leaf**: `ProgressBar.Track` › `ProgressBar.Fill`, plus optional `ProgressBar.Output`. A self-closed `<ProgressBar />` renders an empty shell. |
+| `TextArea` | A primitive `<textarea>`. Takes standard HTML attributes plus `rows`, `fullWidth`, `variant`. **No `minRows` / `maxRows`** — auto-grow must be implemented manually via `scrollHeight` in a layout effect. |
+| `Button` | Semantic variants as shipped: `primary \| secondary \| tertiary \| outline \| ghost \| danger \| danger-soft` |
 | `Autocomplete` | `Autocomplete.Trigger`, `Autocomplete.Popover` › `Autocomplete.Filter` › `SearchField` + `ListBox` |
 
 #### 4.1.1 Public Marketplace — `/`
@@ -776,6 +792,12 @@ FR-PLAY-001 (P0)  Chat UI on the Vercel AI SDK `useChat` transport, pointed at a
                   session-scoped ephemeral key.
 FR-PLAY-002 (P0)  Composer: HeroUI TextArea, auto-grow to 8 rows, Enter sends /
                   Shift+Enter newlines, Send Button disabled while streaming.
+                  NOTE: v3 TextArea exposes no minRows/maxRows — auto-grow is manual
+                  (measure scrollHeight in a layout effect, clamp to 8 rows).
+FR-PLAY-002a (P0) Server-side route handler note: `convertToModelMessages` is ASYNC in
+                  AI SDK v5+ and returns a Promise. Forgetting to await it yields a
+                  Promise where the model messages are expected, and the failure
+                  surfaces far from its cause.
 FR-PLAY-003 (P0)  Parameter rail (Sliders): temperature 0–2 (0.05), top_p 0–1 (0.01),
                   max_tokens 1–8192, plus a system-prompt TextArea.
 FR-PLAY-004 (P0)  Streaming render with a caret pulse. During cold start show a
@@ -795,18 +817,29 @@ FR-PLAY-009 (P1)  Error surfaces as a danger Alert inline in the thread, retaini
 
 ```tsx
 // app/playground/[creator]/[slug]/Chat.tsx — Vercel AI SDK + HeroUI v3
+// "use client" is MANDATORY: @heroui/react is client-only (see §4.1.0).
 "use client";
 import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 import { TextArea, Slider, Label, Button, Chip, Alert, ProgressBar } from "@heroui/react";
 
 export function Playground({ modelId }: { modelId: string }) {
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(1024);
 
-  const { messages, input, handleInputChange, handleSubmit, status, stop } = useChat({
-    api: "/api/playground",
-    body: { modelId, temperature, maxTokens },
+  // AI SDK v5+ (`ai` v7 / `@ai-sdk/react` v4): useChat no longer owns input state and
+  // returns no handleInputChange/handleSubmit. The endpoint moves to a transport, and
+  // per-turn parameters ride on sendMessage's second argument.
+  const [input, setInput] = useState("");
+  const { messages, sendMessage, status, stop } = useChat({
+    transport: new DefaultChatTransport({ api: "/api/playground" }),
   });
+
+  const send = () => {
+    if (!input.trim()) return;
+    sendMessage({ text: input }, { body: { modelId, temperature, maxTokens } });
+    setInput("");
+  };
 
   const isCold = status === "submitted";  // sent, no first token yet
 
@@ -814,26 +847,37 @@ export function Playground({ modelId }: { modelId: string }) {
     <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
       <div className="flex flex-col gap-4">
         {isCold && (
-          <Alert variant="soft" color="warning">
-            <Alert.Title>Waking GPU worker</Alert.Title>
-            <Alert.Description>
-              This model scales to zero when idle. The first request can take up to 60
-              seconds; subsequent requests respond in under a second.
-            </Alert.Description>
-            <ProgressBar isIndeterminate aria-label="Cold start progress" />
+          // Alert takes `status`, NOT variant/color, and Title/Description must sit
+          // inside Alert.Content. ProgressBar is a SIBLING of Description, never a
+          // child — Alert.Description renders a <p>, which cannot legally contain it.
+          <Alert status="warning">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>Waking GPU worker</Alert.Title>
+              <Alert.Description>
+                This model scales to zero when idle. The first request can take up to
+                two minutes; subsequent requests respond in under a second.
+              </Alert.Description>
+              <ProgressBar isIndeterminate aria-label="Cold start progress">
+                <ProgressBar.Track><ProgressBar.Fill /></ProgressBar.Track>
+              </ProgressBar>
+            </Alert.Content>
           </Alert>
         )}
 
         <MessageList messages={messages} />
 
-        <form onSubmit={handleSubmit} className="flex gap-2">
+        <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex gap-2">
+          {/* TextArea is a primitive <textarea>: no minRows/maxRows. Auto-grow to 8
+              rows is manual — measure scrollHeight in a layout effect and set height. */}
           <TextArea
+            ref={taRef}
             value={input}
-            onChange={handleInputChange}
+            onChange={(e) => setInput(e.currentTarget.value)}
             placeholder="Message the model…"
-            minRows={2} maxRows={8}
+            rows={2}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e); }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
             }}
           />
           {status === "streaming"
@@ -1475,16 +1519,41 @@ FR-DEP-045 (P1)  Repos with zero deployable variants (no weights, LoRA adapters 
 1. **No `config.json`.** `library_name: llama.cpp`. The GGUF-header read (FR-DEP-043 path 2) is the only way to capacity-plan the MVP's own target model.
 2. **It is a llama.cpp model**, so it cannot run on the vLLM worker image. See §4.3.3.6.
 
-Placement for the MVP target variant (Q4_K_M, 16.81 GB) — throughput depends only on weight bytes, so these are firm:
+**Architecture, read live from the GGUF header** (this repo has no `config.json`):
 
-| Tier | Predicted tok/s | Note |
-|---|---|---|
-| RTX 4090 24GB | 45 | ~3.3 GB left for KV → short context only |
-| L40S 48GB | **38** | **slower than the 4090 at ~2× the price** — §4.3.3.3's "not a ladder" warning, on the actual target |
-| A100 80GB | 86 | |
-| H100 80GB | 149 | |
+```
+general.architecture = qwen35        block_count            = 65
+head_count           = 24            head_count_kv          = 4
+key_length (head_dim)= 256           context_length         = 262144
+full_attention_interval = 4          nextn_predict_layers   = 1
+ssm.state_size = 128   ssm.inner_size = 6144   ssm.group_count = 16   ssm.conv_kernel = 4
+```
 
-Cold-start budget: 16.81 GB ÷ 300 MB/s + 45 s ≈ **101 s**, above the old fixed 90 s ceiling — the per-model budget (NFR-CACHE-010) is load-bearing for the MVP's own model. Within this single repo, `Q6_K` (22.4 GB) and `Q8_0` (29.0 GB) cross the 20 GB network-volume threshold while `Q4_K_M` does not, so one repo spans both weight-cache strategies.
+This is a **hybrid attention/SSM model**: of 65 blocks, only ~16 hold a growing KV cache; the other 49 carry constant-size SSM state (~77 MiB per stream, measured). See §4.3.3.3 for why that distinction dominates every number below.
+
+**Actual solver output** for the target variant (Q4_K_M, 16.81 GB), corrected vs naive KV term:
+
+| Context | Resolved | Streams | tok/s | KV + SSM | Cost floor µ$/Mtok | Naive term would say |
+|---|---|---|---|---|---|---|
+| 8,192 | rtx4090 | **6** | 45 | 0.50 GiB + 77 MiB | 1,294,182 | rtx4090, 1 stream |
+| 100,000 | l40s | **3** | 39 | 6.10 GiB + 77 MiB | 5,902,253 | a100_80, 1 stream |
+| 262,144 | l40s | 1 | 39 | 16.00 GiB + 77 MiB | 17,706,759 | **INFEASIBLE** |
+
+Throughput by tier (depends only on weight bytes, so these are firm):
+
+| Tier | Predicted tok/s |
+|---|---|
+| RTX 4090 24GB | 45 |
+| L40S 48GB | **39 — slower than the 4090 at ~2× the price** (§4.3.3.3's "not a ladder", on the real target) |
+| A100 80GB | 86 |
+| H100 80GB | 149 |
+
+Cold-start budget: 16.81 GB ÷ 300 MB/s + 45 s ≈ **101 s**, above the old fixed 90 s ceiling — the per-model budget (NFR-CACHE-010) is load-bearing for the MVP's own model. Within this single repo, `Q6_K` (22.4 GB) and `Q8_0` (29.0 GB) cross the 20 GB volume threshold while `Q4_K_M` does not, so one repo spans both weight-cache strategies.
+
+> **Open, and it moves pricing:** `active_weights_bytes` is currently set equal to total
+> weights. On a hybrid model the SSM blocks read far less than the full weight set per
+> decoded token, so 45 tok/s is a **floor** and every cost floor above is conservative.
+> Deciding what "active bytes" means for `qwen35` is a pricing decision, not a detail.
 
 ```
 FR-DEP-047 (P0)  This repo's file list is committed as a test fixture. The variant
@@ -1515,20 +1584,39 @@ Pure arithmetic over probed facts. Implemented **once**, in Postgres (§5.4a), a
 **VRAM model.** At long context, KV cache — not weights — is the binding constraint.
 
 ```
-head_dim            = config.head_dim  OR  hidden_size / num_attention_heads
-kv_bytes_per_token  = 2 x n_layers x n_kv_heads x head_dim x kv_dtype_bytes
-                        ^-- K and V          ^-- GQA/MQA: n_kv_heads << n_attention_heads.
-                                                 Using n_attention_heads here over-estimates
-                                                 KV by up to 8x and selects a GPU 2 tiers
-                                                 too large. This is the single most common
-                                                 error in capacity math.
+head_dim            = config.head_dim (GGUF: key_length)
+                      -- The hidden_size / num_attention_heads fallback is UNSAFE. On the
+                      -- MVP target it yields 5120/24 = 213.33 where the true value is 256.
+                      -- Treat a non-exact division as a HARD ERROR, never a rounded guess.
 
-kv_bytes            = kv_bytes_per_token x context_length x concurrent_streams
+kv_bytes_per_token  = 2 x n_attention_layers x n_kv_heads x head_dim x kv_dtype_bytes
+                        ^-- K and V
+                      -- TWO independent traps live in this one line:
+                      -- (a) n_kv_heads is the GQA count, NOT n_attention_heads. Confusing
+                      --     them over-estimates KV by up to 8x.
+                      -- (b) n_attention_layers is NOT the total block count on hybrid
+                      --     attention/SSM models. The MVP target (qwen35,
+                      --     full_attention_interval = 4) has 65 blocks but only ~16 that
+                      --     hold a growing KV cache. Using 65 over-estimates KV by 4x —
+                      --     measured: 266,240 B/token naive vs 65,536 B/token correct.
+
+ssm_bytes_per_seq   = per-sequence SSM state on hybrid models.
+                      -- CONSTANT. It does NOT scale with context length. Multiplying it
+                      -- by context_length is the exact mirror-image of trap (b) and is
+                      -- just as wrong. Measured on the MVP target: ~77 MiB per stream.
+
+bytes_per_stream    = kv_bytes_per_token x context_length + ssm_bytes_per_seq
 overhead_bytes      = max(2 GiB, 0.10 x weights_bytes)     -- CUDA graphs, framework, buffers
-required_vram       = weights_bytes + kv_bytes + overhead_bytes
+required_vram       = weights_bytes + bytes_per_stream + overhead_bytes
 
 fits(tier)          <=>  required_vram <= tier.vram_bytes x 0.92   -- GPU_MEMORY_UTILIZATION
 ```
+
+> **Why this correction is not academic.** Run against the MVP's own target model, the
+> naive all-layers term declares the model's native 262,144-token context **infeasible on
+> every available GPU**, and cuts an 8k deployment from 6 concurrent streams to 1 — a ~6x
+> inflation of the cost floor. A creator would have been told their model cannot do what
+> it plainly can, and been overcharged for what it can.
 
 **Throughput model.** Single-stream decode is memory-bandwidth bound: every generated token requires reading the active weights once.
 

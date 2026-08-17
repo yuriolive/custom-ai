@@ -1,7 +1,0 @@
-# Local provisioning state. Contains RunPod resource ids — never secrets — but it is
-# machine-local truth about live billable infrastructure, not source. Do not commit.
-.state/
-*.runpod-state.json
-
-# Measurement reports
-reports/
