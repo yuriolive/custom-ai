@@ -1,0 +1,22 @@
+{
+  "name": "@custom-ai/mock-upstream",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zero-dependency mock of RunPod's OpenAI-compatible serverless route, for gateway tests.",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": "./index.js"
+  },
+  "bin": {
+    "mock-upstream": "./cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node cli.js",
+    "test": "node --test \"test/*.test.js\""
+  }
+}

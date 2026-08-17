@@ -1,0 +1,22 @@
+{
+  "name": "@nexus/hf-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hugging Face repo probe, GGUF variant classifier and GGUF key-value header reader. Runs unchanged on Deno and Node 24 (fetch + Web APIs only on the main path).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test test/quant.test.ts test/classify.test.ts test/fixture.test.ts test/gguf.test.ts test/live.test.ts",
+    "test:live": "node --test test/live.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "5.9"
+  }
+}

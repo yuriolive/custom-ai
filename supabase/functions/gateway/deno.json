@@ -1,0 +1,28 @@
+{
+  "name": "gateway",
+  "version": "0.1.0",
+  "exports": "./index.ts",
+  "tasks": {
+    "check": "deno check index.ts auth.ts resolve.ts errors.ts",
+    "test": "deno test tests/",
+    "lint": "deno lint",
+    "fmt": "deno fmt --check"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "lib": ["deno.window", "dom", "esnext"]
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "lineWidth": 96,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false
+  },
+  "imports": {}
+}

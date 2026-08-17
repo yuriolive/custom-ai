@@ -1117,6 +1117,17 @@ FR-GW-044b (P0) RUNTIME-AWARE USAGE EXTRACTION. The two runtimes report differen
                 Because the MVP's acceptance target is a GGUF model, the fallback
                 estimator is on the critical path from day one and must be built and
                 tested in Sprint 1 — not deferred as defensive code.
+FR-GW-044d (P0) SSE frame parsing must be TOLERANT, because the runtime with the least
+                reliable usage reporting is also the one most likely to emit
+                non-canonical framing:
+                  - `data:` with no space after the colon is VALID SSE and is emitted by
+                    some llama.cpp builds and by intermediate proxies
+                  - CRLF line endings leave a trailing \r that must be stripped
+                  - the final frame may arrive with NO trailing newline, so the decoder
+                    and the residual line buffer MUST be flushed after the read loop
+                    ends — that residual line is typically the usage frame
+                Each of these, missed, silently demotes an authoritative usage report to
+                an estimate while raising no error anywhere.
 FR-GW-044c (P0) The llama.cpp worker image is pinned to a build VERIFIED to emit usage
                 on the OpenAI-compatible route, and that verification is an automated
                 test against the pinned tag. An image bump that silently drops usage
@@ -1130,13 +1141,44 @@ FR-GW-046 (P0)  Settlement runs on a path that survives client disconnect — th
 FR-GW-047 (P0)  Hard upstream timeouts: 90 s to first token (cold-start budget),
                 300 s total stream duration. Both emit a terminating SSE error frame
                 then close, so the client sees a cause rather than a dead socket.
-FR-GW-048 (P1)  Emit x-nexus-cold-start: true|false and x-nexus-ttft-ms for
-                observability and for the Playground's cold-start UI.
+FR-GW-048 (P0)  CORRECTED — the original form of this requirement was structurally
+                impossible and contradicted FR-GW-040. Cold-start status and TTFT are
+                not known until the first upstream byte arrives, which is by definition
+                AFTER response headers have flushed. They therefore CANNOT be response
+                headers on a streamed request. Deliver them as:
+                  1. structured telemetry on the settlement path (authoritative), and
+                  2. for streaming clients, a trailing SSE comment emitted just before
+                     [DONE]:  `: nexus {"ttft_ms":412,"cold_start":false}\n\n`
+                     Comment lines are ignored by conforming SSE parsers, so this is
+                     invisible to an OpenAI SDK while remaining readable by the
+                     Playground and by anyone reading the raw stream.
+                Non-streaming responses MAY carry the headers, since those are buffered
+                and assembled after the stream completes. Do not implement two different
+                header contracts for the same route without documenting it.
 ```
 
 ```typescript
 // supabase/functions/gateway/stream.ts — keep-alive + tee'd usage extraction
+//
+// ABRIDGED. The canonical implementation is the real file at this path; it adds the
+// FR-GW-047 timeout races (per-read deadline for cold start and total duration, with
+// reader cancellation on expiry) omitted here for readability. Do not treat this
+// sketch as complete — six defects were found in an earlier revision of it, and the
+// three subtlest (final-line flush, cancel()-based disconnect, coldStart fallback)
+// are called out inline below because each silently corrupts billing or telemetry.
 const encoder = new TextEncoder();
+
+// SSE permits `data:` with NO space after the colon, and CRLF endings leave a stray
+// \r. Some llama.cpp builds and proxies emit exactly that — on the very runtime whose
+// usage reporting is already the least reliable. Matching only "data: " drops those
+// frames, including the terminal usage frame.
+function ingestLine(line: string, usage: UsageAccumulator): void {
+  const s = line.endsWith("\r") ? line.slice(0, -1) : line;
+  if (!s.startsWith("data:")) return;                 // comments, blanks, event: lines
+  const payload = s.slice(5).replace(/^ /, "").trim();
+  if (!payload || payload === "[DONE]") return;
+  usage.ingest(payload);                              // captures usage{} or counts deltas
+}
 
 export function proxyStream(
   upstreamPromise: Promise<Response>,
@@ -1183,13 +1225,15 @@ export function proxyStream(
           carry += decoder.decode(value, { stream: true });
           const lines = carry.split("\n");
           carry = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;      // skip comments/blanks
-            const payload = line.slice(6).trim();
-            if (payload === "[DONE]") continue;
-            usage.ingest(payload);                          // captures usage{} or counts deltas
-          }
+          for (const line of lines) ingestLine(line, usage);
         }
+
+        // CRITICAL: flush the decoder and the final partial line. An upstream that
+        // ends WITHOUT a trailing newline leaves its last frame in `carry` — and that
+        // is precisely the frame carrying `usage`. Dropping it silently demotes real
+        // usage to the estimator on every such response. Direct revenue leakage.
+        carry += decoder.decode();
+        if (carry) ingestLine(carry, usage);
       } catch (err) {
         if (!clientGone) {
           try {
@@ -1203,9 +1247,24 @@ export function proxyStream(
 
         // ── Phase 3: settle. Deliberately OUTSIDE the client write path so that a
         //    disconnected client cannot cause unbilled GPU work.
-        onComplete(usage.result(), { ttftMs: ttft, coldStart: (ttft ?? 0) > 5_000, clientGone });
+        const duration = performance.now() - t0;
+        onComplete(usage.result(), {
+          ttftMs: ttft,
+          durationMs: duration,
+          // Fall back to total duration when no token ever arrived. `(ttft ?? 0) > 5000`
+          // reports FALSE for a request that waited 101 s on a cold worker and then
+          // failed — labelling the single worst case as warm.
+          coldStart: (ttft ?? duration) > 5_000,
+          clientGone,
+        });
       }
     },
+
+    // Deno and Workers signal a client hang-up through the source's cancel(), NOT by
+    // throwing from enqueue() — enqueue only throws AFTER cancellation. Relying on the
+    // throw alone leaves a disconnect undetected while the queue grows unbounded.
+    // Do NOT abort the pump here: upstream must keep draining so billing stays correct.
+    cancel() { clientGone = true; },
   });
 
   return new Response(body, {
@@ -2350,7 +2409,11 @@ create policy custom_models_update_own on public.custom_models
     user_id = auth.uid()
     and slug               = (select m.slug               from public.custom_models m where m.id = custom_models.id)
     and hf_repo_slug       = (select m.hf_repo_slug       from public.custom_models m where m.id = custom_models.id)
-    and gpu_tier_id        = (select m.gpu_tier_id        from public.custom_models m where m.id = custom_models.id)
+    -- gpu_tier_id is NULL until the solver runs, and `NULL = NULL` is NULL — which
+    -- fails WITH CHECK. Plain `=` here rejects EVERY edit to a draft model. Every
+    -- nullable column compared in this policy must use `is not distinct from`.
+    and gpu_tier_id is not distinct from
+                             (select m.gpu_tier_id        from public.custom_models m where m.id = custom_models.id)
     and runpod_endpoint_id is not distinct from
                              (select m.runpod_endpoint_id from public.custom_models m where m.id = custom_models.id)
     and hf_token_secret_id is not distinct from
@@ -2816,10 +2879,18 @@ declare
   v_min_floor    bigint := 100;   -- $0.0001 floor: never engage a GPU on a dust balance
 begin
   -- Idempotency: a retried authorize returns the existing reservation unchanged.
-  if exists (select 1 from public.usage_transactions where id = p_txn_id) then
-    select jsonb_build_object('ok', true, 'txn_id', p_txn_id, 'replayed', true)
-      into v_balance;   -- reuse of variable avoided below; return directly
-    return jsonb_build_object('ok', true, 'txn_id', p_txn_id, 'replayed', true);
+  -- NOTE: an earlier revision assigned a jsonb literal into the bigint variable
+  -- v_balance here, which raised on EVERY replay — the one path this branch exists
+  -- to serve. Return the stored reservation directly, in the shape CONTRACTS.md
+  -- declares (callers read hold_micro_usd on the replay path too).
+  select hold_micro_usd into v_hold
+    from public.usage_transactions where id = p_txn_id;
+  if found then
+    return jsonb_build_object(
+      'ok', true, 'txn_id', p_txn_id, 'replayed', true,
+      'hold_micro_usd',    v_hold,
+      'balance_micro_usd', (select balance_micro_usd from public.profiles
+                             where id = p_user_id));
   end if;
 
   -- Lock the payer row: serializes authorize and settle for this user.
@@ -3042,11 +3113,19 @@ begin
     )
     on conflict (usage_transaction_id) do nothing;
 
-    update public.profiles
-       set earnings_micro_usd          = earnings_micro_usd + v_creator,
-           lifetime_earnings_micro_usd = lifetime_earnings_micro_usd + v_creator,
-           updated_at                  = now()
-     where id = v_txn.creator_id;
+    -- The aggregate MUST be gated on the accrual row actually being inserted.
+    -- Updating it unconditionally double-credits a racing retry: ON CONFLICT
+    -- protects the creator_earnings row, then the aggregate is bumped anyway —
+    -- silently breaking reconciliation rule R5
+    -- (SUM(creator_earnings.net) == SUM(profiles.lifetime_earnings)).
+    get diagnostics v_accrued = row_count;
+    if v_accrued > 0 then
+      update public.profiles
+         set earnings_micro_usd          = earnings_micro_usd + v_creator,
+             lifetime_earnings_micro_usd = lifetime_earnings_micro_usd + v_creator,
+             updated_at                  = now()
+       where id = v_txn.creator_id;
+    end if;
   end if;
 
   -- ── Settle the transaction and release the hold ────────────────────────────

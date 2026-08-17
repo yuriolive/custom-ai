@@ -1,0 +1,111 @@
+/* -----------------------------------------------------------------------------
+   Import order is load-bearing (PRD §4.1.0).
+   Tailwind CSS v4 must come first; HeroUI v3 styles must follow it.
+   HeroUI v3 does NOT work on Tailwind v3.
+   -------------------------------------------------------------------------- */
+@import "tailwindcss";
+@import "@heroui/styles";
+
+/* -----------------------------------------------------------------------------
+   Theme. HeroUI v3 themes with CSS variables in the oklch color space.
+   Light is the bare :root (and .light); dark is .dark / [data-theme="dark"].
+   next-themes stamps BOTH `class` and `data-theme` on <html>, so either
+   selector matches — see components/theme-provider.tsx.
+   -------------------------------------------------------------------------- */
+
+@layer base {
+  :root,
+  .light,
+  [data-theme="light"] {
+    color-scheme: light;
+
+    --radius: 0.75rem;
+
+    --background: oklch(0.9846 0.0017 247.84);
+    --foreground: oklch(0.2103 0.0059 285.89);
+
+    --surface: oklch(1 0 0);
+    --surface-foreground: var(--foreground);
+
+    --overlay: oklch(1 0 0);
+    --overlay-foreground: var(--foreground);
+
+    --muted: oklch(0.5517 0.0138 285.94);
+
+    /* Brand accent: a cool violet that reads as "compute", not "chat toy". */
+    --accent: oklch(0.5498 0.2079 285.6);
+    --accent-foreground: oklch(0.9911 0 0);
+
+    --success: oklch(0.6421 0.1478 156.2);
+    --success-foreground: oklch(0.9911 0 0);
+
+    --warning: oklch(0.7819 0.1585 72.33);
+    --warning-foreground: oklch(0.2103 0.0059 285.89);
+
+    --danger: oklch(0.6532 0.2328 25.74);
+    --danger-foreground: oklch(0.9911 0 0);
+  }
+
+  .dark,
+  [data-theme="dark"] {
+    color-scheme: dark;
+
+    --background: oklch(0.1822 0.0043 285.98);
+    --foreground: oklch(0.9612 0.0018 286.37);
+
+    --surface: oklch(0.2223 0.0058 285.99);
+    --surface-foreground: var(--foreground);
+
+    --overlay: oklch(0.2528 0.0064 285.99);
+    --overlay-foreground: var(--foreground);
+
+    --muted: oklch(0.7118 0.0129 286.07);
+
+    --accent: oklch(0.6543 0.1878 285.6);
+    --accent-foreground: oklch(0.1822 0.0043 285.98);
+
+    --success: oklch(0.7329 0.1435 156.2);
+    --success-foreground: oklch(0.1822 0.0043 285.98);
+
+    --warning: oklch(0.8219 0.1485 72.33);
+    --warning-foreground: oklch(0.1822 0.0043 285.98);
+
+    --danger: oklch(0.7032 0.2028 25.74);
+    --danger-foreground: oklch(0.1822 0.0043 285.98);
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   The streaming caret (FR-PLAY-004). A pulse on the last character of the
+   in-flight assistant message so the user can tell "still generating" from
+   "stopped".
+   -------------------------------------------------------------------------- */
+@layer components {
+  .streaming-caret::after {
+    content: "";
+    display: inline-block;
+    width: 0.5ch;
+    height: 1em;
+    margin-left: 0.15ch;
+    vertical-align: text-bottom;
+    background-color: currentColor;
+    animation: caret-pulse 1.1s steps(2, jump-none) infinite;
+  }
+}
+
+@keyframes caret-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-caret::after {
+    animation: none;
+    opacity: 0.6;
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "_comment": "REAL probed data from huggingface.co/api/models/JonathanColetti/Qwen3.8-27B-Uncensored-GGUF, fetched 2026-08-17. This is the MVP acceptance target AND the adversarial fixture for the variant classifier: it contains a draft model and a vision projector that both match the quant-tag regex, plus two model families that collide on quant tag alone. Sizes are exact bytes from the /tree/main endpoint. Do not edit to make a test pass.",
+
+  "repoSlug": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+  "revision": "main",
+  "private": false,
+  "gated": false,
+  "pipeline_tag": "text-generation",
+  "library_name": "llama.cpp",
+  "config": {},
+  "_configNote": "config.json is ABSENT. Architecture MUST come from the GGUF key-value header (FR-DEP-043 path 2). Rejecting is correct if that read fails; guessing is not.",
+
+  "siblings": [
+    { "path": ".gitattributes",                              "sizeBytes": 1604 },
+    { "path": "README.md",                                   "sizeBytes": 19640 },
+    { "path": "Qwen3.8-27B-Uncensored-imatrix.dat",          "sizeBytes": 13642656 },
+    { "path": "Qwen3.8-27B-Uncensored-IQ2_M.gguf",           "sizeBytes": 10624771968 },
+    { "path": "Qwen3.8-27B-Uncensored-IQ4_XS.gguf",          "sizeBytes": 15309039008 },
+    { "path": "Qwen3.8-27B-Uncensored-Q4_K_M.gguf",          "sizeBytes": 16810714528 },
+    { "path": "Qwen3.8-27B-Uncensored-Q5_K_M.gguf",          "sizeBytes": 19535701408 },
+    { "path": "Qwen3.8-27B-Uncensored-Q6_K.gguf",            "sizeBytes": 22430999968 },
+    { "path": "Qwen3.8-27B-Uncensored-Q8_0.gguf",            "sizeBytes": 29047084448 },
+    { "path": "Qwen3.8-27B-Uncensored-draft-Q8_0.gguf",      "sizeBytes": 3164006592 },
+    { "path": "Qwen3.8-27B-Uncensored-vision-f16.gguf",      "sizeBytes": 927606912 },
+    { "path": "Qwen3.8-27B-Uncensored-noMTP-IQ2_M.gguf",     "sizeBytes": 10173451200 },
+    { "path": "Qwen3.8-27B-Uncensored-noMTP-IQ4_XS.gguf",    "sizeBytes": 15082506720 },
+    { "path": "Qwen3.8-27B-Uncensored-noMTP-Q4_K_M.gguf",    "sizeBytes": 16547400160 },
+    { "path": "Qwen3.8-27B-Uncensored-noMTP-Q5_K_M.gguf",    "sizeBytes": 19231099360 },
+    { "path": "Qwen3.8-27B-Uncensored-noMTP-Q6_K.gguf",      "sizeBytes": 22082529760 },
+    { "path": "Qwen3.8-27B-Uncensored-noMTP-Q8_0.gguf",      "sizeBytes": 28595763680 },
+    { "path": "heretic-study/abliteration_metrics.json",     "sizeBytes": 0 },
+    { "path": "heretic-study/optuna-journal.jsonl",          "sizeBytes": 0 }
+  ],
+
+  "expected": {
+    "_comment": "The classifier MUST produce exactly this. Regression here blocks merge (FR-DEP-047).",
+    "weightsFormat": "gguf",
+    "runtime": "llamacpp",
+    "deployableVariantCount": 12,
+    "families": [null, "noMTP"],
+    "companionCount": 2,
+    "companions": [
+      { "role": "draft",  "file": "Qwen3.8-27B-Uncensored-draft-Q8_0.gguf" },
+      { "role": "mmproj", "file": "Qwen3.8-27B-Uncensored-vision-f16.gguf" }
+    ],
+    "mustNotBeOffered": [
+      "Qwen3.8-27B-Uncensored-draft-Q8_0.gguf",
+      "Qwen3.8-27B-Uncensored-vision-f16.gguf",
+      "Qwen3.8-27B-Uncensored-imatrix.dat"
+    ],
+    "mvpTargetVariant": {
+      "id": "base:Q4_K_M",
+      "quantTag": "Q4_K_M",
+      "family": null,
+      "files": ["Qwen3.8-27B-Uncensored-Q4_K_M.gguf"],
+      "weightsBytes": 16810714528
+    },
+    "knownTraps": [
+      "draft-Q8_0 matches the Q8_0 quant regex but is a ~3GB draft model, not a servable 27B",
+      "vision-f16 matches the F16 quant regex but is a ~0.9GB mmproj projector",
+      "the six noMTP files collide with the six base files if the map is keyed on quant tag alone",
+      "imatrix.dat is a quantization input, not weights — exclude by extension before any parsing"
+    ]
+  }
+}
