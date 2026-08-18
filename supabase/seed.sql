@@ -168,7 +168,12 @@ insert into public.custom_models (
 ) values (
   '00000000-0000-0000-0000-0000000000c1',
   '00000000-0000-0000-0000-0000000000a1',
-  'qwen3-8-27b-uncensored-gguf',
+  -- Frozen in CONTRACTS.md as the platform id `jonathancoletti/qwen3.8-27b-uncensored-gguf`.
+  -- The DOT is significant. This is NOT the Hugging Face repo path: both halves of
+  -- the platform id are lowercase by schema CHECK (handle and slug), while the HF
+  -- path is `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF` and lives in
+  -- hf_repo_slug. The slug CHECK already permits '.', so no migration is involved.
+  'qwen3.8-27b-uncensored-gguf',
   'Qwen3.8 27B Uncensored (GGUF)',
   'MVP-0 acceptance target. Q4_K_M, base family (NOT the noMTP family).',
   'JonathanColetti/Qwen3.8-27B-Uncensored-GGUF',
@@ -230,11 +235,26 @@ update public.custom_models m
    and (r.p->>'feasible')::boolean;
 
 -- ── 4b. Mark it live ────────────────────────────────────────────────────────
--- PLACEHOLDER: runpod_endpoint_id and measured_tokens_per_second are outputs of
--- the provisioning + smoke-test spike. The endpoint id below routes nowhere;
--- point UPSTREAM_BASE_URL at tools/mock-upstream until the real one exists.
+-- upstream_endpoint_ref is the value the passing MVP-0 acceptance run used
+-- against the local Modal llama.cpp worker. It is an OPAQUE, provider-shaped
+-- reference (see the column comment): for Modal it is a URL query string that
+-- selects the container pool, which the gateway appends verbatim.
+--
+-- ENVIRONMENT-SPECIFIC, NOT A CONSTANT. It must be re-pointed after ANY Modal
+-- redeploy, and it is meaningless against RunPod or the mock upstream — where
+-- the reference is an id used as a path segment instead. If a request 404s or
+-- hangs at the upstream, check this value FIRST; a stale pool reference looks
+-- exactly like a cold-start timeout from the client side.
+--
+-- ctx_size below must stay in step with custom_models.context_length (8192): the
+-- worker allocates its KV cache from ctx_size, so a larger context_length here
+-- would be advertised to callers but truncated by the pool at runtime.
 update public.custom_models
-   set runpod_endpoint_id         = 'PLACEHOLDER-runpod-endpoint-id',
+   set upstream_endpoint_ref = 'model_repo=JonathanColetti%2FQwen3.8-27B-Uncensored-GGUF'
+                               '&model_file=Qwen3.8-27B-Uncensored-Q4_K_M.gguf'
+                               '&ctx_size=8192&parallel=1',
+       -- PLACEHOLDER: RunPod-only concept; unused on Modal. Left non-null so the
+       -- provisioning path has something to overwrite when RunPod is wired up.
        runpod_template_id         = 'PLACEHOLDER-runpod-template-id',
        measured_tokens_per_second = predicted_tokens_per_second,  -- PLACEHOLDER: smoke-test truth
        status                     = 'ready',
