@@ -16,9 +16,7 @@ export const metadata = {
  * failure mode without it is a deploy form rendered to a signed-out visitor
  * whose every submit 401s.
  */
-export default async function StudioLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default async function StudioLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/studio");
 

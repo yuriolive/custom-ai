@@ -226,11 +226,6 @@ export type MyModelRow = {
 };
 
 /** The provisioning stepper's stages, in order (FR-STU-007). */
-export const DEPLOY_STEPS = [
-  "validating",
-  "provisioning",
-  "smoke_testing",
-  "ready",
-] as const;
+export const DEPLOY_STEPS = ["validating", "provisioning", "smoke_testing", "ready"] as const;
 
 export type DeployStep = (typeof DEPLOY_STEPS)[number];

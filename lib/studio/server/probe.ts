@@ -25,13 +25,14 @@ import "server-only";
 import { probeRepo, type HfProbeResult, type ModelVariant } from "@nexus/hf-probe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type {
-  ProbeFailure,
-  ProbeResponse,
-  StudioArchitecture,
-  StudioVariant,
-} from "../types";
+import type { ProbeFailure, ProbeResponse, StudioArchitecture, StudioVariant } from "../types";
 import { fetchCardDescription } from "./model-card";
+
+/**
+ * The community-default quantization's bits-per-weight (PRD §4.3.3.2 ladder).
+ * The recommendation falls back to whichever variant sits nearest this.
+ */
+const Q4_K_M_BITS_PER_WEIGHT = 4.8;
 
 /** FR-DEP-001, character for character. */
 export const HF_SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -99,13 +100,21 @@ function recommend(variants: StudioVariant[]): string | null {
   if (exact) return exact.id;
 
   const rated = pool.filter((v) => v.bitsPerWeight !== null);
-  if (rated.length === 0) return pool[0]!.id;
+  const first = rated[0];
+  if (!first) return pool[0]!.id;
 
-  return rated.reduce((best, v) =>
-    Math.abs((v.bitsPerWeight ?? 0) - 4.8) < Math.abs((best.bitsPerWeight ?? 0) - 4.8)
-      ? v
-      : best,
-  ).id;
+  // Seeded with `first` rather than relying on the length check above: a bare
+  // `reduce` over an empty array throws, and that safety should be visible on
+  // the call itself instead of three lines away where a later edit can drop it.
+  const closest = rated.reduce(
+    (best, v) =>
+      Math.abs((v.bitsPerWeight ?? 0) - Q4_K_M_BITS_PER_WEIGHT) <
+      Math.abs((best.bitsPerWeight ?? 0) - Q4_K_M_BITS_PER_WEIGHT)
+        ? v
+        : best,
+    first,
+  );
+  return closest.id;
 }
 
 /**
@@ -257,9 +266,9 @@ export async function probeForStudio(
   };
 
   // Base family first — it is the one whose geometry was read.
-  const families = [
-    ...new Set(variants.filter((v) => v.deployable).map((v) => v.family)),
-  ].toSorted((a, b) => (a === null ? -1 : b === null ? 1 : a.localeCompare(b)));
+  const families = [...new Set(variants.filter((v) => v.deployable).map((v) => v.family))].toSorted(
+    (a, b) => (a === null ? -1 : b === null ? 1 : a.localeCompare(b)),
+  );
 
   return {
     ok: true,

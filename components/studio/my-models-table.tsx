@@ -47,10 +47,10 @@ function message(error: unknown): string {
 export function MyModelsTable({
   initialModels,
   userId,
-}: {
+}: Readonly<{
   initialModels: MyModelRow[];
   userId: string;
-}) {
+}>) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -315,13 +315,13 @@ function RowActions({
   onDelete,
   onEditPricing,
   onToggleVisibility,
-}: {
+}: Readonly<{
   isBusy: boolean;
   model: MyModelRow;
   onDelete: () => void;
   onEditPricing: () => void;
   onToggleVisibility: () => void;
-}) {
+}>) {
   return (
     <Dropdown>
       {/* `Dropdown.Trigger` IS the button, and it is React Aria's PRIMITIVE

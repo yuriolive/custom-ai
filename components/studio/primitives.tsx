@@ -26,10 +26,10 @@ import type { ModelStatus } from "@/lib/studio/types";
 export function SummaryLayout({
   children,
   summary,
-}: {
+}: Readonly<{
   children: ReactNode;
   summary: ReactNode;
-}) {
+}>) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
       <div className="min-w-0">{children}</div>
@@ -51,9 +51,9 @@ export function SummaryLayout({
  */
 export function DetailList({
   rows,
-}: {
+}: Readonly<{
   rows: { label: string; value: ReactNode; key: string }[];
-}) {
+}>) {
   return (
     <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
       {rows.map((row) => (
@@ -78,7 +78,7 @@ export function DetailList({
  * caller inside its `TextField`/`Slider`, and nesting two labels for one input
  * gives the field two accessible names.
  */
-export function LabelHint({ children }: { children: ReactNode }) {
+export function LabelHint({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <Tooltip>
       {/* `render` swaps the trigger's default <div> for a real <button>. The
@@ -116,10 +116,7 @@ export function LabelHint({ children }: { children: ReactNode }) {
  * `color` and `variant` are INDEPENDENT axes on a v3 Chip — `color` carries the
  * semantics, `variant` carries the weight. One prop does not do both.
  */
-const STATUS_COLOR: Record<
-  ModelStatus,
-  "default" | "accent" | "success" | "warning" | "danger"
-> = {
+const STATUS_COLOR: Record<ModelStatus, "default" | "accent" | "success" | "warning" | "danger"> = {
   draft: "default",
   validating: "accent",
   provisioning: "accent",
@@ -145,7 +142,7 @@ const STATUS_LABEL: Record<ModelStatus, string> = {
   deleted: "Deleted",
 };
 
-export function ModelStatusChip({ status }: { status: ModelStatus }) {
+export function ModelStatusChip({ status }: Readonly<{ status: ModelStatus }>) {
   return (
     <Chip color={STATUS_COLOR[status]} size="sm" variant="soft">
       {STATUS_LABEL[status]}
@@ -159,18 +156,16 @@ export function StudioHeader({
   action,
   description,
   title,
-}: {
+}: Readonly<{
   action?: ReactNode;
   description?: ReactNode;
   title: string;
-}) {
+}>) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description ? (
-          <p className="text-muted max-w-prose text-sm">{description}</p>
-        ) : null}
+        {description ? <p className="text-muted max-w-prose text-sm">{description}</p> : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>

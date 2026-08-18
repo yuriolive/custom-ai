@@ -10,7 +10,17 @@
  * `onPress`, never `onClick` (FR-UI-002).
  */
 
-import { Alert, AlertDialog, Button, Description, Input, Label, Modal, NumberField, TextField } from "@heroui/react";
+import {
+  Alert,
+  AlertDialog,
+  Button,
+  Description,
+  Input,
+  Label,
+  Modal,
+  NumberField,
+  TextField,
+} from "@heroui/react";
 import { useEffect, useState } from "react";
 
 import {
@@ -29,14 +39,14 @@ export function EditPricingDialog({
   onClose,
   onSubmit,
   target,
-}: {
+}: Readonly<{
   error: string | null;
   isPending: boolean;
   onClose: () => void;
   /** Micro-USD per 1M tokens, integers. */
   onSubmit: (promptMicro: number, completionMicro: number) => void;
   target: MyModelRow | null;
-}) {
+}>) {
   const [prompt, setPrompt] = useState(0);
   const [completion, setCompletion] = useState(0);
 
@@ -54,8 +64,7 @@ export function EditPricingDialog({
   const promptMicro = Math.round(prompt * 1_000_000);
   const completionMicro = Math.round(completion * 1_000_000);
   const floor = target.costFloorMicroPerMtoken;
-  const belowFloor =
-    floor !== null && (promptMicro < floor || completionMicro < floor);
+  const belowFloor = floor !== null && (promptMicro < floor || completionMicro < floor);
   const valid =
     Number.isFinite(prompt) && Number.isFinite(completion) && prompt >= 0 && completion >= 0;
 
@@ -87,9 +96,7 @@ export function EditPricingDialog({
                 >
                   <Label>Prompt price · per 1M tokens</Label>
                   <Input className="tabular-nums" />
-                  <Description className="tabular-nums">
-                    {microUsdEcho(promptMicro)}
-                  </Description>
+                  <Description className="tabular-nums">{microUsdEcho(promptMicro)}</Description>
                 </NumberField>
 
                 <NumberField
@@ -109,8 +116,8 @@ export function EditPricingDialog({
                 {floor !== null ? (
                   <p className="text-muted text-xs">
                     Cost floor for this deployment:{" "}
-                    <span className="tabular-nums">{formatPricePerMtoken(floor)}</span> per
-                    1M tokens.
+                    <span className="tabular-nums">{formatPricePerMtoken(floor)}</span> per 1M
+                    tokens.
                   </p>
                 ) : null}
 
@@ -129,8 +136,7 @@ export function EditPricingDialog({
                     flight. The transaction row snapshots the price at request
                     start, so this is a statement of fact, not reassurance. */}
                 <p className="text-muted text-xs">
-                  Requests already in flight bill at the price captured when they
-                  started.
+                  Requests already in flight bill at the price captured when they started.
                 </p>
 
                 {error ? (
@@ -182,13 +188,13 @@ export function DeleteModelDialog({
   onClose,
   onConfirm,
   target,
-}: {
+}: Readonly<{
   error: string | null;
   isPending: boolean;
   onClose: () => void;
   onConfirm: () => void;
   target: MyModelRow | null;
-}) {
+}>) {
   const [typed, setTyped] = useState("");
 
   useEffect(() => {
@@ -216,13 +222,13 @@ export function DeleteModelDialog({
             <AlertDialog.Body>
               <div className="flex flex-col gap-4">
                 <p className="text-sm">
-                  <span className="font-medium">{target.displayName}</span> stops
-                  answering requests immediately and is removed from the catalog.
-                  Any stored Hugging Face token is destroyed.
+                  <span className="font-medium">{target.displayName}</span> stops answering requests
+                  immediately and is removed from the catalog. Any stored Hugging Face token is
+                  destroyed.
                 </p>
                 <p className="text-muted text-sm">
-                  Billing history is kept — callers who paid for requests against
-                  this model must still be able to read their own ledger.
+                  Billing history is kept — callers who paid for requests against this model must
+                  still be able to read their own ledger.
                 </p>
 
                 <TextField autoFocus onChange={setTyped} value={typed}>
@@ -247,11 +253,7 @@ export function DeleteModelDialog({
               <Button isDisabled={isPending} onPress={onClose} variant="ghost">
                 Cancel
               </Button>
-              <Button
-                isDisabled={!matches || isPending}
-                onPress={onConfirm}
-                variant="danger"
-              >
+              <Button isDisabled={!matches || isPending} onPress={onConfirm} variant="danger">
                 {isPending ? "Deleting…" : "Delete model"}
               </Button>
             </AlertDialog.Footer>

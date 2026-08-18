@@ -34,6 +34,21 @@ export type UpstreamConfig = {
 };
 
 /**
+ * Trailing `/` removal without a regex.
+ *
+ * `/\/+$/` looks harmless and is not: an anchored `+` makes the engine retry
+ * from every position in a run of slashes, so the match is quadratic in a
+ * pathological input. This value comes from the environment rather than a
+ * request, so it was never reachable — but a linear loop costs nothing and
+ * removes the question.
+ */
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
+/**
  * `mock` is a documented value of UPSTREAM_PROVIDER (.env.example) and speaks
  * the RunPod wire shape, so it maps to `runpod` exactly as the gateway's own
  * `parseUpstreamProvider` does. Keeping the two in step matters: a model
@@ -44,7 +59,7 @@ export function readUpstreamConfig(): UpstreamConfig {
   const raw = process.env.UPSTREAM_PROVIDER?.trim().toLowerCase();
   return {
     provider: raw === "modal" ? "modal" : "runpod",
-    baseUrl: (process.env.UPSTREAM_BASE_URL || "http://127.0.0.1:8787").replace(/\/+$/, ""),
+    baseUrl: stripTrailingSlashes(process.env.UPSTREAM_BASE_URL || "http://127.0.0.1:8787"),
     runpodApiKey: process.env.RUNPOD_API_KEY ?? "",
     runpodEndpointId: process.env.RUNPOD_ENDPOINT_ID ?? "",
     modalKey: process.env.MODAL_KEY ?? "",
@@ -61,9 +76,7 @@ export type PoolSpec = {
   parallel: number;
 };
 
-export type RefResult =
-  | { ok: true; ref: string }
-  | { ok: false; message: string; hint: string };
+export type RefResult = { ok: true; ref: string } | { ok: false; message: string; hint: string };
 
 /**
  * The opaque reference the gateway splices into the provider's URL template.
@@ -179,8 +192,7 @@ export async function smokeTest(
         messages: [
           {
             role: "user",
-            content:
-              "Count from one to eighty, one number per line, with no other words.",
+            content: "Count from one to eighty, one number per line, with no other words.",
           },
         ],
         stream: true,
@@ -239,8 +251,7 @@ export async function smokeTest(
           const delta = chunk.choices?.[0]?.delta;
           const produced =
             (typeof delta?.content === "string" && delta.content.length > 0) ||
-            (typeof delta?.reasoning_content === "string" &&
-              delta.reasoning_content.length > 0);
+            (typeof delta?.reasoning_content === "string" && delta.reasoning_content.length > 0);
           if (produced) {
             firstTokenAt ??= Date.now();
             chunkTokens += 1;

@@ -51,6 +51,22 @@ const STAGES: Stage[] = [
   { key: "ready", label: "Ready", detail: "The model is callable." },
 ];
 
+type StepState = "done" | "active" | "pending" | "failed" | "skipped";
+
+/**
+ * What one row of the stepper is showing, as a named decision rather than a
+ * stack of ternaries. `current` is the stage in progress, or — once `failed` —
+ * the stage that broke, so everything before it genuinely did complete.
+ */
+function stepStateFor(index: number, current: number, failed: boolean, done: boolean): StepState {
+  if (failed) {
+    if (index === current) return "failed";
+    return index > current ? "skipped" : "done";
+  }
+  if (done || index < current) return "done";
+  return index === current ? "active" : "pending";
+}
+
 /** How far along a status is, or -1 for the terminal failure states. */
 function stageIndex(status: ModelStatus | null): number {
   if (status === null) return 0;
@@ -65,7 +81,7 @@ export function ProvisioningStepper({
   modelId,
   onStatusChange,
   status,
-}: {
+}: Readonly<{
   /** Terminal failure from the POST response, when Realtime did not deliver it. */
   error: { message: string; hint: string } | null;
   /**
@@ -78,7 +94,7 @@ export function ProvisioningStepper({
   modelId: string | null;
   onStatusChange: (status: ModelStatus) => void;
   status: ModelStatus | null;
-}) {
+}>) {
   const supabase = useMemo(() => createClient(), []);
   const [realtimeDown, setRealtimeDown] = useState(false);
 
@@ -129,9 +145,7 @@ export function ProvisioningStepper({
   }, [modelId, onStatusChange, supabase]);
 
   const failed = status === "failed" || status === "auth_failed";
-  const reportedStage = failedStage
-    ? STAGES.findIndex((s) => s.key === failedStage)
-    : -1;
+  const reportedStage = failedStage ? STAGES.findIndex((s) => s.key === failedStage) : -1;
   // On failure, `current` is the stage that broke; everything before it did
   // complete and is shown as such.
   const current = failed
@@ -145,7 +159,9 @@ export function ProvisioningStepper({
     <div className="flex flex-col gap-5">
       <ProgressBar
         aria-label="Deployment progress"
-        value={done ? 100 : failed ? 100 : ((current + 0.5) / STAGES.length) * 100}
+        // Terminal either way — complete on success, and pinned full on
+        // failure so the bar stops advancing rather than sitting mid-stride.
+        value={done || failed ? 100 : ((current + 0.5) / STAGES.length) * 100}
       >
         <ProgressBar.Track>
           <ProgressBar.Fill />
@@ -154,16 +170,7 @@ export function ProvisioningStepper({
 
       <ol className="flex flex-col gap-3">
         {STAGES.map((stage, index) => {
-          const state =
-            failed && index === current
-              ? "failed"
-              : failed && index > current
-                ? "skipped"
-                : index < current || done
-                  ? "done"
-                  : index === current
-                    ? "active"
-                    : "pending";
+          const state = stepStateFor(index, current, failed, done);
 
           return (
             <li className="flex items-start gap-3" key={stage.key}>
@@ -189,8 +196,8 @@ export function ProvisioningStepper({
 
       {realtimeDown && !done && !failed ? (
         <p className="text-muted text-xs">
-          Live updates are unavailable, so these steps may not move until the
-          deployment finishes. It is still running — do not close this tab.
+          Live updates are unavailable, so these steps may not move until the deployment finishes.
+          It is still running — do not close this tab.
         </p>
       ) : null}
 
@@ -202,9 +209,7 @@ export function ProvisioningStepper({
           <Alert.Content>
             <Alert.Title>Deployment failed</Alert.Title>
             <Alert.Description>
-              <span className="block font-mono text-xs break-words">
-                {error.message}
-              </span>
+              <span className="block font-mono text-xs break-words">{error.message}</span>
               <span className="mt-2 block text-sm">{error.hint}</span>
             </Alert.Description>
           </Alert.Content>
@@ -216,9 +221,9 @@ export function ProvisioningStepper({
 
 function StepMarker({
   state,
-}: {
+}: Readonly<{
   state: "done" | "active" | "pending" | "failed" | "skipped";
-}) {
+}>) {
   if (state === "done") {
     return (
       <span className="bg-success text-success-foreground mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full">
@@ -245,9 +250,7 @@ function StepMarker({
   if (state === "active") {
     // A ring, not a spinner. The ProgressBar above already carries motion, and
     // two independent moving things on one card read as two operations.
-    return (
-      <span className="border-accent mt-0.5 size-5 shrink-0 rounded-full border-2" />
-    );
+    return <span className="border-accent mt-0.5 size-5 shrink-0 rounded-full border-2" />;
   }
   return <span className="border-border mt-0.5 size-5 shrink-0 rounded-full border" />;
 }

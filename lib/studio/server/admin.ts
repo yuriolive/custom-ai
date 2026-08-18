@@ -43,12 +43,8 @@ import { consoleServerEnv } from "@/lib/console/server-env";
  * warm across users.
  */
 export function createAdminClient(): SupabaseClient {
-  return createSupabaseClient(
-    consoleServerEnv.supabaseUrl,
-    consoleServerEnv.serviceRoleKey,
-    {
-      auth: { autoRefreshToken: false, persistSession: false },
-      global: { headers: { "X-Client-Info": "studio-admin" } },
-    },
-  );
+  return createSupabaseClient(consoleServerEnv.supabaseUrl, consoleServerEnv.serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { "X-Client-Info": "studio-admin" } },
+  });
 }

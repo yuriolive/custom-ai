@@ -171,7 +171,7 @@ export async function runDeployment(
   }
 
   const variant = probe.variants.find((v) => v.id === request.variantId);
-  if (!variant || !variant.deployable) {
+  if (!variant?.deployable) {
     return {
       ok: false,
       code: "variant_not_found",
@@ -198,7 +198,7 @@ export async function runDeployment(
   }
 
   // ── Stage 0b: placement, from the one solver ─────────────────────────────
-  let placement = await resolve(admin, {
+  const placement = await resolve(admin, {
     variant,
     probe,
     contextLength: request.contextLength,
@@ -270,9 +270,7 @@ export async function runDeployment(
       variant_quant_tag: variant.quantTag,
       variant_family: variant.family,
       variant_files: variant.files,
-      companion_assets: Object.fromEntries(
-        probe.companions.map((c) => [c.role, c.file]),
-      ),
+      companion_assets: Object.fromEntries(probe.companions.map((c) => [c.role, c.file])),
       weights_bytes: variant.weightsBytes,
       active_weights_bytes: variant.activeWeightsBytes,
       n_layers: arch.nLayers,
@@ -336,9 +334,7 @@ export async function runDeployment(
     });
 
     if (!ref.ok) {
-      return await failModel(
-        admin, modelId, "no_upstream", ref.message, ref.hint, "provisioning",
-      );
+      return await failModel(admin, modelId, "no_upstream", ref.message, ref.hint, "provisioning");
     }
 
     await setStatus(admin, modelId, applyPlacement(placement, ref.ref));
@@ -394,8 +390,11 @@ export async function runDeployment(
           // A failed retry is not a failed deployment: the first measurement
           // was real and the model serves. Keep the original placement.
           if (retry.ok && retry.tokensPerSecond > smoke.tokensPerSecond) {
+            // The escalated placement is ALREADY on the row — it was written by
+            // the setStatus above. There is deliberately no local assignment
+            // here: nothing downstream reads `placement` again, and a variable
+            // that looks live but is not is worse than no variable.
             smoke = retry;
-            placement = escalation;
           } else {
             await setStatus(admin, modelId, applyPlacement(placement, ref.ref));
           }

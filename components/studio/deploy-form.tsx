@@ -124,9 +124,7 @@ export function DeployForm() {
   const [phase, setPhase] = useState<Phase>("editing");
   const [modelId, setModelId] = useState<string | null>(null);
   const [deployStatus, setDeployStatus] = useState<ModelStatus | null>(null);
-  const [deployError, setDeployError] = useState<{ message: string; hint: string } | null>(
-    null,
-  );
+  const [deployError, setDeployError] = useState<{ message: string; hint: string } | null>(null);
   /** Which stage the server says broke, so the marker lands on the right one. */
   const [failedStage, setFailedStage] = useState<ModelStatus | null>(null);
   const [deployedSlug, setDeployedSlug] = useState<string | null>(null);
@@ -288,29 +286,22 @@ export function DeployForm() {
     // 149 tok/s" landing on 150 re-asks for more than the hardware delivers,
     // and only the solver's 10% tolerance would be hiding it.
     if (remedy.kind === "context") {
-      setContextLength(
-        Math.max(CTX_MIN, Math.floor(remedy.value / CTX_STEP) * CTX_STEP),
-      );
+      setContextLength(Math.max(CTX_MIN, Math.floor(remedy.value / CTX_STEP) * CTX_STEP));
     } else if (remedy.kind === "speed") {
-      setTargetTokS(
-        Math.max(SPEED_MIN, Math.floor(remedy.value / SPEED_STEP) * SPEED_STEP),
-      );
+      setTargetTokS(Math.max(SPEED_MIN, Math.floor(remedy.value / SPEED_STEP) * SPEED_STEP));
     } else {
       setVariantId(remedy.value);
     }
   }, []);
 
   // ── Pricing (FR-STU-005) ─────────────────────────────────────────────────
-  const costFloor = selectedPlacement?.feasible
-    ? selectedPlacement.costFloorMicroPerMtoken
-    : null;
+  const costFloor = selectedPlacement?.feasible ? selectedPlacement.costFloorMicroPerMtoken : null;
   const promptMicro = dollarsPerMtokenToMicro(pricePrompt);
   const completionMicro = dollarsPerMtokenToMicro(priceCompletion);
   // A price below the floor WARNS and does not block. Creators may subsidise
   // deliberately, and blocking would be the platform overruling a business
   // decision that is theirs.
-  const belowFloor =
-    costFloor !== null && (promptMicro < costFloor || completionMicro < costFloor);
+  const belowFloor = costFloor !== null && (promptMicro < costFloor || completionMicro < costFloor);
 
   // ── Submit gate ──────────────────────────────────────────────────────────
   // Submit is blocked ONLY when no variant is feasible (FR-STU-004d).
@@ -418,9 +409,7 @@ export function DeployForm() {
         <div className="border-default bg-surface flex flex-col gap-5 rounded-lg border p-5">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold tracking-tight">
-              {deployStatus === "ready"
-                ? `${displayName} is live`
-                : `Deploying ${displayName}`}
+              {deployStatus === "ready" ? `${displayName} is live` : `Deploying ${displayName}`}
             </h2>
             <p className="text-muted text-sm">{probe?.repoSlug}</p>
           </div>
@@ -439,10 +428,7 @@ export function DeployForm() {
             {deployStatus === "ready" ? "View my models" : "Back to my models"}
           </Button>
           {deployStatus === "ready" && deployedSlug ? (
-            <Button
-              onPress={() => router.push("/studio")}
-              variant="tertiary"
-            >
+            <Button onPress={() => router.push("/studio")} variant="tertiary">
               Deployed as {deployedSlug}
             </Button>
           ) : null}
@@ -471,12 +457,7 @@ export function DeployForm() {
           />
 
           <div className="border-separator flex flex-col gap-2 border-t pt-4">
-            <Button
-              fullWidth
-              isDisabled={!canSubmit}
-              onPress={submit}
-              variant="primary"
-            >
+            <Button fullWidth isDisabled={!canSubmit} onPress={submit} variant="primary">
               Deploy model
             </Button>
             {/* A disabled CTA is only honest if the reason is visible, and the
@@ -508,9 +489,10 @@ export function DeployForm() {
               value={repoSlug}
             >
               <Label>
-                Hugging Face repository <LabelHint>
-                  The repository holding the weights. GGUF runs on llama.cpp,
-                  safetensors on vLLM — the runtime is derived, never chosen.
+                Hugging Face repository{" "}
+                <LabelHint>
+                  The repository holding the weights. GGUF runs on llama.cpp, safetensors on vLLM —
+                  the runtime is derived, never chosen.
                 </LabelHint>
               </Label>
               <Input className="font-mono" placeholder="organization/model" />
@@ -585,10 +567,10 @@ export function DeployForm() {
                   value={hfToken}
                 >
                   <Label>
-                    Hugging Face read token <LabelHint>
-                      Encrypted at rest in Supabase Vault. Used only to read the
-                      repository and to pull weights at cold start. It is never
-                      returned by any API, including to you.
+                    Hugging Face read token{" "}
+                    <LabelHint>
+                      Encrypted at rest in Supabase Vault. Used only to read the repository and to
+                      pull weights at cold start. It is never returned by any API, including to you.
                     </LabelHint>
                   </Label>
                   <InputGroup>
@@ -606,8 +588,8 @@ export function DeployForm() {
                     </InputGroup.Suffix>
                   </InputGroup>
                   <Description>
-                    Checked against the repository before anything is deployed, so
-                    a token without access fails here rather than at first use.
+                    Checked against the repository before anything is deployed, so a token without
+                    access fails here rather than at first use.
                   </Description>
                 </TextField>
               ) : null}
@@ -657,13 +639,11 @@ export function DeployForm() {
         {probe ? (
           <section className="flex flex-col gap-6">
             <div className="flex flex-col gap-1">
-              <h2 className="text-base font-semibold tracking-tight">
-                What your model should do
-              </h2>
+              <h2 className="text-base font-semibold tracking-tight">What your model should do</h2>
               <p className="text-muted text-sm">
-                Three decisions, all of them about your model rather than about
-                infrastructure. The hardware that satisfies them is solved, not
-                chosen — bigger cards are not always faster ones.
+                Three decisions, all of them about your model rather than about infrastructure. The
+                hardware that satisfies them is solved, not chosen — bigger cards are not always
+                faster ones.
               </p>
             </div>
 
@@ -677,10 +657,10 @@ export function DeployForm() {
               value={contextLength}
             >
               <Label>
-                Context window <LabelHint>
-                  Past roughly 32k this, not model size, is what drives cost: KV
-                  cache grows with every token and collapses how many requests
-                  one GPU can serve at once.
+                Context window{" "}
+                <LabelHint>
+                  Past roughly 32k this, not model size, is what drives cost: KV cache grows with
+                  every token and collapses how many requests one GPU can serve at once.
                 </LabelHint>
               </Label>
               <Slider.Output className="font-mono text-xs tabular-nums">
@@ -707,9 +687,10 @@ export function DeployForm() {
               value={targetTokS}
             >
               <Label>
-                Minimum speed <LabelHint>
-                  Tokens per second for a single stream. Raising it narrows the
-                  hardware that qualifies, which raises the cost floor.
+                Minimum speed{" "}
+                <LabelHint>
+                  Tokens per second for a single stream. Raising it narrows the hardware that
+                  qualifies, which raises the cost floor.
                 </LabelHint>
               </Label>
               <Slider.Output className="font-mono text-xs tabular-nums">
@@ -720,8 +701,8 @@ export function DeployForm() {
                 <Slider.Thumb />
               </Slider.Track>
               <Description>
-                Measured against a real generation after deployment. A model that
-                misses its target is published at its real speed, not its target.
+                Measured against a real generation after deployment. A model that misses its target
+                is published at its real speed, not its target.
               </Description>
             </Slider>
 
@@ -797,9 +778,8 @@ export function DeployForm() {
               <Alert.Content>
                 <Alert.Title>Priced below the cost floor</Alert.Title>
                 <Alert.Description>
-                  Serving this configuration costs about{" "}
-                  {formatPricePerMtoken(costFloor)} per 1M tokens. You can deploy
-                  anyway — you would be subsidising each request.
+                  Serving this configuration costs about {formatPricePerMtoken(costFloor)} per 1M
+                  tokens. You can deploy anyway — you would be subsidising each request.
                 </Alert.Description>
               </Alert.Content>
             </Alert>
@@ -812,9 +792,8 @@ export function DeployForm() {
             <Switch.Content>
               <Label>Public</Label>
               <Description>
-                Listed in the marketplace catalog and callable by any developer with
-                a funded wallet. Private models are callable only with your own API
-                keys.
+                Listed in the marketplace catalog and callable by any developer with a funded
+                wallet. Private models are callable only with your own API keys.
               </Description>
             </Switch.Content>
           </Switch>

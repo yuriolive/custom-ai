@@ -38,16 +38,33 @@ function str(source: Json, key: string, fallback = ""): string {
   return typeof raw === "string" ? raw : fallback;
 }
 
+/**
+ * A nullable numeric jsonb field. PostgREST hands back a bigint as a STRING, so
+ * both forms have to be accepted — but absent must stay `null` rather than
+ * collapsing to 0, which `num()` above would do. A max context of 0 and an
+ * unknown max context mean different things to the table that renders them.
+ */
+function optionalNum(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function considered(source: Json): ConsideredTier[] {
   const raw = source.considered;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((e): e is Json => typeof e === "object" && e !== null).map((e) => ({
-    tier: str(e, "tier"),
-    accepted: e.accepted === true,
-    reason: str(e, "reason"),
-    predictedTokensPerSecond: num(e, "predicted_tokens_per_second"),
-    requiredBytes: num(e, "required_bytes"),
-  }));
+  return raw
+    .filter((e): e is Json => typeof e === "object" && e !== null)
+    .map((e) => ({
+      tier: str(e, "tier"),
+      accepted: e.accepted === true,
+      reason: str(e, "reason"),
+      predictedTokensPerSecond: num(e, "predicted_tokens_per_second"),
+      requiredBytes: num(e, "required_bytes"),
+    }));
 }
 
 /**
@@ -74,11 +91,7 @@ export function toPlacement(envelope: unknown): Placement {
   if (e.feasible !== true) {
     return {
       feasible: false,
-      blockingReason: str(
-        e,
-        "blocking_reason",
-        "No configuration satisfies these constraints.",
-      ),
+      blockingReason: str(e, "blocking_reason", "No configuration satisfies these constraints."),
       maxContextAtThisQuality: num(e, "max_context_at_this_quality"),
       fastestAvailableTokensPerSecond: num(e, "fastest_available_tokens_per_second"),
       considered: considered(e),
@@ -166,12 +179,7 @@ export async function resolvePlacements(
     .map((row) => ({
       variantId: str(row, "variant_id"),
       placement: toPlacement(row.placement),
-      maxContext:
-        typeof row.max_context === "number"
-          ? row.max_context
-          : typeof row.max_context === "string"
-            ? Number(row.max_context)
-            : null,
+      maxContext: optionalNum(row.max_context),
     }));
 }
 

@@ -70,7 +70,7 @@ export function VariantTable({
   placements,
   selectedId,
   variants,
-}: {
+}: Readonly<{
   contextLength: number;
   isLoading: boolean;
   onSelect: (id: string) => void;
@@ -78,7 +78,7 @@ export function VariantTable({
   placements: Map<string, VariantPlacement>;
   selectedId: string | null;
   variants: StudioVariant[];
-}) {
+}>) {
   const deployable = variants.filter((v) => v.deployable);
 
   // Ordered by quality, cheapest first, so the ladder reads as a ladder even
@@ -151,11 +151,7 @@ export function VariantTable({
                         ) : null}
                         {/* The blocking reason lives in the row, with its value,
                             because it names the slider to move. */}
-                        {placement && !placement.feasible ? (
-                          <span className="text-danger text-xs">{placement.blockingReason}</span>
-                        ) : note ? (
-                          <span className="text-muted hidden text-xs lg:block">{note}</span>
-                        ) : null}
+                        <RowSubtext note={note} placement={placement} />
                       </div>
                     </Table.Cell>
                     <Table.Cell className="text-end tabular-nums">
@@ -190,6 +186,24 @@ export function VariantTable({
       </p>
     </div>
   );
+}
+
+/**
+ * The row's secondary line: the blocking reason when this variant does not fit,
+ * otherwise the honest quality note. Never both — the reason is what the
+ * creator has to act on, and the note would only compete with it.
+ */
+function RowSubtext({
+  note,
+  placement,
+}: Readonly<{ note: string | null; placement: Placement | undefined }>) {
+  if (placement && !placement.feasible) {
+    return <span className="text-danger text-xs">{placement.blockingReason}</span>;
+  }
+  if (note) {
+    return <span className="text-muted hidden text-xs lg:block">{note}</span>;
+  }
+  return null;
 }
 
 /** Variants that resolve today, quality-ordered — the remedy list's source. */

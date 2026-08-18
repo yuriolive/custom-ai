@@ -10,15 +10,9 @@ import { ConsoleError } from "@/components/console/console-error";
 export default function StudioError({
   error,
   reset,
-}: {
+}: Readonly<{
   error: Error & { digest?: string };
   reset: () => void;
-}) {
-  return (
-    <ConsoleError
-      error={error}
-      reset={reset}
-      title="Creator Studio could not load"
-    />
-  );
+}>) {
+  return <ConsoleError error={error} reset={reset} title="Creator Studio could not load" />;
 }

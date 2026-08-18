@@ -51,35 +51,63 @@ export function DeploymentPlan({
   placement,
   qualityLabel,
   remedies,
-}: {
+}: Readonly<{
   contextLength: number;
   isSolving: boolean;
   onApplyRemedy: (remedy: Remedy) => void;
   placement: Placement | null;
   qualityLabel: string | null;
   remedies: Remedy[];
-}) {
+}>) {
   return (
     <>
       <h2 className="text-base font-semibold tracking-tight">Deployment plan</h2>
 
-      {placement === null ? (
-        <EmptyBody isSolving={isSolving} />
-      ) : placement.feasible ? (
-        <FeasibleBody
-          contextLength={contextLength}
-          placement={placement}
-          qualityLabel={qualityLabel}
-        />
-      ) : (
-        <InfeasibleBody
-          onApplyRemedy={onApplyRemedy}
-          placement={placement}
-          remedies={remedies}
-        />
-      )}
+      <PlanBody
+        contextLength={contextLength}
+        isSolving={isSolving}
+        onApplyRemedy={onApplyRemedy}
+        placement={placement}
+        qualityLabel={qualityLabel}
+        remedies={remedies}
+      />
     </>
   );
+}
+
+/**
+ * The panel has exactly three states and they are mutually exclusive: nothing
+ * probed yet, a resolved plan, or no configuration that fits. Written as early
+ * returns rather than a stacked ternary so each state reads on its own.
+ */
+function PlanBody({
+  contextLength,
+  isSolving,
+  onApplyRemedy,
+  placement,
+  qualityLabel,
+  remedies,
+}: Readonly<{
+  contextLength: number;
+  isSolving: boolean;
+  onApplyRemedy: (remedy: Remedy) => void;
+  placement: Placement | null;
+  qualityLabel: string | null;
+  remedies: Remedy[];
+}>) {
+  if (placement === null) return <EmptyBody isSolving={isSolving} />;
+
+  if (placement.feasible) {
+    return (
+      <FeasibleBody
+        contextLength={contextLength}
+        placement={placement}
+        qualityLabel={qualityLabel}
+      />
+    );
+  }
+
+  return <InfeasibleBody onApplyRemedy={onApplyRemedy} placement={placement} remedies={remedies} />;
 }
 
 /**
@@ -88,7 +116,7 @@ export function DeploymentPlan({
  * sentence, never a spinner: a spinner in this slot claims work is in flight
  * when nothing has been typed yet.
  */
-function EmptyBody({ isSolving }: { isSolving: boolean }) {
+function EmptyBody({ isSolving }: Readonly<{ isSolving: boolean }>) {
   return (
     <>
       <p className="text-muted text-sm">
@@ -105,20 +133,24 @@ function FeasibleBody({
   contextLength,
   placement,
   qualityLabel,
-}: {
+}: Readonly<{
   contextLength: number;
   placement: Extract<Placement, { feasible: true }>;
   qualityLabel: string | null;
-}) {
+}>) {
   return (
     <>
-      {/* The resolved silicon, named plainly and once. */}
+      {/* The resolved silicon, named plainly and once. The sentence is built
+          from explicit fragments rather than wrapped JSX text, so no line break
+          can silently become — or stop being — a space. */}
       <p className="text-sm">
-        Runs on <span className="font-medium">{placement.gpuLabel}</span> at{" "}
+        <span>{"Runs on "}</span>
+        <span className="font-medium">{placement.gpuLabel}</span>
+        <span>{" at "}</span>
         <span className="tabular-nums">
           {formatTokensPerSecond(placement.predictedTokensPerSecond)}
         </span>
-        .
+        <span>{"."}</span>
       </p>
 
       <DetailList
@@ -153,8 +185,8 @@ function FeasibleBody({
       {/* The predicted figure is not what the catalog will show. Saying so here
           is cheaper than a creator discovering it on their own model card. */}
       <p className="text-muted text-xs">
-        Predicted from memory bandwidth. The marketplace shows the speed measured
-        on the real worker after deployment, never this one.
+        Predicted from memory bandwidth. The marketplace shows the speed measured on the real worker
+        after deployment, never this one.
       </p>
 
       <WhyThisGpu placement={placement} />
@@ -175,11 +207,11 @@ function InfeasibleBody({
   onApplyRemedy,
   placement,
   remedies,
-}: {
+}: Readonly<{
   onApplyRemedy: (remedy: Remedy) => void;
   placement: Extract<Placement, { feasible: false }>;
   remedies: Remedy[];
-}) {
+}>) {
   return (
     <>
       <Alert status="danger">
@@ -224,21 +256,18 @@ function InfeasibleBody({
  * `Disclosure.Content` / `Disclosure.Body`, not `Disclosure.Panel` — the PRD's
  * §4.1.2 sketch says `Panel` and no such subcomponent exists in 3.2.4.
  */
-function WhyThisGpu({ placement }: { placement: Placement }) {
+function WhyThisGpu({ placement }: Readonly<{ placement: Placement }>) {
   return (
     <Disclosure>
-      <Disclosure.Trigger className="text-accent text-sm">
-        Why this GPU?
-      </Disclosure.Trigger>
+      <Disclosure.Trigger className="text-accent text-sm">Why this GPU?</Disclosure.Trigger>
       <Disclosure.Content>
         <Disclosure.Body className="flex flex-col gap-3 pt-2">
           {placement.feasible ? (
             <>
               <p className="text-muted text-sm">
-                The cheapest tier that both fits the weights and meets your minimum
-                speed. Decode speed is bounded by memory bandwidth, so it depends on
-                how many bytes are read per token — not on how much memory a card
-                has.
+                The cheapest tier that both fits the weights and meets your minimum speed. Decode
+                speed is bounded by memory bandwidth, so it depends on how many bytes are read per
+                token — not on how much memory a card has.
               </p>
               <DetailList
                 rows={[
@@ -279,26 +308,22 @@ function WhyThisGpu({ placement }: { placement: Placement }) {
               />
               {placement.needsVolume ? (
                 <p className="text-muted text-xs">
-                  These weights exceed the node cache threshold, so a{" "}
-                  {placement.volumeGb} GB network volume is provisioned to hold them.
-                  That volume is a standing monthly cost — the one place &ldquo;$0
-                  idle&rdquo; is not literal.
+                  These weights exceed the node cache threshold, so a {placement.volumeGb} GB
+                  network volume is provisioned to hold them. That volume is a standing monthly cost
+                  — the one place &ldquo;$0 idle&rdquo; is not literal.
                 </p>
               ) : null}
             </>
           ) : (
             <p className="text-muted text-sm">
-              No tier satisfied both constraints. Every candidate and the reason it
-              was rejected is below.
+              No tier satisfied both constraints. Every candidate and the reason it was rejected is
+              below.
             </p>
           )}
 
           <div className="flex flex-col gap-1">
             {placement.considered.map((tier) => (
-              <div
-                className="flex items-baseline justify-between gap-3 text-xs"
-                key={tier.tier}
-              >
+              <div className="flex items-baseline justify-between gap-3 text-xs" key={tier.tier}>
                 <span className={tier.accepted ? "text-foreground" : "text-muted"}>
                   {tier.tier}
                 </span>
