@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "dev": "next dev",
-    "build": "npm run check:env && npm run lint && next build",
+    "build": "next build",
     "start": "next start",
     "oxlint": "oxlint",
     "lint:next": "eslint .",
@@ -31,7 +31,8 @@
     "check:env": "node lib/scripts/check-env.mjs",
     "check": "npm run check:env && npm run lint && npm run typecheck",
     "typecheck:keygen": "tsc -p tools/keygen --noEmit",
-    "test:keygen": "npm test --workspace @custom-ai/keygen"
+    "test:keygen": "npm test --workspace @custom-ai/keygen",
+    "build:local": "npm run check && next build"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.31",

@@ -186,10 +186,14 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-          # Caches ~/.cache/deno (the module + npm registry cache) keyed on the
-          # lockfiles/config it finds. There are no remote imports today, so this
-          # is close to a no-op now and free insurance once std/ or npm: appears.
+          # Caches ~/.cache/deno (the module + npm registry cache). setup-deno
+          # keys the cache off deno.lock by default; this project has no
+          # deno.lock (deno.json declares `"imports": {}` and the gateway has
+          # zero remote imports today), so cache-hash supplies the key instead —
+          # without it the action has nothing to key on. Close to a no-op now,
+          # free insurance the moment a jsr:/npm: specifier appears.
           cache: true
+          cache-hash: ${{ hashFiles('supabase/functions/gateway/deno.json') }}
 
       # `deno check` on the runtime sources. Not `deno task check` from deno.json:
       # that task lists only index/auth/resolve/errors and silently skips
@@ -276,8 +280,10 @@ jobs:
 
       # The CLI enables pgTAP itself (`create extension if not exists pgtap with
       # schema extensions`), runs supabase/pg_prove:3.36 against the local db, and
-      # propagates pg_prove's exit code. No `continue-on-error`, no `|| true`, no
-      # `set +e` anywhere in this job: a failing invariant must fail the build.
+      # propagates pg_prove's exit code. No `continue-on-error`, no `|| true` and
+      # no `set +e` on any step that asserts something (the trailing `|| true` on
+      # the teardown step below is cleanup only, and runs after the verdict is
+      # already recorded): a failing invariant must fail the build.
       #
       # 05_concurrency_test.sql creates the `dblink` extension at runtime and fans
       # each scenario out over genuinely separate backends via
