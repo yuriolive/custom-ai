@@ -240,11 +240,21 @@ update public.custom_models m
 -- reference (see the column comment): for Modal it is a URL query string that
 -- selects the container pool, which the gateway appends verbatim.
 --
--- ENVIRONMENT-SPECIFIC, NOT A CONSTANT. It must be re-pointed after ANY Modal
--- redeploy, and it is meaningless against RunPod or the mock upstream — where
--- the reference is an id used as a path segment instead. If a request 404s or
--- hangs at the upstream, check this value FIRST; a stale pool reference looks
--- exactly like a cold-start timeout from the client side.
+-- CORRECTED after live verification. An earlier revision of this comment said the
+-- value must be re-pointed after ANY Modal redeploy. It does not: this row holds
+-- only the QUERY STRING, and the query string is a pure function of the
+-- (repo, file, ctx_size, parallel) tuple. A redeploy that keeps the same tuple
+-- leaves this row valid. The HOST lives in UPSTREAM_BASE_URL, in the function's
+-- environment — that is what actually goes stale on redeploy, along with
+-- UPSTREAM_PROVIDER if it is still pointing at the mock.
+--
+-- So when a request 404s or hangs at the upstream, check the ENV first
+-- (UPSTREAM_PROVIDER / UPSTREAM_BASE_URL), then this row. A stale pool reference
+-- still looks exactly like a cold-start timeout from the client side, which is
+-- why the order matters.
+--
+-- It remains meaningless against RunPod or the mock upstream, where the reference
+-- is an id used as a path segment rather than a query string.
 --
 -- ctx_size below must stay in step with custom_models.context_length (8192): the
 -- worker allocates its KV cache from ctx_size, so a larger context_length here

@@ -1887,6 +1887,28 @@ FR-DEP-069 (P2)  The shared weights Volume is mounted read-write into every pool
                  while all models are platform-controlled; it becomes a cross-tenant
                  cache-poisoning path the moment creator-supplied code runs in these
                  containers. Revisit before any such feature.
+FR-DEP-065a (P0) VERIFIED END TO END with proxy auth ON (the last unexercised path).
+                 Gateway -> authenticated Modal endpoint -> streamed completion ->
+                 atomic settlement, using an unmodified openai SDK:
+                   unauthenticated  -> 401 at Modal's edge, ZERO containers started
+                   authenticated    -> 200, TTFT 24.9s cold, 43 deltas
+                   usage_source     -> "upstream" (usage_estimated = f)
+                   settlement       -> 98 = 27 prompt + 71 completion micro-USD,
+                                       platform 20 + creator 78, exact
+                   wallet_ledger    -> exactly one row; v_balance_drift 0 rows
+                   revoked key 401 / unknown model 404, both short-circuiting
+                   before upstream so neither spends GPU
+                 FR-DEP-070's /health gate EARNED ITS PLACE: llama-server needed
+                 11.0s after the port bound. Without the gate that cold request
+                 would have received llama.cpp's 503 "Loading model".
+FR-DEP-065b (P1) CORRECTION, from the same run. `upstream_endpoint_ref` does NOT go
+                 stale on redeploy, contrary to an earlier claim in this document
+                 and in seed.sql. The column holds only the QUERY STRING, which is a
+                 pure function of the (repo, file, ctx_size, parallel) tuple — a
+                 redeploy keeping that tuple leaves the row valid. The HOST lives in
+                 UPSTREAM_BASE_URL, in the function environment, and THAT is what
+                 goes stale (along with UPSTREAM_PROVIDER if it still says `mock`).
+                 Diagnose the env before the row.
 FR-DEP-070 (P0)  Readiness MUST be gated on llama.cpp's /health inside @modal.enter().
                  @modal.web_server returns as soon as the port is bound, which for a
                  15 GB model is ~14 s before the server can actually answer. Without

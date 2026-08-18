@@ -128,6 +128,27 @@ Authorization: Bearer wk-....ws-...      # OpenAI-SDK-compatible single-header f
 records only the header *names* in its report — never the values. Nothing in this directory
 logs or persists a token.
 
+### Verified end to end through the gateway (2026-08-18, modal 1.5.4)
+
+The authenticated path is no longer theoretical. With `requires_proxy_auth=True` live on
+`LlamaServerL4`, a fresh proxy token in the gateway's `MODAL_KEY`/`MODAL_SECRET`, and
+`UPSTREAM_PROVIDER=modal` + `UPSTREAM_BASE_URL=https://<workspace>--nexus-llamacpp-llamaserverl4-serve.modal.run`:
+
+* unauthenticated `GET /health` and `POST /v1/chat/completions` -> `401 modal-http: missing
+  credentials for proxy authorization`, and `modal container list` stayed empty, so the
+  rejection really is at the edge and starts no GPU;
+* the same endpoint, called by the gateway with the header pair, cold-started in 24.9 s to
+  first token (weights `CACHED` from the volume in 0.1 s; `llama-server HEALTHY after 11.0 s`)
+  and streamed;
+* the stream carried an authoritative `usage` object — `prompt_tokens=53`,
+  `completion_tokens=47`, `prompt_tokens_details.cached_tokens=0` — so the gateway settled
+  with `usage_estimated = false`. The character estimator did not fire.
+
+`upstream_endpoint_ref` in `custom_models` carries ONLY the query string; the host comes from
+`UPSTREAM_BASE_URL`. Re-pointing after a redeploy therefore usually means changing the env
+var, not the row — the row only changes when a model's `(repo, file, ctx, parallel)` tuple
+changes, because that tuple *is* the container-pool selector.
+
 **Rotation is unresolved.** Modal proxy tokens have no expiry and no built-in rotation, and
 `create` is the only way to mint one. Rotating means: create a second token, update
 `MODAL_KEY`/`MODAL_SECRET`, redeploy the gateway, then delete the old token — both are valid
