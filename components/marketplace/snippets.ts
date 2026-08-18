@@ -5,13 +5,18 @@
  * impression is whether the thing they copied off the model card runs. Three
  * details decide that, and all three have burned this project before.
  *
- *  1. **The model id.** `creator-handle/model-slug`, lowercase, taken from the
- *     platform identity — NOT `hf_repo_slug`. The live example is
- *     `jonathancoletti/qwen3.8-27b-uncensored-gguf`, whose Hugging Face path is
- *     `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF`. The gateway resolves the
- *     former and returns 404 `model_not_found` for the latter (CONTRACTS.md).
- *     `CatalogModel.modelId` is built from `creatorHandle`/`slug` for exactly
- *     this reason; never substitute the repo path here.
+ *  1. **The model id.** `creator-handle/model-slug`, taken from the PLATFORM
+ *     identity — NOT `hf_repo_slug`. The live example is
+ *     `jonathancoletti/qwen3.8-27b-uncensored-gguf`.
+ *     CASE does not matter: `resolve.ts` lowercases both halves, so
+ *     `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF` also resolves today —
+ *     but ONLY because this seed's handle and slug happen to equal that path
+ *     lowercased. It breaks as soon as they diverge, which is the normal case,
+ *     since the handle is a platform identity unrelated to the HF account and
+ *     the slug is chosen at registration.
+ *     Case is forgiving; the names are not. `CatalogModel.modelId` is built
+ *     from `creatorHandle`/`slug` for exactly this reason — never substitute
+ *     the repo path here.
  *
  *  2. **The base URL.** The gateway is a Supabase Edge Function; its
  *     OpenAI-compatible root is `{supabase-url}/functions/v1/gateway/v1`. The

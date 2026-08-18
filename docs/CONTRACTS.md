@@ -13,14 +13,20 @@ stream = client.chat.completions.create(
 )
 ```
 
-> **The platform model id is NOT the Hugging Face repo path.** An earlier revision of
-> this contract wrote `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF`, which cannot
-> resolve: the id is `creator-handle/model-slug`, and both halves are lowercase by
-> schema constraint (`handle ~ '^[a-z0-9][a-z0-9-]{1,38}$'`,
-> `slug ~ '^[a-z0-9][a-z0-9._-]{1,62}$'`). The creator handle is a *platform* identity
-> that need not match the HF account, and the slug is chosen at registration.
-> Whether to also accept the HF path as a case-insensitive alias is an open product
-> question (§8.4 Q14) — today it is a 404.
+> **The platform model id is `creator-handle/model-slug`, not the Hugging Face repo
+> path — but CASE does not matter.** Two earlier revisions of this contract were both
+> wrong and both were repeated to agents, so the measured behaviour is stated here:
+>
+> `resolve.ts` lowercases **both halves** of `model` before lookup, so ids are
+> case-insensitive. `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF` therefore **resolves
+> and streams today (verified, HTTP 200)** — not because HF paths are supported, but
+> because this seed's handle and slug happen to equal that path lowercased. It breaks
+> the moment they diverge, which is the normal case: the handle is a *platform*
+> identity that need not match the HF account, and the slug is chosen at registration.
+>
+> So: **case is forgiving, names are not.** Do not describe the HF path as an alias,
+> and do not describe it as a 404. Whether to add a real HF-path alias is open
+> (§8.4 Q14).
 → tokens stream from a scale-to-zero llama.cpp worker, and exactly one `usage_transactions` row settles with a correct 80/20 split and no negative balance.
 
 Everything not required by that sentence is out of scope for MVP-0.
