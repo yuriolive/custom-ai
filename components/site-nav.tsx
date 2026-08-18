@@ -34,7 +34,9 @@ export async function SiteNav() {
           Playground
         </Link>
 
-        <div className="ml-auto flex items-center gap-3">
+        {/* min-w-0 lets this cluster shrink; without it the handle's intrinsic
+            width forced a 37px document overflow at 375px. */}
+        <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
           <BalanceChip />
           <ThemeToggle />
           {profile ? <UserMenu handle={profile.handle} /> : <SignInLink />}

@@ -1,4 +1,14 @@
 import type { Metadata } from "next";
+
+/**
+ * The catalog is never prerendered. It reads cookies (for the signed-in nav) and
+ * queries Postgres, so it is inherently per-request — and marking it explicitly
+ * stops `next build` from attempting a prerender that would need a reachable
+ * database at BUILD time. Without this, a build against an unreachable Supabase
+ * fails page-data collection with a minified `TypeError` that points nowhere
+ * near the real cause.
+ */
+export const dynamic = "force-dynamic";
 import { Suspense } from "react";
 
 import { CatalogControls } from "@/components/marketplace/catalog-controls";

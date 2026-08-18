@@ -46,7 +46,7 @@ export function UserMenu({ handle }: { handle: string }) {
         isDisabled={isSigningOut}
       >
         {isSigningOut ? <Spinner size="sm" /> : null}
-        <span className="max-w-[10rem] truncate">
+        <span className="max-w-[5rem] truncate sm:max-w-[10rem]">
           {isSigningOut ? "Signing out…" : handle}
         </span>
       </Dropdown.Trigger>

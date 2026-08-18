@@ -271,7 +271,14 @@ export async function fetchCatalogPage(
     isCatalogEmpty(supabase),
   ]);
 
-  if (pageResult.error) throw new Error(pageResult.error.message);
+  // Degrade, do not throw. A catalog read failing is a reason to show the empty
+  // state, not to 500 the front door — the homepage is the one page that must
+  // survive the database being briefly unreachable. `isCatalogEmpty` already
+  // takes this stance (it claims non-empty on error so the copy stays sensible).
+  if (pageResult.error) {
+    console.error("catalog page query failed", { message: pageResult.error.message });
+    return { models: [], total: 0, page: query.page, pageSize: PAGE_SIZE, catalogIsEmpty };
+  }
 
   const models = ((pageResult.data ?? []) as unknown as CatalogRow[])
     .map(toCatalogModel)
