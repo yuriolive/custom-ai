@@ -293,9 +293,7 @@ export function buildUpstreamRequest(
   let url: string;
   if (provider === "modal") {
     const query = (resolved.runpodEndpointId ?? "").replace(/^[?]+/, "");
-    url = query
-      ? `${base}/v1/chat/completions?${query}`
-      : `${base}/v1/chat/completions`;
+    url = query ? `${base}/v1/chat/completions?${query}` : `${base}/v1/chat/completions`;
     // Modal proxy auth is a header PAIR and is only sent when configured; an
     // endpoint deployed without `requires_proxy_auth` accepts the call unauthed.
     if (opts.modalKey && opts.modalSecret) {
@@ -776,8 +774,14 @@ async function settle(
       p_txn_id: requestId,
       p_prompt_tokens: usage.promptTokens,
       p_completion_tokens: usage.completionTokens,
-      p_ttft_ms: meta?.ttftMs ?? null,
-      p_duration_ms: meta?.durationMs ?? null,
+      // MUST be integers: `p_ttft_ms` / `p_duration_ms` are Postgres `integer`,
+      // but stream.ts derives both from performance.now(), which is fractional.
+      // Sending 23461.2345 makes PostgREST answer 400 "invalid input syntax for
+      // type integer" and the whole settlement is lost — the transaction is left
+      // `reserved` and the GPU work goes unbilled. A mock upstream that accepts
+      // floats hides this completely.
+      p_ttft_ms: toIntOrNull(meta?.ttftMs),
+      p_duration_ms: toIntOrNull(meta?.durationMs),
       p_cold_start: meta?.coldStart ?? false,
       p_usage_estimated: usage.source === "estimated",
       p_client_disconnected: meta?.clientGone ?? false,
@@ -900,6 +904,11 @@ function now(): number {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Coerces a millisecond reading to a Postgres `integer`, preserving null. */
+export function toIntOrNull(n: number | null | undefined): number | null {
+  return typeof n === "number" && Number.isFinite(n) ? Math.round(n) : null;
 }
 
 /** Matches both `/v1/...` and the deployed `/functions/v1/gateway/v1/...` form. */

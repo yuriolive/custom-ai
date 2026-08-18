@@ -1,9 +1,6 @@
 {
-  "name": "gateway",
-  "version": "0.1.0",
-  "exports": "./index.ts",
   "tasks": {
-    "check": "deno check index.ts auth.ts resolve.ts errors.ts",
+    "check": "deno check index.ts auth.ts resolve.ts errors.ts stream.ts usage.ts",
     "test": "deno test tests/",
     "lint": "deno lint",
     "fmt": "deno fmt --check"

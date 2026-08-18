@@ -288,44 +288,141 @@ function notFound(parsed: ParsedModelId): GatewayError {
 // ─── PostgREST-backed executor ───────────────────────────────────────────────
 
 /**
+ * The envelope actually returned by `public.gateway_resolve` (migration
+ * 20260817001800). It is FLAT and camelCase — it mirrors `ResolvedRequest`
+ * rather than the `{api_key, model}` join shape this module consumes — and the
+ * raw facts the gateway maps to status codes come back as sibling keys.
+ */
+interface GatewayResolveEnvelope {
+  found: boolean;
+  reason?: "no_key" | "no_model";
+  apiKeyId?: string;
+  userId?: string;
+  modelId?: string;
+  creatorId?: string;
+  runpodEndpointId?: string | null;
+  servedModelName?: string;
+  runtime?: ModelRuntime;
+  pricePromptMicro?: number;
+  priceCompletionMicro?: number;
+  platformFeeBps?: number;
+  contextLength?: number;
+  coldStartBudgetS?: number;
+  keyRevokedAt?: string | null;
+  modelStatus?: string;
+  modelVisibility?: string;
+  modelDeletedAt?: string | null;
+}
+
+function envelopeToRow(env: GatewayResolveEnvelope): RawResolveRow {
+  if (!env?.found) return { api_key: null, model: null };
+  return {
+    api_key: {
+      id: env.apiKeyId ?? "",
+      user_id: env.userId ?? "",
+      revoked_at: env.keyRevokedAt ?? null,
+    },
+    model: {
+      id: env.modelId ?? "",
+      user_id: env.creatorId ?? "",
+      status: env.modelStatus ?? "",
+      visibility: env.modelVisibility ?? "",
+      deleted_at: env.modelDeletedAt ?? null,
+      runpod_endpoint_id: env.runpodEndpointId ?? null,
+      served_model_name: env.servedModelName ?? "",
+      runtime: env.runtime as ModelRuntime,
+      price_prompt_micro_usd_per_mtoken: Number(env.pricePromptMicro ?? 0),
+      price_completion_micro_usd_per_mtoken: Number(env.priceCompletionMicro ?? 0),
+      platform_fee_bps: Number(env.platformFeeBps ?? 0),
+      context_length: Number(env.contextLength ?? 0),
+      cold_start_budget_s: Number(env.coldStartBudgetS ?? 0),
+    },
+  };
+}
+
+/**
  * Calls the `gateway_resolve` RPC (supabase/migrations — owned by A1).
  *
- * REPORTED GAP: CONTRACTS.md's RPC list does not include this function. The
- * required signature is documented in supabase/functions/gateway/README.md.
  * The lookup must NOT filter on `revoked_at is null` — a revoked key has to come
  * back so we can answer 401 `revoked_api_key` rather than 401 `invalid_api_key`.
+ * The migration honors that.
+ *
+ * TWO DIVERGENCES from the signature documented in README.md, resolved in favor
+ * of the migration because it is the deployed artifact:
+ *
+ *   1. The parameter is `p_model_slug`, not `p_slug`, and there is no
+ *      `p_include_model`. The RPC always resolves both halves.
+ *   2. The reply is a flat camelCase envelope, not `{api_key, model}`.
+ *
+ * Because the RPC has no key-only mode, the two cases that need one are served
+ * by a direct `api_keys` read instead:
+ *
+ *   - `includeModel === false` (model-cache hit, and `GET /v1/models`), which
+ *     keeps the "key validity is never cached" invariant intact; and
+ *   - `reason === "no_model"`, where the envelope drops the key half entirely.
+ *     Without this second read a REVOKED key asking for an UNKNOWN model would
+ *     get 404 instead of 401 `revoked_api_key`, inverting the documented check
+ *     order. It costs one extra round trip only on an error path.
  */
 export function makePostgrestExecutor(
   supabaseUrl: string,
   serviceRoleKey: string,
   fetchImpl: typeof fetch = fetch,
 ): ResolveExecutor {
-  const url = `${supabaseUrl.replace(/\/+$/, "")}/rest/v1/rpc/gateway_resolve`;
+  const base = supabaseUrl.replace(/\/+$/, "");
+  const rpcUrl = `${base}/rest/v1/rpc/gateway_resolve`;
+  const authHeaders = {
+    "apikey": serviceRoleKey,
+    "authorization": `Bearer ${serviceRoleKey}`,
+    "content-type": "application/json",
+    "accept-profile": "public",
+  };
+
+  const internal = () =>
+    new GatewayError(
+      "internal_error",
+      "The server encountered an internal error. Please retry.",
+    );
+
+  async function lookupKeyOnly(keyHash: string): Promise<RawApiKeyRow | null> {
+    const params = new URLSearchParams({
+      select: "id,user_id,revoked_at",
+      key_hash: `eq.${keyHash}`,
+      limit: "1",
+    });
+    const res = await fetchImpl(`${base}/rest/v1/api_keys?${params}`, {
+      headers: authHeaders,
+    });
+    if (!res.ok) throw internal();
+    const rows = await res.json() as RawApiKeyRow[];
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  }
+
   return async (q: ResolveQuery): Promise<RawResolveRow> => {
-    const res = await fetchImpl(url, {
+    if (!q.includeModel) {
+      return { api_key: await lookupKeyOnly(q.keyHash), model: null };
+    }
+
+    const res = await fetchImpl(rpcUrl, {
       method: "POST",
-      headers: {
-        "apikey": serviceRoleKey,
-        "authorization": `Bearer ${serviceRoleKey}`,
-        "content-type": "application/json",
-        "accept-profile": "public",
-      },
+      headers: authHeaders,
       body: JSON.stringify({
         p_key_hash: q.keyHash,
         p_creator_handle: q.creatorHandle,
-        p_slug: q.slug,
-        p_include_model: q.includeModel,
+        p_model_slug: q.slug,
       }),
     });
 
     if (!res.ok) {
       // Never surface PostgREST detail to a caller.
-      throw new GatewayError(
-        "internal_error",
-        "The server encountered an internal error. Please retry.",
-      );
+      throw internal();
     }
-    const body = await res.json();
-    return (body ?? { api_key: null, model: null }) as RawResolveRow;
+    const env = await res.json() as GatewayResolveEnvelope | null;
+    if (!env) return { api_key: null, model: null };
+
+    if (!env.found && env.reason === "no_model") {
+      return { api_key: await lookupKeyOnly(q.keyHash), model: null };
+    }
+    return envelopeToRow(env);
   };
 }

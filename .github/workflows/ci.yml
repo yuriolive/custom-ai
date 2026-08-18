@@ -203,27 +203,19 @@ jobs:
       - name: deno check
         working-directory: supabase/functions/gateway
         run: deno check index.ts auth.ts resolve.ts errors.ts stream.ts usage.ts
-        # TODO(unpin): A5/A6 are fixing the Deno-only errors this surfaces right
-        # now (node's type-stripping never type-checked against Deno's lib set).
-        # Once that lands, DELETE this continue-on-error — leaving it makes the
-        # step decorative. Verify by confirming the step is green on main, then
-        # remove the line.
-        continue-on-error: true
 
       - name: deno lint
         working-directory: supabase/functions/gateway
         run: deno lint
-        # TODO(unpin): same as above — remove once the gateway is clean.
-        continue-on-error: true
 
+      # Unpinned: all three steps verified clean under Deno 2.9.5 after the
+      # one-time `deno fmt` pass. NOTE the runtime gap — local Deno is 2.9.5 but
+      # supabase edge-runtime 1.74.3 targets ~Deno 2.1.4, so these checks are
+      # STRICTER than the deploy target. That direction is safe; the reverse
+      # would not be.
       - name: deno fmt --check
         working-directory: supabase/functions/gateway
         run: deno fmt --check
-        # TODO(unpin): the repo has never been run through `deno fmt`, and
-        # deno.json sets a non-default lineWidth 96, so this will report the whole
-        # directory until someone runs `deno fmt` once. Same rule as the root
-        # prettier format:check: remove after the one-time reformat commit.
-        continue-on-error: true
 
   pgtap:
     name: pgtap (129 billing invariants)
