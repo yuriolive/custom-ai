@@ -49,3 +49,8 @@ venv/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+
+.vercel
+# (vercel link appended `.env*` here; removed — it sat AFTER the
+#  !.env.example negation above, and last-match-wins would have
+#  re-ignored a file this repo deliberately tracks.)
