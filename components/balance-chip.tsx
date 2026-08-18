@@ -2,7 +2,7 @@
 
 import { Chip } from "@heroui/react";
 
-import { formatMicroUsd } from "@/lib/format";
+import { formatBalanceMicroUsd } from "@/lib/format";
 import type { WalletBalance } from "@/lib/types";
 
 /**
@@ -32,7 +32,7 @@ export function BalanceChip({ balance = PLACEHOLDER }: { balance?: WalletBalance
       }
       variant="soft"
     >
-      {formatMicroUsd(balance.balanceMicroUsd)}
+      {formatBalanceMicroUsd(balance.balanceMicroUsd)}
       {balance.isPlaceholder ? " (placeholder)" : ""}
     </Chip>
   );

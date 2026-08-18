@@ -273,7 +273,9 @@ function readHeader(
   if (typeof (h as Headers).get === "function") return (h as Headers).get(name);
   const rec = h as Record<string, string>;
   const hit = Object.keys(rec).find((k) => k.toLowerCase() === name);
-  return hit ? rec[hit] : null;
+  // `?? null` for the Next app's noUncheckedIndexedAccess; `hit` came from
+  // Object.keys(rec), so the lookup cannot actually be undefined.
+  return hit ? (rec[hit] ?? null) : null;
 }
 
 /** A terminating SSE error frame, for failures after headers have flushed (FR-GW-047). */

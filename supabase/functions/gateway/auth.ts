@@ -38,7 +38,11 @@ export function extractApiKey(req: Request): string {
   const m = /^Bearer\s+(.+)$/i.exec(header.trim());
   if (!m) throw invalidKey();
 
-  const token = m[1].trim();
+  // `?? ""` satisfies the Next app's tsconfig, which sets
+  // noUncheckedIndexedAccess where this project's own config does not — the
+  // console's key route imports this module. The `(.+)` group always matches
+  // when `m` is non-null, and an empty token fails isWellFormedApiKey anyway.
+  const token = (m[1] ?? "").trim();
   if (!isWellFormedApiKey(token)) throw invalidKey();
   return token;
 }
@@ -102,12 +106,15 @@ export function keyFingerprintForLog(hash: string): string {
 
 function toHex(bytes: Uint8Array): string {
   let out = "";
-  for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, "0");
+  // The `!`s below are erased at compile time and change no emitted code; they
+  // exist so this file also typechecks under the Next app's stricter
+  // noUncheckedIndexedAccess, which the console's key route compiles it with.
+  for (let i = 0; i < bytes.length; i++) out += bytes[i]!.toString(16).padStart(2, "0");
   return out;
 }
 
 function base64url(bytes: Uint8Array): string {
   let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

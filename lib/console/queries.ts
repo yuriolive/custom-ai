@@ -6,11 +6,29 @@
  * session) and from the browser (pagination, filtering, post-mutation refresh).
  * Nothing in this module writes.
  *
- * There is no `user_id` parameter anywhere below on purpose. RLS restricts
- * every one of these tables to `auth.uid()` (CONTRACTS.md §Frontend / auth
- * contract), so scoping is enforced by Postgres, not by a filter a caller could
- * forget. The one exception is `fetchSummary`, which reads a single `profiles`
- * row by id — and even that is redundant with the policy.
+ * SCOPING. For `api_keys` and `wallet_ledger`, RLS is the whole story: their
+ * only SELECT policy is `user_id = auth.uid()`, so those functions take no user
+ * id and cannot leak across accounts even if a caller forgets one.
+ *
+ * `usage_transactions` is DIFFERENT, and the difference is a money bug waiting
+ * to happen. That table has TWO select policies
+ * (20260817000900_usage_transactions.sql):
+ *
+ *   usage_txn_select_own        user_id    = auth.uid()
+ *   usage_txn_select_as_creator creator_id = auth.uid() AND status = 'settled'
+ *
+ * The second exists so a creator can see earnings on their own models. It means
+ * "every row I can read" is NOT "every row I paid for": a creator reading this
+ * table sees other people's spend on their models, at the payer's cost. Summing
+ * that into a "spend" figure reports money the account never spent — observed
+ * live, before this note existed: the seeded creator has a $0 balance, has never
+ * paid for a request, and their console read "Spend · 30 days $0.000384".
+ *
+ * So every `usage_transactions` read below takes `userId` as a REQUIRED
+ * positional argument and filters on it explicitly. That is deliberately not an
+ * optional field on the query object — an omitted filter here misstates a bill,
+ * so it must be impossible to omit. Creator-side earnings are a separate
+ * surface (`creator_earnings_feed`), not this one.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -101,6 +119,8 @@ type UsageRecord = Omit<UsageRow, "model_slug" | "model_display_name"> & {
 
 export async function fetchUsagePage(
   supabase: SupabaseClient,
+  /** The caller's own id. Rows where they are only the CREATOR are excluded. */
+  userId: string,
   query: UsageQuery = {},
 ): Promise<UsagePage> {
   const limit = query.limit ?? PAGE_SIZE;
@@ -108,6 +128,8 @@ export async function fetchUsagePage(
   let q = supabase
     .from("usage_transactions")
     .select(USAGE_COLUMNS)
+    // Not redundant with RLS — see the note at the top of this file.
+    .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     // One extra row is the has-more probe: cheaper and more honest than an
@@ -161,11 +183,14 @@ export async function fetchUsagePage(
  */
 export async function fetchCalledModels(
   supabase: SupabaseClient,
+  /** The caller's own id — models they PAID to call, not models they own. */
+  userId: string,
   scan = 500,
 ): Promise<CalledModel[]> {
   const { data, error } = await supabase
     .from("usage_transactions")
     .select("model_id, custom_models(slug, display_name)")
+    .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(scan);
 
@@ -186,7 +211,7 @@ export async function fetchCalledModels(
     });
   }
 
-  return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
+  return [...seen.values()].toSorted((a, b) => a.label.localeCompare(b.label));
 }
 
 // ─── Wallet ledger ──────────────────────────────────────────────────────────
@@ -246,6 +271,9 @@ export async function fetchSummary(
     supabase
       .from("usage_transactions")
       .select("status, cost_micro_usd, usage_estimated", { count: "exact" })
+      // Payer-scoped. Without this the creator policy folds other people's
+      // spend on this account's models into `spend30dMicroUsd`.
+      .eq("user_id", userId)
       .gte("created_at", sinceIso)
       .limit(ROLLUP_LIMIT),
   ]);

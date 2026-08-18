@@ -3,7 +3,10 @@
  * §Money: "No floats anywhere in a monetary path". The division below is the
  * single, final presentation step — nothing downstream reads the result back.
  */
-export function formatMicroUsd(micro: number | null | undefined): string {
+export function formatMicroUsd(
+  micro: number | null | undefined,
+  opts: { rounding?: "nearest" | "down" } = {},
+): string {
   if (micro == null) return "—";
   const negative = micro < 0;
   const abs = Math.abs(Math.trunc(micro));
@@ -11,11 +14,31 @@ export function formatMicroUsd(micro: number | null | undefined): string {
   // Below a tenth of a cent, show 4 decimals so a real charge never reads $0.00.
   const decimals = abs < 1_000 ? 6 : abs < 10_000 ? 4 : 2;
   const divisor = 10 ** (6 - decimals);
-  const scaled = Math.round(abs / divisor);
+  const scaled = opts.rounding === "down"
+    ? Math.floor(abs / divisor)
+    : Math.round(abs / divisor);
   const whole = Math.floor(scaled / 10 ** decimals);
   const frac = String(scaled % 10 ** decimals).padStart(decimals, "0");
 
   return `${negative ? "-" : ""}$${whole.toLocaleString("en-US")}.${frac}`;
+}
+
+/**
+ * An AVAILABLE BALANCE must never be displayed rounded UP.
+ *
+ * `formatMicroUsd` rounds to nearest, which is right for a cost already
+ * incurred but wrong for spendable funds: a balance of 9,999,328 micro-USD
+ * renders as "$10.00", telling the holder they can spend more than they
+ * actually have, and the shortfall only surfaces as a 402 mid-request.
+ * Rounding down is the conservative direction for funds you are about to
+ * spend, exactly as CEIL is the conservative direction for a charge
+ * (CONTRACTS.md §Money).
+ *
+ * Use this for wallet balances and any "available" figure. Use
+ * `formatMicroUsd` for costs, charges and ledger amounts.
+ */
+export function formatBalanceMicroUsd(micro: number | null | undefined): string {
+  return formatMicroUsd(micro, { rounding: "down" });
 }
 
 /** Compact integer formatting for token counts. */

@@ -174,16 +174,21 @@ export function describeOAuthCallbackError(
   errorCode: string | null,
   errorDescription: string | null,
 ): AuthFailure {
-  if (error === "access_denied" || errorCode === "access_denied") {
-    return failure(
-      "oauth_denied",
-      "GitHub sign-in was cancelled, so no account was connected. You can try again or use email and password.",
-    );
-  }
+  // `otp_expired` FIRST. GoTrue reports an expired or already-used *email*
+  // link as `error=access_denied&error_code=otp_expired`, so matching on
+  // `access_denied` first told everyone whose confirmation link had expired
+  // that their "GitHub sign-in was cancelled" — verified against a re-used
+  // confirmation link on the local stack.
   if (errorCode === "otp_expired" || errorCode === "expired_token") {
     return failure(
       "expired_link",
       "That link has expired or was already used. Request a new one below.",
+    );
+  }
+  if (error === "access_denied" || errorCode === "access_denied") {
+    return failure(
+      "oauth_denied",
+      "GitHub sign-in was cancelled, so no account was connected. You can try again or use email and password.",
     );
   }
   if (error === "server_error") {

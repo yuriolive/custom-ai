@@ -4,10 +4,8 @@ import { Button, Spinner } from "@heroui/react";
 import { useActionState } from "react";
 
 import { AuthAlert } from "@/components/auth/auth-alert";
-import {
-  initialAuthFormState,
-  signInWithGitHubAction,
-} from "@/app/(auth)/actions";
+import { signInWithGitHubAction } from "@/app/(auth)/actions";
+import { initialAuthFormState } from "@/app/(auth)/form-state";
 
 function GitHubMark() {
   return (

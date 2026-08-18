@@ -6,6 +6,7 @@ import {
   describeOAuthCallbackError,
 } from "@/lib/supabase/auth-errors";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
+import { browserOrigin } from "@/lib/supabase/request-origin";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -20,7 +21,9 @@ import { createClient } from "@/lib/supabase/server";
  * Route Handlers *may* write cookies, unlike Server Components).
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
+  // Not `request.nextUrl.origin` — see lib/supabase/request-origin.ts.
+  const origin = browserOrigin(request);
   const next = safeNextPath(searchParams.get("next")) ?? SIGNED_IN_HOME;
 
   const providerError = searchParams.get("error");

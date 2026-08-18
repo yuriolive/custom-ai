@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import type { AuthFormState } from "@/app/(auth)/form-state";
 import { describeAuthError } from "@/lib/supabase/auth-errors";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
 import { createClient } from "@/lib/supabase/server";
@@ -17,18 +18,6 @@ import { createClient } from "@/lib/supabase/server";
  * (no flash of signed-out UI), `revalidatePath` refreshes the session-aware nav
  * in the same round trip, and the form keeps working with JavaScript disabled.
  */
-
-export type AuthFormState = {
-  status: "idle" | "error" | "check-email";
-  /** User-facing copy. Never a raw provider message. */
-  message?: string;
-  /** Field the message belongs to, when it belongs to one. */
-  field?: "email" | "password";
-  /** Echoed so a failed submit does not wipe what the user typed. */
-  email?: string;
-};
-
-export const initialAuthFormState: AuthFormState = { status: "idle" };
 
 /** Local Supabase has no SMTP; confirmation mail lands in Inbucket. */
 const isLocalSupabase = (): boolean =>

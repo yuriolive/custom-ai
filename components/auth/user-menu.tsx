@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, Dropdown, Spinner } from "@heroui/react";
+import { Dropdown, Spinner } from "@heroui/react";
+import { buttonVariants } from "@heroui/styles";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -34,18 +35,20 @@ export function UserMenu({ handle }: { handle: string }) {
 
   return (
     <Dropdown>
-      <Dropdown.Trigger>
-        <Button
-          aria-label={`Account menu for ${handle}`}
-          isDisabled={isSigningOut}
-          size="sm"
-          variant="outline"
-        >
-          {isSigningOut ? <Spinner size="sm" /> : null}
-          <span className="max-w-[10rem] truncate">
-            {isSigningOut ? "Signing out…" : handle}
-          </span>
-        </Button>
+      {/* `Dropdown.Trigger` IS the button (a React Aria `Button`), so the
+          content goes directly inside it. Nesting a HeroUI `<Button>` here
+          renders `<button><button>` — invalid HTML, and the inner button
+          swallows the press before the menu ever opens. `buttonVariants`
+          gives the trigger the same look without the second element. */}
+      <Dropdown.Trigger
+        aria-label={`Account menu for ${handle}`}
+        className={buttonVariants({ size: "sm", variant: "outline" })}
+        isDisabled={isSigningOut}
+      >
+        {isSigningOut ? <Spinner size="sm" /> : null}
+        <span className="max-w-[10rem] truncate">
+          {isSigningOut ? "Signing out…" : handle}
+        </span>
       </Dropdown.Trigger>
 
       <Dropdown.Popover placement="bottom end">

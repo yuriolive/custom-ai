@@ -7,7 +7,7 @@
  * produces a hydration mismatch on every timestamp in every table.
  */
 
-export { formatMicroUsd, formatMs, formatRate, formatTokens } from "@/lib/format";
+export { formatBalanceMicroUsd, formatMicroUsd, formatMs, formatRate, formatTokens } from "@/lib/format";
 
 import { formatMicroUsd } from "@/lib/format";
 

@@ -14,7 +14,8 @@ import {
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { initialAuthFormState, signInAction } from "@/app/(auth)/actions";
+import { signInAction } from "@/app/(auth)/actions";
+import { initialAuthFormState } from "@/app/(auth)/form-state";
 import { AuthAlert } from "@/components/auth/auth-alert";
 import { GitHubButton } from "@/components/auth/github-button";
 
