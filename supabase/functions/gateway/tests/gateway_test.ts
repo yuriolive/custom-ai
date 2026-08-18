@@ -97,7 +97,7 @@ const resolvedFixture: ResolvedRequest = {
   userId: OWNER_ID,
   modelId: MODEL_ID,
   creatorId: OWNER_ID,
-  runpodEndpointId: "ep_abcdef123456",
+  upstreamEndpointRef: "ep_abcdef123456",
   servedModelName: "Qwen3.8-27B-Uncensored-Q4_K_M.gguf",
   runtime: "llamacpp",
   pricePromptMicro: 500_000,
@@ -514,7 +514,7 @@ test("the upstream URL is built from UPSTREAM_BASE_URL and the endpoint id", () 
   });
   assert.equal(
     built.url,
-    `${UPSTREAM_BASE}/v2/${resolvedFixture.runpodEndpointId}/openai/v1/chat/completions`,
+    `${UPSTREAM_BASE}/v2/${resolvedFixture.upstreamEndpointRef}/openai/v1/chat/completions`,
   );
 });
 

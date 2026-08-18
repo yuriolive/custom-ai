@@ -48,6 +48,8 @@ tests/fixtures/           shared fixtures                [contract — read-only
 SUPABASE_URL, SUPABASE_ANON_KEY            # client-safe
 SUPABASE_SERVICE_ROLE_KEY                  # secret, Edge Functions only
 RUNPOD_API_KEY                             # secret
+MODAL_KEY                                  # secret — proxy token id  (wk-...)
+MODAL_SECRET                               # secret — proxy token     (ws-...)
 RUNPOD_ENDPOINT_ID                         # MVP-0: one manually provisioned endpoint
 LLAMACPP_WORKER_IMAGE                      # pinned, usage-emitting build
 UPSTREAM_BASE_URL                          # override → point at mock-upstream in tests

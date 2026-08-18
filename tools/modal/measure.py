@@ -752,7 +752,12 @@ def main(argv=None) -> int:
 
     headers = {}
     if args.proxy_auth:
-        # Modal proxy auth uses Modal-Key / Modal-Secret, NOT Authorization: Bearer.
+        # Modal proxy auth takes the workspace PROXY token pair (wk-… / ws-…), which is a
+        # different credential class from the API token (ak-… / as-…) used to deploy.
+        # The header-pair form below is the primary one; Modal also accepts the single
+        # header `Authorization: Bearer wk-….ws-…` for OpenAI-SDK compatibility (verified
+        # live on 1.5.4). Plain `Bearer <secret>` is NOT a thing — that is the shape this
+        # comment used to warn about.
         key, secret = os.environ.get("MODAL_KEY"), os.environ.get("MODAL_SECRET")
         if not key or not secret:
             print(

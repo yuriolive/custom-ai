@@ -262,7 +262,7 @@ export async function resolveRequest(
     userId: key.user_id,
     modelId: model.id,
     creatorId: model.user_id,
-    runpodEndpointId: model.runpod_endpoint_id,
+    upstreamEndpointRef: model.runpod_endpoint_id,
     servedModelName: model.served_model_name,
     runtime: model.runtime,
     pricePromptMicro: Number(model.price_prompt_micro_usd_per_mtoken),
@@ -300,7 +300,7 @@ interface GatewayResolveEnvelope {
   userId?: string;
   modelId?: string;
   creatorId?: string;
-  runpodEndpointId?: string | null;
+  upstreamEndpointRef?: string | null;
   servedModelName?: string;
   runtime?: ModelRuntime;
   pricePromptMicro?: number;
@@ -328,7 +328,7 @@ function envelopeToRow(env: GatewayResolveEnvelope): RawResolveRow {
       status: env.modelStatus ?? "",
       visibility: env.modelVisibility ?? "",
       deleted_at: env.modelDeletedAt ?? null,
-      runpod_endpoint_id: env.runpodEndpointId ?? null,
+      runpod_endpoint_id: env.upstreamEndpointRef ?? null,
       served_model_name: env.servedModelName ?? "",
       runtime: env.runtime as ModelRuntime,
       price_prompt_micro_usd_per_mtoken: Number(env.pricePromptMicro ?? 0),

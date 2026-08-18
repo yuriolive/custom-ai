@@ -292,7 +292,7 @@ export function buildUpstreamRequest(
 
   let url: string;
   if (provider === "modal") {
-    const query = (resolved.runpodEndpointId ?? "").replace(/^[?]+/, "");
+    const query = (resolved.upstreamEndpointRef ?? "").replace(/^[?]+/, "");
     url = query ? `${base}/v1/chat/completions?${query}` : `${base}/v1/chat/completions`;
     // Modal proxy auth is a header PAIR and is only sent when configured; an
     // endpoint deployed without `requires_proxy_auth` accepts the call unauthed.
@@ -301,7 +301,7 @@ export function buildUpstreamRequest(
       headers["Modal-Secret"] = opts.modalSecret;
     }
   } else {
-    url = `${base}/v2/${resolved.runpodEndpointId}/openai/v1/chat/completions`;
+    url = `${base}/v2/${resolved.upstreamEndpointRef}/openai/v1/chat/completions`;
     headers["authorization"] = `Bearer ${opts.runpodApiKey}`;
   }
 

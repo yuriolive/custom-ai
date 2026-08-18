@@ -9,9 +9,9 @@ select plan(25);
 \set creator '00000000-0000-0000-0000-0000000000a1'
 
 -- ── Function EXECUTE privileges ─────────────────────────────────────────────
-select ok(not has_function_privilege('anon', 'public.deduct_token_cost(uuid,integer,integer,integer,integer,boolean,boolean,boolean)', 'EXECUTE'),
+select ok(not has_function_privilege('anon', 'public.deduct_token_cost(uuid,integer,integer,numeric,numeric,boolean,boolean,boolean)', 'EXECUTE'),
           'anon cannot execute deduct_token_cost');
-select ok(not has_function_privilege('authenticated', 'public.deduct_token_cost(uuid,integer,integer,integer,integer,boolean,boolean,boolean)', 'EXECUTE'),
+select ok(not has_function_privilege('authenticated', 'public.deduct_token_cost(uuid,integer,integer,numeric,numeric,boolean,boolean,boolean)', 'EXECUTE'),
           'authenticated cannot execute deduct_token_cost');
 select ok(not has_function_privilege('anon', 'public.authorize_request(uuid,uuid,uuid,uuid,integer,integer,boolean)', 'EXECUTE'),
           'anon cannot execute authorize_request');

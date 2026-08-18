@@ -167,7 +167,14 @@ export interface ResolvedRequest {
   userId: string;
   modelId: string;
   creatorId: string;
-  runpodEndpointId: string;
+  /**
+   * Opaque, PROVIDER-SHAPED reference to the upstream serving pool.
+   * RunPod: a path segment. Modal: a URL query string that SELECTS the container
+   * pool — not decoration. The gateway must never parse or interpret this; it
+   * only splices it into the provider's URL template.
+   * Environment-specific: it must be re-pointed after any redeploy.
+   */
+  upstreamEndpointRef: string;
   servedModelName: string;
   runtime: ModelRuntime;
   pricePromptMicro: MicroUsdPerMToken;

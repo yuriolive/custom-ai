@@ -1849,10 +1849,44 @@ Every item below was corrected against Modal 1.5.4 by live deployment. Trusting 
 | GPU string `A10G` | **`A10`.** Valid set: `T4, L4, A10, L40S, A100, A100-40GB, A100-80GB, RTX-PRO-6000, H100, H100!, H200, B200, B200+, B300` |
 | `container_idle_timeout` / `keep_warm` renamed | Renamed to `scaledown_window` / `min_containers`, and the old names are **hard `DeprecationError`s** in 1.5.4, not warnings. Modal's own migration guide is stale. |
 | Parameters bind in the hostname | Bind via **URL query string**: `…modal.run/v1/chat/completions?model_repo=…&ctx_size=8192` |
-| `requires_proxy_auth` on `@app.cls` | Goes on the **web decorator**. Auth headers are `Modal-Key` / `Modal-Secret`, **not** `Authorization: Bearer` |
+| `requires_proxy_auth` on `@app.cls` | Goes on the **web decorator** — `App.cls` has no such parameter, so it is a `TypeError`, not a silent no-op. Auth is `Modal-Key` / `Modal-Secret`, **or** the single-header form `Authorization: Bearer wk-<id>.ws-<secret>` (verified live). The real caveat is narrower than an earlier revision claimed: plain `Bearer <secret>` does not work — it must be the dotted pair. |
+| `requires_proxy_auth` default | **`False`** on `web_server` / `asgi_app` / `fastapi_endpoint`. Web Functions are the FAIL-OPEN shape; Modal's newer Endpoints/Servers primitives default to authenticated. This default is exactly how the endpoints shipped public. |
 | `@modal.web_server(port)` waits for readiness | **It waits only for the port to bind.** llama-server binds instantly and then returns `503 {"message":"Loading model"}` for the entire load. The first cold request fails. |
 
 ```
+FR-DEP-066 (P0)  PROXY AUTH IS MANDATORY on every web-exposed endpoint
+                 (`requires_proxy_auth=True` on the web decorator). It defaults to
+                 False, and the endpoints shipped publicly reachable because of it:
+                 anyone with a *.modal.run URL could run inference on platform credits
+                 and bypass the gateway — where ALL metering lives — entirely.
+                 Verified both directions: unauthenticated returns
+                 `401 modal-http: missing credentials` at Modal's edge WITHOUT starting
+                 a container, so a rejected caller cannot even trigger a cold start.
+                 The flag covers the proxied port, hence every route llama-server
+                 exposes — not just the OpenAI one. That matters: `--metrics` made
+                 Prometheus metrics public, and `/props` leaks the on-disk model path
+                 and full server config. The blast radius was wider than the inference
+                 endpoint.
+FR-DEP-067 (P0)  HF_TOKEN MUST BE A `modal.Secret`, NEVER a `modal.parameter()`.
+                 Model identity binds through parameters, and Modal transports
+                 parameters IN THE URL QUERY STRING (§4.3.3.6a). Adding a Hugging Face
+                 token the natural way — as another parameter — would place a
+                 credential into URLs, access logs, and every intermediate proxy.
+                 This is written down BEFORE the private-repo work (FR-DEP-010..016)
+                 because the obvious implementation is the vulnerable one.
+FR-DEP-068 (P1)  Two Modal credential CLASSES exist and must not be confused:
+                 `ak-`/`as-` API tokens can deploy and DELETE apps; `wk-`/`ws-` proxy
+                 tokens can only invoke. The gateway gets a proxy token. Handing it an
+                 API token grants destructive power for no functional gain.
+                 Rotation is UNRESOLVED: proxy tokens have no expiry and no rotation
+                 primitive, and there is no leak signal. Overlapping tokens are both
+                 valid so zero-downtime rotation is mechanically possible (create ->
+                 update env -> redeploy -> delete old), but cadence and owner are open.
+FR-DEP-069 (P2)  The shared weights Volume is mounted read-write into every pool, so
+                 any model pool can write anywhere in the shared HF cache. Acceptable
+                 while all models are platform-controlled; it becomes a cross-tenant
+                 cache-poisoning path the moment creator-supplied code runs in these
+                 containers. Revisit before any such feature.
 FR-DEP-070 (P0)  Readiness MUST be gated on llama.cpp's /health inside @modal.enter().
                  @modal.web_server returns as soon as the port is bound, which for a
                  15 GB model is ~14 s before the server can actually answer. Without

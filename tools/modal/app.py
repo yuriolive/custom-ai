@@ -228,6 +228,25 @@ _CLS_KWARGS = dict(
 # on local disk — i.e. model load, not download.
 _WEB_SERVER_STARTUP_TIMEOUT = 900
 
+# ── Endpoint authentication ──────────────────────────────────────────────────
+# EVERY web-exposed endpoint requires Modal proxy auth. Without it a `*.modal.run` URL is
+# world-reachable, and since the URL is the only thing between the internet and a GPU, an
+# unauthenticated endpoint means anyone who learns or guesses it can burn the account's
+# credits. The metering and billing that make this a marketplace live in the gateway; a
+# caller who reaches llama-server directly bypasses all of it, so this flag is the seam
+# that makes the gateway the ONLY door.
+#
+# Verified against modal 1.5.4 and https://modal.com/docs/guide/webhook-proxy-auth:
+#   * `requires_proxy_auth` is a kwarg of `@modal.web_server` / `asgi_app` /
+#     `fastapi_endpoint`. `@app.cls` has NO such parameter — putting it there is a
+#     TypeError, not a silent no-op, but it is worth stating because it reads plausible.
+#   * Callers present workspace PROXY tokens (`wk-…` / `ws-…`), which are a different
+#     credential class from the API tokens (`ak-…` / `as-…`) the CLI uses to deploy.
+#     Either `Modal-Key` + `Modal-Secret` headers, or `Authorization: Bearer wk-….ws-…`.
+#   * Missing or invalid credentials get HTTP 401 at Modal's edge; the request never
+#     reaches a container, so a rejected caller costs nothing and cannot cold-start a GPU.
+_REQUIRES_PROXY_AUTH = True
+
 
 @app.cls(gpu="T4", **_CLS_KWARGS)
 class LlamaServerT4:
@@ -244,7 +263,11 @@ class LlamaServerT4:
         _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
         _wait_until_ready()
 
-    @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
+    @modal.web_server(
+        port=SERVER_PORT,
+        startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT,
+        requires_proxy_auth=_REQUIRES_PROXY_AUTH,
+    )
     def serve(self):
         # Intentionally empty. llama-server is already running and healthy by the time
         # @enter returns; this method exists only to declare the proxied port.
@@ -266,7 +289,11 @@ class LlamaServerL4:
         _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
         _wait_until_ready()
 
-    @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
+    @modal.web_server(
+        port=SERVER_PORT,
+        startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT,
+        requires_proxy_auth=_REQUIRES_PROXY_AUTH,
+    )
     def serve(self):
         # Intentionally empty. llama-server is already running and healthy by the time
         # @enter returns; this method exists only to declare the proxied port.
@@ -288,7 +315,11 @@ class LlamaServerA10:
         _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
         _wait_until_ready()
 
-    @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
+    @modal.web_server(
+        port=SERVER_PORT,
+        startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT,
+        requires_proxy_auth=_REQUIRES_PROXY_AUTH,
+    )
     def serve(self):
         # Intentionally empty. llama-server is already running and healthy by the time
         # @enter returns; this method exists only to declare the proxied port.
@@ -310,7 +341,11 @@ class LlamaServerL40S:
         _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
         _wait_until_ready()
 
-    @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
+    @modal.web_server(
+        port=SERVER_PORT,
+        startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT,
+        requires_proxy_auth=_REQUIRES_PROXY_AUTH,
+    )
     def serve(self):
         # Intentionally empty. llama-server is already running and healthy by the time
         # @enter returns; this method exists only to declare the proxied port.
@@ -332,7 +367,11 @@ class LlamaServerA10040:
         _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
         _wait_until_ready()
 
-    @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
+    @modal.web_server(
+        port=SERVER_PORT,
+        startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT,
+        requires_proxy_auth=_REQUIRES_PROXY_AUTH,
+    )
     def serve(self):
         # Intentionally empty. llama-server is already running and healthy by the time
         # @enter returns; this method exists only to declare the proxied port.
@@ -354,7 +393,11 @@ class LlamaServerA10080:
         _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
         _wait_until_ready()
 
-    @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
+    @modal.web_server(
+        port=SERVER_PORT,
+        startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT,
+        requires_proxy_auth=_REQUIRES_PROXY_AUTH,
+    )
     def serve(self):
         # Intentionally empty. llama-server is already running and healthy by the time
         # @enter returns; this method exists only to declare the proxied port.
@@ -376,7 +419,11 @@ class LlamaServerH100:
         _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
         _wait_until_ready()
 
-    @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
+    @modal.web_server(
+        port=SERVER_PORT,
+        startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT,
+        requires_proxy_auth=_REQUIRES_PROXY_AUTH,
+    )
     def serve(self):
         # Intentionally empty. llama-server is already running and healthy by the time
         # @enter returns; this method exists only to declare the proxied port.

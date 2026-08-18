@@ -71,7 +71,7 @@ begin
   execute format('create temporary table _mm as select %s from public.custom_models where id = %L',
                  v_cols, '00000000-0000-0000-0000-0000000000c1');
   execute format('update _mm set id=%L, user_id=%L, slug=%L,
-                    runpod_endpoint_id=''endpoint-'' || %L,
+                    upstream_endpoint_ref=''endpoint-'' || %L,
                     price_prompt_micro_usd_per_mtoken=%s,
                     price_completion_micro_usd_per_mtoken=%s,
                     platform_fee_bps=%s, visibility=''public'', status=''ready''',

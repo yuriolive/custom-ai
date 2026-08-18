@@ -62,12 +62,78 @@ modal app list          # confirm
 On Windows, prefix with `PYTHONIOENCODING=utf-8`: `modal deploy` streams UTF-8 build logs
 and the default cp1252 console codec crashes mid-build with a `'charmap' codec` error.
 
-### Credentials
+## Endpoint authentication — the endpoints are NOT public
 
-`modal` reads `~/.modal.toml` or `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` from the
-environment. Nothing here logs or persists a token. For proxy-authed endpoints, Modal uses
-**`Modal-Key` / `Modal-Secret`** headers — *not* `Authorization: Bearer` — which `measure.py
---proxy-auth` sends from `MODAL_KEY`/`MODAL_SECRET`.
+Every `@modal.web_server` in `app.py` carries `requires_proxy_auth=True`. Without it a
+`*.modal.run` URL is world-reachable, and the URL is the *only* thing between the open
+internet and a GPU: anyone who learns or guesses one could run inference on this account's
+credits. Metering, balance checks, and the revenue split all live in the gateway, so a
+caller who reaches `llama-server` directly bypasses the entire billing layer. Proxy auth is
+what makes the gateway the only door.
+
+Modal enforces this at its edge — a rejected request never reaches a container, so it
+cannot cold-start a GPU and costs nothing. Verified live:
+
+```
+$ curl -i https://<workspace>--nexus-llamacpp-llamaserverl4-serve.modal.run/health?...
+HTTP/1.1 401 Unauthorized
+modal-http: missing credentials for proxy authorization
+```
+
+Same 401 on `/`, `/health`, `/metrics`, `/props`, and `/v1/chat/completions` — the flag is
+on the proxied port, so it covers every route llama-server exposes, not just the OpenAI one.
+Wrong-but-well-formed credentials get `invalid credentials for proxy authorization`.
+
+### Two credential classes — do not confuse them
+
+| | Prefix | What it is | Who holds it |
+|---|---|---|---|
+| **API token** | `ak-` / `as-` | deploys and manages the workspace | CI + developer laptops, via `~/.modal.toml` or `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` |
+| **Proxy token** | `wk-` / `ws-` | calls a deployed endpoint, nothing else | the gateway only |
+
+They are not interchangeable. The gateway must **never** hold an API token: a proxy token
+can only invoke endpoints, while an API token can redeploy or delete the app.
+
+```bash
+modal workspace proxy-tokens create      # prints the id and the secret ONCE
+modal workspace proxy-tokens list
+modal workspace proxy-tokens delete wk-...
+```
+
+### The gateway's credential flow
+
+The gateway (`supabase/functions/gateway/`) calls upstream with two environment variables:
+
+```
+MODAL_KEY      # the proxy token id     (wk-...)   secret — server-side only
+MODAL_SECRET   # the proxy token secret (ws-...)   secret — server-side only
+```
+
+Both are **server-side only**, read exclusively inside the Edge Function. They must never
+appear in a `NEXT_PUBLIC_*` variable, in any client bundle, in a browser-visible response,
+or in a log line — per `docs/CONTRACTS.md` §Environment. A proxy token in a client bundle is
+strictly worse than no auth at all: it is a published, permanent key to the GPU that also
+looks like it was secured. If a browser needs inference, it calls the gateway and the
+gateway calls Modal; the two never meet. (`docs/CONTRACTS.md` §Environment does not yet list
+these two names — its owner should add them.)
+
+Sent as either form; both verified live against Modal 1.5.4:
+
+```
+Modal-Key: wk-...            Modal-Secret: ws-...
+Authorization: Bearer wk-....ws-...      # OpenAI-SDK-compatible single-header form
+```
+
+`measure.py --proxy-auth` sends the header-pair form from those same two variables, and
+records only the header *names* in its report — never the values. Nothing in this directory
+logs or persists a token.
+
+**Rotation is unresolved.** Modal proxy tokens have no expiry and no built-in rotation, and
+`create` is the only way to mint one. Rotating means: create a second token, update
+`MODAL_KEY`/`MODAL_SECRET`, redeploy the gateway, then delete the old token — both are valid
+during the overlap, so it can be done without downtime. Nothing automates or reminds about
+this today, and there is no revocation signal if a token leaks other than noticing. Deciding
+an actual rotation cadence and owner is open work, not something this change settles.
 
 ## The measurement, and why it exists
 
@@ -96,6 +162,7 @@ Decode throughput is `(n-1) / (last_token − first_token)` — it excludes TTFT
 | Hybrid attention/SSM KV | Only `block_count // full_attention_interval` blocks keep a KV cache. Treating all 65 blocks as attention over-counts KV ~4x and picks a GPU two tiers too large. |
 | `head_dim` | It is the declared `key_length` (256), **not** `hidden_size / head_count` (213.33). |
 | `A10G` | Not a valid Modal GPU string. It is `A10`. |
+| `requires_proxy_auth` | Goes on `@modal.web_server`, **not** `@app.cls` — `App.cls` has no such kwarg. It defaults to `False`, so an endpoint is PUBLIC unless you say otherwise, and nothing warns you. |
 
 ## The tier list is not a ladder
 
