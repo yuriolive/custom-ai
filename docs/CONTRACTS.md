@@ -7,11 +7,20 @@ MVP-0 objective, and the only acceptance test that matters:
 ```python
 client = OpenAI(base_url="<gateway>/v1", api_key="sk-plat-...")
 stream = client.chat.completions.create(
-    model="JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+    model="jonathancoletti/qwen3.8-27b-uncensored-gguf",
     messages=[{"role": "user", "content": "hi"}],
     stream=True, timeout=180,
 )
 ```
+
+> **The platform model id is NOT the Hugging Face repo path.** An earlier revision of
+> this contract wrote `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF`, which cannot
+> resolve: the id is `creator-handle/model-slug`, and both halves are lowercase by
+> schema constraint (`handle ~ '^[a-z0-9][a-z0-9-]{1,38}$'`,
+> `slug ~ '^[a-z0-9][a-z0-9._-]{1,62}$'`). The creator handle is a *platform* identity
+> that need not match the HF account, and the slug is chosen at registration.
+> Whether to also accept the HF path as a case-insensitive alias is an open product
+> question (§8.4 Q14) — today it is a 404.
 → tokens stream from a scale-to-zero llama.cpp worker, and exactly one `usage_transactions` row settles with a correct 80/20 split and no negative balance.
 
 Everything not required by that sentence is out of scope for MVP-0.

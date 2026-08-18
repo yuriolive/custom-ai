@@ -4151,6 +4151,72 @@ NFR-CACHE-062 (P0)  The provisioning path re-probes with no cache. Deploying aga
                     15-minute-stale file list can provision the wrong variant.
 ```
 
+### 6.6a Decision: support both llama.cpp and vLLM, but not symmetrically
+
+**Decision: yes, both — with llama.cpp as the default and vLLM as a traffic-triggered optimization, never built speculatively for parity.**
+
+The two runtimes are not competitors here; they occupy opposite ends of the curve this marketplace spans by design.
+
+| | llama.cpp | vLLM |
+|---|---|---|
+| Wins at | long tail, low traffic, single stream | popular models, 32+ concurrent |
+| VRAM for the same model | **~35% less** | higher overhead |
+| Quantization range | IQ2/IQ3 puts a 70B on a 24 GB card | no equivalent |
+| Throughput at concurrency | weaker per-slot batching | **2-3x**, PagedAttention |
+| KV compression | q8_0 (2x) | sub-8-bit, TurboQuant (~4.6x) |
+| Prefix caching | per-slot | global, block-level |
+| GGUF | native, optimized | deprecated in-tree, ~8x slower (FR-DEP-059) |
+
+The platform's stated wedge is the long tail (§1.4), and the long tail is overwhelmingly GGUF. Dropping llama.cpp concedes the differentiated catalog. Dropping vLLM concedes the economics of every model that succeeds. Neither is acceptable, so both stay.
+
+**The cost, stated honestly, because it is the real argument against:** every serving feature must be implemented twice, and the pairs are not analogous.
+
+| Feature | llama.cpp | vLLM |
+|---|---|---|
+| Tool calling | `--jinja`, model's own template | native tool parser |
+| KV quantization | `--cache-type-k/v` | `kv_cache_dtype`, TurboQuant |
+| Context sizing | `--ctx-size` is TOTAL across slots | `MAX_MODEL_LEN` is per-sequence |
+| Concurrency | `--parallel` slots | continuous batching |
+| Usage reporting | build-dependent | reliable w/ `include_usage` |
+
+That is a doubled test matrix and a permanent source of capability drift. The mitigations are not optional:
+
+```
+NFR-EXT-004 (P1)  Runtime capabilities are DATA, not scattered conditionals: a
+                  `runtime_capabilities` table declaring, per runtime, whether it
+                  supports tool calling, its KV-quantization floor, prefix-cache scope,
+                  usage fidelity, and structured output. The gateway reads capabilities;
+                  it does not branch on runtime name. A feature that exists on one
+                  runtime and not the other is then a data fact the catalog can
+                  display, not a runtime surprise.
+NFR-EXT-005 (P1)  The catalog MUST surface capability differences on the model card.
+                  A model that cannot do tool calling has to say so at discovery time,
+                  not fail at request time — otherwise the marketplace ships two
+                  classes of model that look identical and behave differently, which is
+                  worse for trust than not offering the weaker one.
+NFR-EXT-006 (P1)  Runtime and compute provider are ORTHOGONAL axes and must stay so.
+                  Two runtimes times N providers must never become 2N implementations.
+                  The ComputeProvider interface (NFR-EXT-001) handles placement and
+                  lifecycle; the runtime contract handles the serving process. A change
+                  to one must not require touching the other.
+NFR-EXT-007 (P2)  RUNTIME MIGRATION as a platform feature. A model registered as
+                  GGUF/llama.cpp that later sustains real concurrency should be
+                  migrated: quantize AWQ or compressed-tensors from the bf16 source
+                  (FR-DEP-058b/c), re-place, re-measure, cut over. This is the natural
+                  lifecycle of a successful model on this platform and it is the
+                  strongest argument for owning both runtimes rather than either.
+```
+
+**Trigger, so this stays evidence-driven rather than speculative.** vLLM's advantage is real only where batching pays, which needs sustained concurrency on a datacenter GPU. For scale: the MVP target at 8k context on an RTX 4090 supports **7 concurrent streams** — nowhere near the 32+ where vLLM pulls 2-3x ahead. So vLLM is not a tail feature at all; it is a feature of the top of the catalog.
+
+Build first-class vLLM support when a model demonstrates **sustained p95 concurrency above ~16 streams**, not before. Until a model in the catalog actually does that, parity work is speculative complexity paid for out of the long tail's budget.
+
+> **What this decision explicitly rejects:** running GGUF through vLLM to reduce the
+> implementation count (FR-DEP-059 — deprecated in-tree, ~8x slower), and converting
+> GGUF to a vLLM-native format (FR-DEP-058a — quantization cannot be un-baked). Both
+> are the shortcuts that make "support one runtime" look achievable, and both cost more
+> than they save.
+
 ### 6.7 Extensibility
 
 ```
