@@ -1763,6 +1763,39 @@ The weights format determines the **inference runtime**, and the two runtimes ar
 | Weight selection | whole repo | **a specific file** — the chosen variant |
 
 ```
+FR-DEP-058a (P1) NEVER CONVERT GGUF TO A vLLM FORMAT. Quantization cannot be un-baked:
+                 dequantizing Q4_K_M to fp16 recovers fp16-SHAPED tensors carrying Q4
+                 quality, at 3.4x the size. Re-quantizing that to AWQ/GPTQ stacks a
+                 second loss on the first and is strictly worse than either single
+                 path. The output looks legitimate and benchmarks worse for reasons
+                 nobody can see in the file.
+                 The correct path is always to quantize FROM THE ORIGINAL bf16/fp16
+                 weights.
+FR-DEP-058b (P1) FOLLOW THE MODEL CARD TO ITS SOURCE. A `-GGUF` repo is usually a
+                 derivative, and its card usually names the original. The MVP target's
+                 card carries `base_model: Qwen/Qwen3.8-27B` and points at
+                 `JonathanColetti/Qwen3.8-27B-Uncensored` — the abliterated **bf16
+                 weights, public**. So the model this platform exists to serve is NOT
+                 GGUF-only, and the earlier statement to that effect in this document
+                 was an artefact of probing one repo rather than following its card.
+                 The probe MUST read `base_model` from the card metadata and check
+                 whether a non-GGUF sibling exists. When one does, surface both:
+                   - GGUF/llama.cpp   — smaller VRAM, better single-stream, fits tiers
+                                        vLLM cannot
+                   - safetensors/vLLM — 2-3x throughput at 32+ concurrency, global
+                                        prefix caching, sub-8-bit KV (TurboQuant)
+                 That is a real fork in serving cost for a popular model, and it is the
+                 platform's call to make, not a detail to leave to whichever repo URL
+                 the creator happened to paste.
+FR-DEP-058c (P2) Platform-side quantization: given a bf16 source, produce an AWQ or
+                 compressed-tensors variant so the model can be served on vLLM.
+                 Tooling note, because the obvious choices are dead: **AutoGPTQ was
+                 archived April 2025 and AutoAWQ May 2025.** Use **llm-compressor**
+                 (produces compressed-tensors, vLLM-native) or **GPTQModel v5.8.0+**
+                 for the actively maintained GPTQ path with Marlin/Machete kernels.
+                 This is a real pipeline — calibration data, GPU hours, quality
+                 evaluation — not a build step, and it needs creator consent because
+                 it changes their model's output.
 FR-DEP-059 (P1)  RUNTIME IS NOT A FREE CHOICE, and GGUF must NOT be routed to vLLM.
                  vLLM's in-tree GGUF support was deprecated in 2026 in favour of an
                  out-of-tree plugin, its own docs frame GGUF as a memory-footprint
