@@ -250,13 +250,20 @@ jobs:
         with:
           persist-credentials: false
 
-      # npx would re-download the CLI on every run. The version is pinned so a
-      # CLI release cannot change what "the tests passed" means without a diff.
-      - name: Cache Supabase CLI
-        uses: actions/cache@v4
+      # The CLI comes from the repo's own devDependency, NOT an ad-hoc
+      # `npx supabase@<version>`. Three surfaces used to disagree: CI pinned
+      # 2.114.0, the developer shell had scoop's 2.54.11, and the repo needed
+      # >= 2.115 to parse its own config.toml at all ("'' has invalid keys:
+      # local_smtp"). One pin in package.json removes that whole class of drift,
+      # and a CLI release can no longer change what "the tests passed" means
+      # without showing up in the lockfile diff.
+      - uses: actions/setup-node@v4
         with:
-          path: ~/.npm/_npx
-          key: supabase-cli-${{ runner.os }}-2.114.0
+          node-version: 24
+          cache: npm
+
+      - name: Install (supabase CLI comes from devDependencies)
+        run: npm ci
 
       # NOTE ON DOCKER LAYER CACHING: deliberately not done. The only image worth
       # caching is supabase/postgres at ~1.5 GB compressed; `docker save` +
@@ -267,7 +274,7 @@ jobs:
       # off. Revisit only with measurements from this repo's own runs.
       - name: supabase start
         run: |
-          npx --yes supabase@2.114.0 start \
+          npx supabase start \
             -x studio,imgproxy,mailpit,logflare,vector,edge-runtime,supavisor
         # Excludes only services with no schema of their own that any migration,
         # seed, or test touches. gotrue/realtime/storage-api/postgrest/kong stay
@@ -279,7 +286,7 @@ jobs:
       # ([db.seed] enabled, sql_paths = ["./seed.sql"]). This is also the only
       # thing in CI that proves the migrations still apply cleanly from zero.
       - name: supabase db reset
-        run: npx --yes supabase@2.114.0 db reset --local
+        run: npx supabase db reset --local
 
       # The CLI enables pgTAP itself (`create extension if not exists pgtap with
       # schema extensions`), runs supabase/pg_prove:3.36 against the local db, and
@@ -299,7 +306,7 @@ jobs:
       # quietly degrade to single-connection execution, so a silent false-green
       # on the concurrency scenarios is not a failure mode here.
       - name: supabase test db (pgTAP)
-        run: npx --yes supabase@2.114.0 test db --local supabase/tests
+        run: npx supabase test db --local supabase/tests
 
       # Container logs are the only way to diagnose a failure after the fact:
       # a deadlock-detector abort or an OOM shows up in the postgres log, not in
@@ -310,4 +317,4 @@ jobs:
 
       - name: supabase stop
         if: always()
-        run: npx --yes supabase@2.114.0 stop --no-backup || true
+        run: npx supabase stop --no-backup || true
