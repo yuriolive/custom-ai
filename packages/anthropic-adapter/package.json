@@ -1,0 +1,21 @@
+{
+  "name": "@nexus/anthropic-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bidirectional Anthropic Messages API <-> OpenAI Chat Completions translation. Pure, zero runtime dependencies. Runs unchanged on Deno and Node 24 native type-stripping.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test test/request.test.ts test/response.test.ts test/stream.test.ts test/errors.test.ts test/sse.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "5.9"
+  }
+}

@@ -23,16 +23,18 @@
     "typecheck:hf-probe": "tsc -p packages/hf-probe --noEmit",
     "typecheck:mock-upstream": "tsc -p tools/mock-upstream --noEmit",
     "typecheck:gateway": "tsc -p supabase/functions/gateway --noEmit",
-    "typecheck": "npm run typecheck:app && npm run typecheck:hf-probe && npm run typecheck:mock-upstream && npm run typecheck:gateway && npm run typecheck:keygen",
+    "typecheck": "npm run typecheck:app && npm run typecheck:hf-probe && npm run typecheck:mock-upstream && npm run typecheck:gateway && npm run typecheck:keygen && npm run typecheck:anthropic-adapter",
     "test:hf-probe": "npm test --workspace @nexus/hf-probe",
     "test:gateway": "node --test \"supabase/functions/gateway/*.test.ts\" \"supabase/functions/gateway/tests/*_test.ts\"",
     "test:mock-upstream": "npm test --workspace @custom-ai/mock-upstream",
-    "test": "npm run test:hf-probe && npm run test:gateway && npm run test:mock-upstream && npm run test:keygen",
+    "test": "npm run test:hf-probe && npm run test:gateway && npm run test:mock-upstream && npm run test:keygen && npm run test:anthropic-adapter",
     "check:env": "node lib/scripts/check-env.mjs",
     "check": "npm run check:env && npm run lint && npm run typecheck",
     "typecheck:keygen": "tsc -p tools/keygen --noEmit",
     "test:keygen": "npm test --workspace @custom-ai/keygen",
-    "build:local": "npm run check && next build"
+    "build:local": "npm run check && next build",
+    "typecheck:anthropic-adapter": "tsc -p packages/anthropic-adapter --noEmit",
+    "test:anthropic-adapter": "npm test --workspace @nexus/anthropic-adapter"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.31",

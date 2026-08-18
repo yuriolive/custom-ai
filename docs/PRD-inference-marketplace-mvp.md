@@ -2086,11 +2086,50 @@ FR-ANTH-004 (P2)  Anthropic streaming block indices are sequential across the wh
                   message and shared between text and tool_use blocks. A new
                   `content_block_start` opens when OpenAI's `delta.tool_calls[].index`
                   advances, and the previous block must be explicitly closed.
-FR-ANTH-005 (P2)  KNOWN DEVIATION, must be documented to users: Anthropic reports
-                  `input_tokens` in `message_start`, but our upstream reports usage
-                  only on the FINAL chunk. We emit `message_start` with
-                  `input_tokens: 0` and correct it in `message_delta`. A client that
-                  trusts `message_start.usage` will under-count.
+FR-ANTH-005 (P2)  Anthropic reports `input_tokens` in `message_start`, but our upstream
+                  reports usage only on the FINAL chunk, so we emit `message_start`
+                  with `input_tokens: 0` and correct it in `message_delta`.
+                  VERIFIED CONTRACT-LEGAL: `message_delta.usage` is cumulative and may
+                  include `input_tokens` — Anthropic itself does this on server-tool
+                  turns. It remains a deviation from a plain text turn and must be
+                  documented, but it is not a protocol violation as an earlier
+                  revision implied.
+FR-ANTH-008 (P2)  EVERY event's `data` payload repeats the event name in a `type`
+                  field: `{"type":"content_block_stop","index":0}`, not `{"index":0}`.
+                  Anthropic SDK clients validate `data.type`, so emitting only the
+                  `event:` line yields a stream that looks correct on the wire and
+                  fails inside every real client.
+FR-ANTH-009 (P2)  `stop_reason` has SEVEN values, not four: end_turn, max_tokens,
+                  stop_sequence, tool_use, pause_turn, refusal,
+                  model_context_window_exceeded. Map OpenAI `content_filter` ->
+                  `refusal`, `function_call` -> `tool_use`, and reverse
+                  `model_context_window_exceeded` -> `length`.
+FR-ANTH-010 (P2)  `stop_reason: "stop_sequence"` CANNOT be reliably derived from
+                  standard OpenAI output. vLLM's non-standard `choice.stop_reason`
+                  carries the matched string and should be consulted first; llama.cpp
+                  strips the sequence and reports nothing, so a genuine hit degrades to
+                  `end_turn`. Anthropic excludes the matched sequence from the text —
+                  the non-streaming path can strip it, the streaming path cannot,
+                  because the bytes are already gone.
+FR-ANTH-011 (P2)  Thinking blocks are `{type:"thinking", thinking:"", signature:""}`
+                  and their deltas are `thinking_delta`, NOT `text_delta`. Anthropic
+                  emits a `signature_delta` before `content_block_stop`; we cannot mint
+                  a signature, so we send an empty one and omit the delta. Document it.
+FR-ANTH-012 (P2)  `tool_choice` has a fourth variant `{type:"none"}` -> OpenAI "none".
+                  `disable_parallel_tool_use` has no OpenAI equivalent and is dropped
+                  with a warning rather than silently.
+FR-ANTH-013 (P2)  Error mapping: `overloaded_error` is HTTP **529**, not 503. Also
+                  required: billing_error (402), request_too_large (413),
+                  timeout_error (504).
+FR-ANTH-014 (P2)  `POST /v1/messages/count_tokens` — Claude Code CALLS this endpoint.
+                  It has no OpenAI equivalent, so the gateway needs its own estimator.
+                  Without it Claude Code fails before sending a single completion.
+FR-ANTH-015 (P2)  CONTRACTS.md rule #3 (forward upstream bytes VERBATIM) is
+                  structurally impossible on this route — re-framing OpenAI chunks into
+                  Anthropic events IS the work. Usage must therefore come from the
+                  translator's `message_delta.usage`, not from a byte tee. Settlement
+                  must still run outside the client-write path (rule #5), and a
+                  cancelled stream must call `.finish()` so partial usage still bills.
 FR-ANTH-006 (P2)  Map `reasoning_content` to a `thinking` block. It is billed output
                   and must never be silently dropped.
 FR-ANTH-007 (P2)  Claude Code is tool-call-driven, so §4.5 is a HARD PREREQUISITE.
