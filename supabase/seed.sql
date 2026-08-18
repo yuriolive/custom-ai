@@ -58,36 +58,88 @@ select public.credit_wallet(
   'local dev seed grant'
 );
 
--- ── 3. API key — belongs to the CALLER ──────────────────────────────────────
--- PLAINTEXT KEY (dev only, never valid anywhere but a local reset):
---   sk-plat-mvp0seedkey0000000000000000000000
--- sha256(plaintext), lowercase hex:
---   b17d62828e69077b7bc277ae9de745fc5474ad94a702e15f22888c0bbd060e49
--- Reproduce with:
+-- ── 3. API keys — both belong to the CALLER ─────────────────────────────────
+--
+-- LENGTH IS LOAD-BEARING. A platform key is EXACTLY 51 characters:
+-- `sk-plat-` (8) + 43 body characters matching [A-Za-z0-9_-] — 43 being the
+-- base64url encoding of 32 random bytes. auth.ts (`isWellFormedApiKey`,
+-- KEY_TOTAL_LENGTH = 51, KEY_BODY_RE = /^[A-Za-z0-9_-]{43}$/) shape-checks the
+-- bearer token BEFORE it ever queries Postgres, and returns 401
+-- invalid_api_key on a mismatch.
+--
+-- That makes a wrong-length fixture fail SILENTLY and misleadingly: nothing
+-- errors at INSERT, because key_prefix and key_hash each satisfy their own CHECK
+-- independently — the schema has no way to know the plaintext they were derived
+-- from was the wrong length. The only symptom is a 401 at auth time that looks
+-- exactly like a bad credential. An earlier revision of this file seeded 41- and
+-- 39-character keys for precisely this reason; the assertion block below now
+-- makes that failure loud, at `db reset`, instead.
+--
+-- Reproduce either digest with:
 --   node -e "console.log(require('crypto').createHash('sha256')
---     .update('sk-plat-mvp0seedkey0000000000000000000000').digest('hex'))"
+--     .update('<plaintext>').digest('hex'))"
+
+-- LIVE KEY (dev only — obviously fake, valid nowhere but a local reset):
+--   sk-plat-mvp0seedkey-local-dev-fixture-not-real-keys
+--   sha256 = 88a3a9a61884397844427033a8355299a054a88974e533542e7ff22790cfd365
 -- Use as: OpenAI(base_url="http://127.0.0.1:54321/functions/v1/gateway/v1",
---                api_key="sk-plat-mvp0seedkey0000000000000000000000")
+--                api_key="sk-plat-mvp0seedkey-local-dev-fixture-not-real-keys")
 insert into public.api_keys (id, user_id, name, key_hash, key_prefix)
 values (
   '00000000-0000-0000-0000-0000000000b1',
   '00000000-0000-0000-0000-0000000000a2',
-  'local dev key',
-  'b17d62828e69077b7bc277ae9de745fc5474ad94a702e15f22888c0bbd060e49',
+  'local dev key (51-char, active)',
+  '88a3a9a61884397844427033a8355299a054a88974e533542e7ff22790cfd365',
   'sk-plat-mvp0seed'
 ) on conflict (id) do nothing;
 
--- A revoked key, so the gateway's 401 invalid_api_key vs 401 revoked_api_key
--- split is testable. plaintext: sk-plat-mvp0revokedkey00000000000000000
+-- REVOKED KEY. Exists so the gateway's 401 invalid_api_key vs 401
+-- revoked_api_key distinction is reachable end to end — which requires it to be
+-- well-formed, or it dies at the shape gate and never reaches gateway_resolve.
+--   sk-plat-mvp0revokedkey-local-dev-fixture-revoked-00
+--   sha256 = 9a812296b3a7a756f7f6599e989f41578dc6d114ba4802949d749ddd5bf20baa
 insert into public.api_keys (id, user_id, name, key_hash, key_prefix, revoked_at)
 values (
   '00000000-0000-0000-0000-0000000000b2',
   '00000000-0000-0000-0000-0000000000a2',
-  'revoked dev key',
-  encode(extensions.digest('sk-plat-mvp0revokedkey00000000000000000', 'sha256'), 'hex'),
+  'revoked dev key (51-char)',
+  '9a812296b3a7a756f7f6599e989f41578dc6d114ba4802949d749ddd5bf20baa',
   'sk-plat-mvp0revo',
   now()
 ) on conflict (id) do nothing;
+
+-- ── 3a. Assert the fixtures are actually usable ─────────────────────────────
+-- Recomputes both digests in-database and re-checks the wire shape, so editing a
+-- plaintext above without recomputing its hash — or padding it to the wrong
+-- length — aborts `db reset` loudly instead of surfacing as a mystery 401 in
+-- somebody else's acceptance test three agents downstream.
+do $$
+declare
+  v_keys constant text[] := array[
+    'sk-plat-mvp0seedkey-local-dev-fixture-not-real-keys',
+    'sk-plat-mvp0revokedkey-local-dev-fixture-revoked-00'
+  ];
+  v_plain text;
+begin
+  foreach v_plain in array v_keys loop
+    if length(v_plain) <> 51 then
+      raise exception 'seed api key % is % chars, auth.ts requires exactly 51',
+        left(v_plain, 16), length(v_plain);
+    end if;
+    if v_plain !~ '^sk-plat-[A-Za-z0-9_-]{43}$' then
+      raise exception 'seed api key % fails auth.ts KEY_BODY_RE', left(v_plain, 16);
+    end if;
+    if not exists (
+      select 1 from public.api_keys
+       where key_hash = encode(extensions.digest(v_plain, 'sha256'), 'hex')
+         and key_prefix = left(v_plain, 16))
+    then
+      raise exception
+        'seed api key %: stored key_hash/key_prefix do not match this plaintext — recompute sha256',
+        left(v_plain, 16);
+    end if;
+  end loop;
+end $$;
 
 -- ── 4. The MVP-0 target model — owned by the CREATOR ────────────────────────
 -- Filenames and sizes are the real probed values from
