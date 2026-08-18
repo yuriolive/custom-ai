@@ -26,11 +26,11 @@ export function PanelHeader({
   action,
   description,
   title,
-}: {
+}: Readonly<{
   action?: React.ReactNode;
   description?: React.ReactNode;
   title: string;
-}) {
+}>) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
@@ -51,7 +51,7 @@ export function PanelHeader({
  * data lands. Rows of the right height in the right columns mean the only thing
  * that changes on arrival is the text.
  */
-export function TableSkeleton({ columns, rows = 5 }: { columns: number; rows?: number }) {
+export function TableSkeleton({ columns, rows = 5 }: Readonly<{ columns: number; rows?: number }>) {
   const rowKeys = Array.from({ length: rows }, (_, i) => `r${i}`);
   const colKeys = Array.from({ length: columns }, (_, i) => `c${i}`);
 
@@ -111,11 +111,11 @@ export function EmptyPanel({
   action,
   description,
   title,
-}: {
+}: Readonly<{
   action?: React.ReactNode;
   description: React.ReactNode;
   title: string;
-}) {
+}>) {
   return (
     // A dashed rule reads weaker than a solid one at the same colour, so this
     // frame steps up to `border-tertiary` to stay visible in both themes.
@@ -135,11 +135,11 @@ export function ErrorPanel({
   detail,
   onRetry,
   title = "Could not load this data",
-}: {
+}: Readonly<{
   detail?: string;
   onRetry?: () => void;
   title?: string;
-}) {
+}>) {
   return (
     <Alert status="danger">
       <Alert.Content>
@@ -184,11 +184,11 @@ export function Stat({
   hint,
   label,
   value,
-}: {
+}: Readonly<{
   hint?: React.ReactNode;
   label: string;
   value: string;
-}) {
+}>) {
   return (
     <div className="flex h-full flex-col gap-1">
       <span className="text-muted font-mono text-[0.6875rem] font-medium tracking-[0.08em] uppercase">
@@ -206,12 +206,12 @@ export function LinkCard({
   href,
   label,
   title,
-}: {
+}: Readonly<{
   description: string;
   href: Href;
   label: string;
   title: string;
-}) {
+}>) {
   return (
     <Card>
       <Card.Header>
@@ -241,11 +241,11 @@ export function CopyButton({
   fullWidth = false,
   label = "Copy",
   value,
-}: {
+}: Readonly<{
   fullWidth?: boolean;
   label?: string;
   value: string;
-}) {
+}>) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -301,7 +301,7 @@ const USAGE_STATUS_COLOR: Record<string, "success" | "warning" | "danger" | "def
 };
 
 /** `usage_transactions.status`, coloured by what it means for the wallet. */
-export function UsageStatusChip({ status }: { status: string }) {
+export function UsageStatusChip({ status }: Readonly<{ status: string }>) {
   return (
     <Chip color={USAGE_STATUS_COLOR[status] ?? "default"} variant="soft">
       {status}
@@ -310,7 +310,7 @@ export function UsageStatusChip({ status }: { status: string }) {
 }
 
 /** Active / revoked for a key. */
-export function KeyStatusChip({ revokedAt }: { revokedAt: string | null }) {
+export function KeyStatusChip({ revokedAt }: Readonly<{ revokedAt: string | null }>) {
   const revoked = revokedAt !== null;
   return (
     <Chip color={revoked ? "danger" : "success"} variant="soft">

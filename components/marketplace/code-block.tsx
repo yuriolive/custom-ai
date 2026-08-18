@@ -74,33 +74,35 @@ export function CodeBlock({
         </Button>
       </div>
 
-      {/* tabIndex on <pre> so a keyboard user can scroll a long snippet
-          horizontally without a mouse; the code itself is not interactive.
-          A focus stop with no role or name is what makes a linter (rightly)
-          suspicious of tabIndex on a non-interactive element, so this is
-          declared as what it actually is: a named scrollable region. That is
-          the pattern WCAG 2.1.1 wants for scrollable content, and it gives a
-          screen-reader user something meaningful on arrival. */}
-      <pre
-        aria-label={`${label} snippet`}
-        className="max-w-full overflow-x-auto p-4 text-[0.8125rem] leading-relaxed"
-        role="region"
-        tabIndex={0}
-      >
-        <code className="font-mono">
-          {tokens.map((token, index) =>
-            token.kind === "plain" ? (
-              token.text
-            ) : (
-              // The token list is derived from an immutable string, so the
-              // position IS the identity — there is nothing more stable to key on.
-              <span className={tokenClassName(token.kind)} key={index}>
-                {token.text}
-              </span>
-            ),
-          )}
-        </code>
-      </pre>
+      {/* A named, focusable scroll container so a keyboard user can scroll a
+          long snippet horizontally without a mouse (WCAG 2.1.1) — the code
+          itself is not interactive, and a focus stop carrying neither a role
+          nor a name is what makes `tabIndex` here look like a mistake.
+
+          A real <section> rather than role="region": the native element is the
+          landmark, and support for it is better than for the ARIA role.
+
+          The padding sits on the inner <pre>, not on this scroller. Padding on
+          a scroll container is not honoured at the far end of the scroll in
+          every engine, so putting it inside is what guarantees the last
+          character of a wide line clears the edge. */}
+      <section aria-label={`${label} snippet`} className="max-w-full overflow-x-auto" tabIndex={0}>
+        <pre className="p-4 text-[0.8125rem] leading-relaxed">
+          <code className="font-mono">
+            {tokens.map((token, index) =>
+              token.kind === "plain" ? (
+                token.text
+              ) : (
+                // The token list is derived from an immutable string, so the
+                // position IS the identity — there is nothing more stable to key on.
+                <span className={tokenClassName(token.kind)} key={index}>
+                  {token.text}
+                </span>
+              ),
+            )}
+          </code>
+        </pre>
+      </section>
 
       <p aria-live="polite" className="sr-only" role="status">
         {state === "copied"
