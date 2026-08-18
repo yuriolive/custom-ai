@@ -19,7 +19,14 @@
     "tools/modal/**",
     "supabase/migrations/**"
   ],
-  "rules": {},
+  "rules": {
+    // Side-effect imports are load-bearing here: `./globals.css` is the Tailwind v4
+    // entrypoint and `server-only` is the guard that keeps server modules off the client.
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "server-only"] }],
+    // The repo convention is a leading `_` for deliberately-unused/internal bindings
+    // (see eslint.config.mjs argsIgnorePattern "^_"). This rule contradicts it.
+    "no-underscore-dangle": "off"
+  },
   "overrides": [
     {
       "files": ["supabase/functions/**/*.ts"],
@@ -30,6 +37,9 @@
     {
       "files": ["**/test/**", "**/tests/**", "**/*.test.ts", "**/*_test.ts"],
       "rules": {
+        // Test doubles are deliberately defined inside the case that uses them; hoisting
+        // them to module scope would decouple a fixture from the assertion it exists for.
+        "unicorn/consistent-function-scoping": "off",
         "no-empty-function": "off"
       }
     }

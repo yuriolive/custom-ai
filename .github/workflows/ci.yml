@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # oxlint first: it is ~50x faster than eslint, so a broken tree fails in ~1s.
+      - name: oxlint
+        run: npm run oxlint
+
+      # eslint carries the Next.js/React rules oxlint does not implement, plus the
+      # HeroUI v3 guard rules (no onClick, no @heroui/system|theme imports).
+      - name: eslint
+        run: npm run lint:next
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: test
+        run: npm test
+
+      # Secrets must never reach a NEXT_PUBLIC_* variable.
+      - name: check:env
+        run: npm run check:env
+
+      - name: build
+        run: npm run build
+
+      # Advisory until the one-time repo-wide `npm run format` lands: adding the
+      # formatter and reformatting 20 files in the same change would bury every
+      # other diff. Flip continue-on-error off once that commit is in.
+      - name: format:check
+        run: npm run format:check
+        continue-on-error: true

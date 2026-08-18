@@ -17,6 +17,22 @@ export interface HfConfigJson {
   max_position_embeddings?: number;
   num_local_experts?: number;
   num_experts_per_tok?: number;
+  // ── hybrid attention/SSM ──────────────────────────────────────────────────
+  /** Qwen3-Next style: 1 full-attention block every N blocks. */
+  full_attention_interval?: number;
+  /** Granite / Bamba / Qwen3-Next style: explicit per-block kind. Authoritative. */
+  layer_types?: string[];
+  /** MTP / speculative heads appended after the transformer stack. */
+  num_nextn_predict_layers?: number;
+  // Mamba spellings, in both the bare and the `mamba_`-prefixed hybrid form.
+  state_size?: number;
+  conv_kernel?: number;
+  n_groups?: number;
+  mamba_d_state?: number;
+  mamba_d_conv?: number;
+  mamba_n_groups?: number;
+  mamba_expand?: number;
+  mamba_d_inner?: number;
   quantization_config?: { quant_method?: string; bits?: number };
   /** VLM configs nest the language model here. */
   text_config?: HfConfigJson;
@@ -57,7 +73,7 @@ export function architectureFromConfig(cfg: HfConfigJson): ConfigArchitectureRes
   let headDim: number;
   if (explicitHeadDim !== null) {
     headDim = explicitHeadDim;
-  } else if (hiddenSize! % nAttentionHeads! === 0) {
+  } else if ((hiddenSize! % nAttentionHeads!) === 0) {
     headDim = hiddenSize! / nAttentionHeads!;
   } else {
     return {
@@ -71,17 +87,69 @@ export function architectureFromConfig(cfg: HfConfigJson): ConfigArchitectureRes
     return { ok: false, error: "config.json yielded a non-positive head_dim" };
   }
 
+  const fullAttentionInterval = num(c.full_attention_interval);
+
   return {
     ok: true,
     architecture: {
       nLayers: nLayers!,
+      nAttentionLayers: attentionLayersFromConfig(c, nLayers!, fullAttentionInterval),
+      fullAttentionInterval,
       nKvHeads,
       nAttentionHeads: nAttentionHeads!,
       hiddenSize: hiddenSize!,
       headDim,
       maxPositionEmbeddings: num(c.max_position_embeddings),
+      ssm: ssmFromConfig(c, hiddenSize!),
+      // Raw `model_type`, never checked against an allowlist.
+      architecture: typeof c.model_type === "string" ? c.model_type : null,
       source: "config.json",
     },
+  };
+}
+
+/**
+ * Blocks that hold a GROWING KV cache — see `deriveAttentionLayers` in gguf.ts
+ * for the full rationale; this path only differs in where the inputs come from.
+ *
+ * `layer_types` is preferred when present because it is an explicit per-block
+ * list rather than a rule to be re-derived: we simply count the blocks the
+ * config itself calls full attention. Otherwise we apply the same
+ * floor(non-MTP blocks / interval) rule as the GGUF path.
+ */
+function attentionLayersFromConfig(
+  c: HfConfigJson,
+  nLayers: number,
+  fullAttentionInterval: number | null,
+): number {
+  if (Array.isArray(c.layer_types) && c.layer_types.length > 0) {
+    const attn = c.layer_types.filter((t) => typeof t === "string" && t.includes("full_attention"));
+    if (attn.length > 0) return attn.length;
+    // A layer_types array with no full-attention entry means a pure recurrent
+    // model: no growing KV at all. Report 0 rather than inventing layers.
+    return 0;
+  }
+  return deriveAttentionLayers(nLayers, fullAttentionInterval, num(c.num_nextn_predict_layers) ?? 0);
+}
+
+/**
+ * SSM state geometry from config.json. Best effort across the Mamba spellings;
+ * the GGUF path is the authoritative one for the MVP's GGUF-only target.
+ * Returns null unless state size, conv kernel and inner size are all readable —
+ * a partial SSM description would mis-size the constant state term.
+ */
+function ssmFromConfig(c: HfConfigJson, hiddenSize: number): ModelArchitecture["ssm"] {
+  const stateSize = num(c.mamba_d_state) ?? num(c.state_size);
+  const convKernel = num(c.mamba_d_conv) ?? num(c.conv_kernel);
+  const expand = num(c.mamba_expand);
+  const innerSize = num(c.mamba_d_inner) ?? (expand !== null ? expand * hiddenSize : null);
+  if (stateSize === null || convKernel === null || innerSize === null) return null;
+  return {
+    stateSize,
+    innerSize,
+    // Mamba-1 has no groups and is single-group by construction.
+    groupCount: num(c.mamba_n_groups) ?? num(c.n_groups) ?? 1,
+    convKernel,
   };
 }
 

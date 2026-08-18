@@ -12,9 +12,9 @@ THIS LIST IS NOT AN ORDERED LADDER.
 Memory bandwidth is what sets single-stream decode speed (every generated token reads
 the active weights once), and bandwidth does NOT track VRAM:
 
-    L4        24 GB VRAM    300 GB/s     <-- same VRAM as the A10G, HALF the bandwidth
-    A10G      24 GB VRAM    600 GB/s
-    L40S      48 GB VRAM    864 GB/s     <-- 2x the VRAM of the A10G, only 1.44x bandwidth
+    L4        24 GB VRAM    300 GB/s     <-- same VRAM as the A10, HALF the bandwidth
+    A10       24 GB VRAM    600 GB/s
+    L40S      48 GB VRAM    864 GB/s     <-- 2x the VRAM of the A10, only 1.44x bandwidth
     A100-40GB 40 GB VRAM   1555 GB/s     <-- LESS VRAM than the L40S, 1.8x the bandwidth
 
 So "the 48 GB card" is slower per stream than "the 40 GB card", and the two 24 GB cards
@@ -62,19 +62,19 @@ GPU_TIERS: tuple[GpuTier, ...] = (
         usd_per_hour_micro=590_400, usd_per_second_micro=164, sort_order=10,
     ),
     GpuTier(
-        # Same VRAM as the A10G below, HALF its bandwidth, ~70% of its price.
+        # Same VRAM as the A10 below, HALF its bandwidth, ~70% of its price.
         # Cheapest card that holds a ~16 GB model — and the slowest one that does.
         id="l4", label="L4 24GB", modal_gpu_string="L4",
         vram_bytes=24 * GIB, memory_bandwidth_bytes_s=300_000_000_000,
         usd_per_hour_micro=800_000, usd_per_second_micro=222, sort_order=20,
     ),
     GpuTier(
-        id="a10g", label="A10G 24GB", modal_gpu_string="A10G",
+        id="a10g", label="A10 24GB", modal_gpu_string="A10",
         vram_bytes=24 * GIB, memory_bandwidth_bytes_s=600_000_000_000,
         usd_per_hour_micro=1_100_000, usd_per_second_micro=306, sort_order=30,
     ),
     GpuTier(
-        # 2x the VRAM of an A10G but only 1.44x the bandwidth: buying it for SPEED is
+        # 2x the VRAM of an A10 but only 1.44x the bandwidth: buying it for SPEED is
         # a bad trade, buying it for CAPACITY is a good one. Two different decisions.
         id="l40s", label="L40S 48GB", modal_gpu_string="L40S",
         vram_bytes=48 * GIB, memory_bandwidth_bytes_s=864_000_000_000,
@@ -100,7 +100,7 @@ GPU_TIERS: tuple[GpuTier, ...] = (
     GpuTier(
         id="h200", label="H200 141GB", modal_gpu_string="H200",
         vram_bytes=141 * GIB, memory_bandwidth_bytes_s=4_800_000_000_000,
-        usd_per_hour_micro=4_560_000, usd_per_second_micro=1267, sort_order=80,
+        usd_per_hour_micro=4_539_600, usd_per_second_micro=1261, sort_order=80,
     ),
     GpuTier(
         id="b200", label="B200 180GB", modal_gpu_string="B200",

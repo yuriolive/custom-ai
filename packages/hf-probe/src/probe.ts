@@ -182,7 +182,7 @@ async function resolveArchitecture(
       (v) => v.deployable && v.files.length > 0,
     );
     const preferred = deployableVariants.filter((v) => v.family === null);
-    const candidates = (preferred.length > 0 ? preferred : deployableVariants).sort(
+    const candidates = (preferred.length > 0 ? preferred : deployableVariants).toSorted(
       (a, b) => a.weightsBytes - b.weightsBytes,
     );
     const target = candidates[0] ?? classified.variants.find((v) => v.files.length > 0);

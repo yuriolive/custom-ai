@@ -150,6 +150,46 @@ def _launch_llama_server(model_path: str, ctx_size: int, parallel: int, alias: s
     subprocess.Popen(cmd)
 
 
+def _wait_until_ready(timeout_s: int = 600) -> float:
+    """
+    Block until llama-server reports itself HEALTHY, not merely until the port is open.
+
+    This gate is load-bearing and was found the hard way. `@modal.web_server` marks a
+    container ready as soon as the port ACCEPTS CONNECTIONS — but llama-server binds the
+    port immediately and answers every request with
+
+        HTTP 503  {"error":{"message":"Loading model","code":503}}
+
+    for the whole model-load window. Without this wait, Modal considers the container up,
+    routes the very first (cold) request to it, and the caller gets a 503 instead of a
+    stream. That is precisely the cold-start path the product depends on, so the failure
+    would land on real users and on nobody's test.
+
+    Waiting here instead means the container is only marked ready when it can actually
+    serve, and the cold-start cost shows up honestly as latency rather than as an error.
+    """
+    import urllib.error
+    import urllib.request
+
+    t0 = time.monotonic()
+    attempt = 0
+    while time.monotonic() - t0 < timeout_s:
+        attempt += 1
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{SERVER_PORT}/health", timeout=5
+            ) as r:
+                if r.status == 200:
+                    elapsed = time.monotonic() - t0
+                    print(f"[serve] llama-server HEALTHY after {elapsed:.1f}s ({attempt} polls)", flush=True)
+                    return elapsed
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError):
+            pass  # 503 while loading, or connection refused before the bind
+        time.sleep(1.0)
+
+    raise RuntimeError(f"llama-server did not become healthy within {timeout_s}s")
+
+
 # ── Common decorator settings for every tier ─────────────────────────────────
 # Modal resolves `modal.parameter()` fields and lifecycle decorators on the concrete
 # decorated class, so each tier below restates the same few lines rather than inheriting
@@ -186,11 +226,17 @@ class LlamaServerT4:
 
     @modal.enter()
     def prepare(self):
+        # Download, launch, AND wait for health — all before Modal marks this container
+        # ready. See _wait_until_ready() for why the health gate is not optional.
         self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
+        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        _wait_until_ready()
 
     @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
     def serve(self):
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        # Intentionally empty. llama-server is already running and healthy by the time
+        # @enter returns; this method exists only to declare the proxied port.
+        pass
 
 
 @app.cls(gpu="L4", **_CLS_KWARGS)
@@ -202,15 +248,21 @@ class LlamaServerL4:
 
     @modal.enter()
     def prepare(self):
+        # Download, launch, AND wait for health — all before Modal marks this container
+        # ready. See _wait_until_ready() for why the health gate is not optional.
         self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
+        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        _wait_until_ready()
 
     @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
     def serve(self):
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        # Intentionally empty. llama-server is already running and healthy by the time
+        # @enter returns; this method exists only to declare the proxied port.
+        pass
 
 
-@app.cls(gpu="A10G", **_CLS_KWARGS)
-class LlamaServerA10G:
+@app.cls(gpu="A10", **_CLS_KWARGS)
+class LlamaServerA10:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
     ctx_size: int = modal.parameter(default=8192)
@@ -218,11 +270,17 @@ class LlamaServerA10G:
 
     @modal.enter()
     def prepare(self):
+        # Download, launch, AND wait for health — all before Modal marks this container
+        # ready. See _wait_until_ready() for why the health gate is not optional.
         self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
+        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        _wait_until_ready()
 
     @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
     def serve(self):
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        # Intentionally empty. llama-server is already running and healthy by the time
+        # @enter returns; this method exists only to declare the proxied port.
+        pass
 
 
 @app.cls(gpu="L40S", **_CLS_KWARGS)
@@ -234,11 +292,17 @@ class LlamaServerL40S:
 
     @modal.enter()
     def prepare(self):
+        # Download, launch, AND wait for health — all before Modal marks this container
+        # ready. See _wait_until_ready() for why the health gate is not optional.
         self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
+        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        _wait_until_ready()
 
     @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
     def serve(self):
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        # Intentionally empty. llama-server is already running and healthy by the time
+        # @enter returns; this method exists only to declare the proxied port.
+        pass
 
 
 @app.cls(gpu="A100-40GB", **_CLS_KWARGS)
@@ -250,11 +314,17 @@ class LlamaServerA10040:
 
     @modal.enter()
     def prepare(self):
+        # Download, launch, AND wait for health — all before Modal marks this container
+        # ready. See _wait_until_ready() for why the health gate is not optional.
         self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
+        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        _wait_until_ready()
 
     @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
     def serve(self):
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        # Intentionally empty. llama-server is already running and healthy by the time
+        # @enter returns; this method exists only to declare the proxied port.
+        pass
 
 
 @app.cls(gpu="A100-80GB", **_CLS_KWARGS)
@@ -266,11 +336,17 @@ class LlamaServerA10080:
 
     @modal.enter()
     def prepare(self):
+        # Download, launch, AND wait for health — all before Modal marks this container
+        # ready. See _wait_until_ready() for why the health gate is not optional.
         self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
+        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        _wait_until_ready()
 
     @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
     def serve(self):
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        # Intentionally empty. llama-server is already running and healthy by the time
+        # @enter returns; this method exists only to declare the proxied port.
+        pass
 
 
 @app.cls(gpu="H100", **_CLS_KWARGS)
@@ -282,18 +358,24 @@ class LlamaServerH100:
 
     @modal.enter()
     def prepare(self):
+        # Download, launch, AND wait for health — all before Modal marks this container
+        # ready. See _wait_until_ready() for why the health gate is not optional.
         self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
+        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        _wait_until_ready()
 
     @modal.web_server(port=SERVER_PORT, startup_timeout=_WEB_SERVER_STARTUP_TIMEOUT)
     def serve(self):
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
+        # Intentionally empty. llama-server is already running and healthy by the time
+        # @enter returns; this method exists only to declare the proxied port.
+        pass
 
 
 # tier id (tiers.py) -> the class deployed for it
 TIER_CLASS_NAMES: dict[str, str] = {
     "t4": "LlamaServerT4",
     "l4": "LlamaServerL4",
-    "a10g": "LlamaServerA10G",
+    "a10g": "LlamaServerA10",
     "l40s": "LlamaServerL40S",
     "a100_40": "LlamaServerA10040",
     "a100_80": "LlamaServerA10080",

@@ -2120,19 +2120,37 @@ alter table public.profiles enable row level security;
 create policy profiles_select_own on public.profiles
   for select to authenticated using (id = auth.uid());
 
--- Update own row but NEVER money or risk columns: those are RPC-only.
+-- Update own row, but ONLY the genuinely user-editable columns.
+--
+-- ALLOWLIST, not denylist. An earlier revision enumerated the columns that must NOT
+-- change, and it failed exactly as that pattern always does: `lifetime_earnings_micro_usd`,
+-- `lifetime_spend_micro_usd`, and `stripe_customer_id` were added later and silently
+-- became user-writable. Proven live under `SET ROLE authenticated`. Because
+-- stripe_customer_id is UNIQUE, a user could squat another user's `cus_...` id and deny
+-- them their Stripe linkage; lifetime_earnings drives payout reporting.
+--
+-- Asserting what MAY change means every future column is protected by default.
 create policy profiles_update_own on public.profiles
   for update to authenticated
   using (id = auth.uid())
   with check (
     id = auth.uid()
-    and balance_micro_usd     = (select p.balance_micro_usd     from public.profiles p where p.id = auth.uid())
-    and earnings_micro_usd    = (select p.earnings_micro_usd    from public.profiles p where p.id = auth.uid())
-    and max_balance_micro_usd = (select p.max_balance_micro_usd from public.profiles p where p.id = auth.uid())
-    and is_suspended          = (select p.is_suspended          from public.profiles p where p.id = auth.uid())
-    and rate_limit_rpm        = (select p.rate_limit_rpm        from public.profiles p where p.id = auth.uid())
-    and handle                = (select p.handle                from public.profiles p where p.id = auth.uid())
+    and (select p.handle from public.profiles p where p.id = auth.uid()) = handle
+    and not exists (
+      select 1 from public.profiles p
+       where p.id = auth.uid()
+         and (p.balance_micro_usd,  p.earnings_micro_usd, p.lifetime_earnings_micro_usd,
+              p.lifetime_spend_micro_usd, p.max_balance_micro_usd, p.is_suspended,
+              p.rate_limit_rpm, p.stripe_customer_id, p.created_at)
+         is distinct from
+             (balance_micro_usd,    earnings_micro_usd,   lifetime_earnings_micro_usd,
+              lifetime_spend_micro_usd,  max_balance_micro_usd,   is_suspended,
+              rate_limit_rpm,       stripe_customer_id,   created_at)
+    )
   );
+
+-- Defense in depth: narrow the grant itself so the policy is not the only gate.
+--   grant update (display_name, avatar_url, bio) on public.profiles to authenticated;
 
 -- No client INSERT / DELETE: the auth trigger owns creation, CASCADE owns deletion.
 
@@ -2881,6 +2899,15 @@ create table public.wallet_ledger (
     (kind in ('topup','grant','refund','adjustment') and amount_micro_usd <> 0) or
     (kind in ('usage_debit','chargeback')            and amount_micro_usd <  0)
   )
+  -- NOTE: the strict `< 0` here is deliberate, and it makes a caller obligation
+  -- explicit: a settlement whose entire cost is written off (empty wallet) moves ZERO
+  -- cash, so it must NOT write a ledger row at all. An earlier revision of
+  -- deduct_token_cost inserted `-(cost - write_off)` unconditionally, which is 0 in
+  -- that case, raised 23514, and left the transaction stranded as 'reserved' with its
+  -- hold intact — unbilled GPU work plus stranded balance. That is the NORMAL outcome
+  -- whenever two requests race and the first empties the wallet, not an edge case.
+  -- The ledger is a cash book: no cash moved, no row. The shortfall is recorded on
+  -- usage_transactions.write_off_micro_usd instead.
 );
 
 comment on table public.wallet_ledger is
@@ -3398,12 +3425,34 @@ FR-DB-002 (P0)  No client role holds INSERT/UPDATE/DELETE on usage_transactions,
 FR-DB-003 (P0)  Every SECURITY DEFINER function sets search_path = public, pg_temp
                 (search_path injection hardening) and has EXECUTE revoked from
                 anon and authenticated.
-FR-DB-004 (P0)  Deterministic lock order everywhere: usage_transactions →
-                profiles(payer) → profiles(creator). Prevents deadlock between
-                concurrent settlements.
+FR-DB-004 (P0)  CORRECTED — an earlier revision specified "usage_transactions →
+                profiles(payer) → profiles(creator)", which is deterministic but is
+                NOT A TOTAL ORDER, and therefore does not prevent deadlock at all.
+                Two settlements with swapped roles form a cycle: A locks X as payer
+                and updates Y as creator while B locks Y as payer and updates X as
+                creator. Measured: 20 concurrent swapped settlements produced 19
+                deadlocks (40P01); an identical-load control flowing one direction
+                produced zero. Two creators who use each other's models is an
+                ordinary marketplace shape, not an edge case.
+                Required order: usage_transactions, then BOTH profile rows locked in
+                canonical `id` order — never by role. Determinism is not the property
+                that matters here; totality is.
 FR-DB-005 (P1)  usage_transactions is RANGE-partitioned monthly on created_at before
                 the table exceeds ~50M rows.
-FR-DB-006 (P1)  A pgTAP suite asserts every invariant I1–I5 under simulated concurrency.
+FR-DB-006 (P0)  UPGRADED from P1. A pgTAP suite asserts every invariant I1-I5 under
+                GENUINE concurrency — real separate backends (dblink), released against
+                a shared wall-clock barrier so they collide rather than queue. Simulated
+                or single-connection concurrency is worthless here: a single-connection
+                harness ran green over this same schema while it contained a
+                100%-reproducible self-deadlock and a settlement path that stranded
+                transactions. Every P1 billing defect found so far was found ONLY by
+                real parallel sessions.
+                The suite must also include a CONTROL scenario (identical load, no
+                role-swapping) so a failure can be attributed to the structural cause
+                rather than to contention.
+FR-DB-007 (P0)  Concurrency tests are written by someone other than the author of the
+                function under test, and are prompted to break it rather than to
+                confirm it.
 ```
 
 ---

@@ -30,6 +30,13 @@ function isV2Package(source) {
   return V2_ONLY_PACKAGES.some((p) => source === p || source.startsWith(`${p}/`));
 }
 
+/** Resolve <Card.Header> to its root identifier `Card`. */
+function rootName(nameNode) {
+  let node = nameNode;
+  while (node && node.type === "JSXMemberExpression") node = node.object;
+  return node && node.type === "JSXIdentifier" ? node.name : null;
+}
+
 /** @type {import("eslint").Rule.RuleModule} */
 const noHeroUIOnClick = {
   meta: {
@@ -48,13 +55,6 @@ const noHeroUIOnClick = {
   create(context) {
     /** Local names bound to a HeroUI import in this module. */
     const heroUINames = new Set();
-
-    /** Resolve <Card.Header> to its root identifier `Card`. */
-    function rootName(nameNode) {
-      let node = nameNode;
-      while (node && node.type === "JSXMemberExpression") node = node.object;
-      return node && node.type === "JSXIdentifier" ? node.name : null;
-    }
 
     return {
       ImportDeclaration(node) {

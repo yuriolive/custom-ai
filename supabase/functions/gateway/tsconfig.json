@@ -1,0 +1,21 @@
+{
+  // Node-side typecheck for the Deno-targeted Edge Function. `deno check` (see
+  // deno.json tasks) remains the authority for Deno globals; this exists so the
+  // repo-wide `npm run typecheck` actually reaches this tree in CI.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "types": ["node"]
+  },
+  "include": ["*.ts", "tests/**/*.ts", "../../../packages/shared/types.ts"]
+}

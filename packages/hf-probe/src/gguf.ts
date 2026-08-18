@@ -204,7 +204,53 @@ const KEYS_FOR = (arch: string) => ({
   keyLength: `${arch}.attention.key_length`,
   expertCount: `${arch}.expert_count`,
   expertUsedCount: `${arch}.expert_used_count`,
+  // Hybrid attention/SSM keys. Absent on a plain transformer.
+  fullAttentionInterval: `${arch}.full_attention_interval`,
+  nextnPredictLayers: `${arch}.nextn_predict_layers`,
+  ssmStateSize: `${arch}.ssm.state_size`,
+  ssmInnerSize: `${arch}.ssm.inner_size`,
+  ssmGroupCount: `${arch}.ssm.group_count`,
+  ssmConvKernel: `${arch}.ssm.conv_kernel`,
 });
+
+/**
+ * How many blocks actually hold a KV cache that GROWS with context.
+ *
+ * Exactly which blocks are counted, and why:
+ *
+ *  - MTP / next-token-prediction blocks are EXCLUDED. `{arch}.nextn_predict_layers`
+ *    counts speculative-decode heads appended after the transformer stack. They
+ *    are not executed on the normal decode path (llama.cpp does not run them in
+ *    the MVP configuration) and hold no KV for the served sequence. On the MVP
+ *    target this takes 65 blocks down to 64 — and the `noMTP` family of the same
+ *    repo ships exactly those 64 blocks, which is the cross-check that this is
+ *    the right subtraction.
+ *
+ *  - Of the remaining blocks, one in `fullAttentionInterval` is a full-attention
+ *    block; the rest are linear/SSM blocks whose per-sequence state is CONSTANT
+ *    in context length and therefore belongs in the `ssm` term, not the KV term.
+ *    We take the FLOOR, because both conventions in use place the attention block
+ *    at the END of each group (layer i is full attention iff (i+1) % interval == 0)
+ *    or at the START (i % interval == 0); a trailing partial group contains an
+ *    attention block under the second convention only, and counting one that may
+ *    not exist over-sizes KV. Floor and ceil differ by at most one layer.
+ *
+ *  - With no interval key at all the model is a plain transformer and every
+ *    non-MTP block holds KV, so this returns nLayers unchanged.
+ *
+ * MVP target: 65 blocks, 1 MTP block, interval 4 -> floor(64 / 4) = 16.
+ * The `noMTP` family: 64 blocks, 0 MTP, interval 4 -> floor(64 / 4) = 16.
+ * Both families agree, which is the result the DB side already assumes.
+ */
+export function deriveAttentionLayers(
+  nLayers: number,
+  fullAttentionInterval: number | null,
+  mtpLayers: number,
+): number {
+  const core = Math.max(1, nLayers - Math.max(0, mtpLayers));
+  if (fullAttentionInterval === null || fullAttentionInterval <= 1) return core;
+  return Math.max(1, Math.floor(core / fullAttentionInterval));
+}
 
 /**
  * Parse a GGUF header out of a byte prefix.
@@ -278,6 +324,8 @@ export function architectureFromHeader(header: GgufHeader): GgufArchitectureResu
   const hiddenSize = asInt(kv[k.embeddingLength]);
   const contextLength = asInt(kv[k.contextLength]);
   const keyLength = asInt(kv[k.keyLength]);
+  const fullAttentionInterval = asInt(kv[k.fullAttentionInterval]);
+  const mtpLayers = asInt(kv[k.nextnPredictLayers]) ?? 0;
 
   const missing: string[] = [];
   if (nLayers === null) missing.push(k.blockCount);
@@ -302,7 +350,7 @@ export function architectureFromHeader(header: GgufHeader): GgufArchitectureResu
   let headDim: number;
   if (keyLength !== null) {
     headDim = keyLength;
-  } else if (hiddenSize! % nAttentionHeads! === 0) {
+  } else if ((hiddenSize! % nAttentionHeads!) === 0) {
     headDim = hiddenSize! / nAttentionHeads!;
   } else {
     return {
@@ -323,13 +371,44 @@ export function architectureFromHeader(header: GgufHeader): GgufArchitectureResu
     header,
     architecture: {
       nLayers: nLayers!,
+      nAttentionLayers: deriveAttentionLayers(nLayers!, fullAttentionInterval, mtpLayers),
+      fullAttentionInterval,
       nKvHeads,
       nAttentionHeads: nAttentionHeads!,
       hiddenSize: hiddenSize!,
       headDim,
       maxPositionEmbeddings: contextLength,
+      ssm: ssmFromHeader(kv, k),
+      // Raw, never validated against an allowlist: the MVP's own target reports
+      // "qwen35", which no allowlist written today would contain.
+      architecture: arch,
       source: "gguf-header",
     },
+  };
+}
+
+/**
+ * `{arch}.ssm.*` -> the constant per-sequence state geometry, or null when the
+ * model has no SSM blocks at all.
+ *
+ * state_size, inner_size and conv_kernel are required: together they are what
+ * the per-sequence state costs. group_count defaults to 1 when absent, which is
+ * not a guess — Mamba-1 has no groups and is mathematically single-group; only
+ * Mamba-2-style architectures emit the key.
+ */
+function ssmFromHeader(
+  kv: Record<string, GgufValue>,
+  k: ReturnType<typeof KEYS_FOR>,
+): ModelArchitecture["ssm"] {
+  const stateSize = asInt(kv[k.ssmStateSize]);
+  const innerSize = asInt(kv[k.ssmInnerSize]);
+  const convKernel = asInt(kv[k.ssmConvKernel]);
+  if (stateSize === null || innerSize === null || convKernel === null) return null;
+  return {
+    stateSize,
+    innerSize,
+    groupCount: asInt(kv[k.ssmGroupCount]) ?? 1,
+    convKernel,
   };
 }
 

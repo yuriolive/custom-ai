@@ -241,7 +241,7 @@ test("every GatewayErrorCode renders a complete OpenAI envelope", () => {
   for (const code of ALL_CODES) {
     const env = errorEnvelope(code, "boom", null);
     assert.deepEqual(Object.keys(env), ["error"]);
-    assert.deepEqual(Object.keys(env.error).sort(), ["code", "message", "param", "type"]);
+    assert.deepEqual(Object.keys(env.error).toSorted(), ["code", "message", "param", "type"]);
     assert.equal(env.error.code, code);
     assert.equal(env.error.message, "boom");
     assert.equal(env.error.param, null);

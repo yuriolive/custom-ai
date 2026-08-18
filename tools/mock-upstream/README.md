@@ -18,9 +18,9 @@ Point `UPSTREAM_BASE_URL` at the mock's `url` and the gateway needs no other cha
 ## Run it standalone
 
 ```bash
-node tools/mock-upstream/cli.js --port 8787
-node tools/mock-upstream/cli.js --port 8787 --usage none --cold-start-ms 3000 --quiet
-node tools/mock-upstream/cli.js --help
+node tools/mock-upstream/cli.ts --port 8787
+node tools/mock-upstream/cli.ts --port 8787 --usage none --cold-start-ms 3000 --quiet
+node tools/mock-upstream/cli.ts --help
 ```
 
 Every control below is also a `--kebab-case` CLI flag that changes the **server-wide default**;
@@ -29,46 +29,54 @@ per-request headers/query params still win.
 ## Use it from tests
 
 ```js
-import { startMockUpstream } from "../../tools/mock-upstream/index.js";
+import { startMockUpstream } from "../../tools/mock-upstream/index.ts";
 
-const mock = await startMockUpstream({ port: 0 });          // 0 => ephemeral port
-process.env.UPSTREAM_BASE_URL = mock.url;                   // http://127.0.0.1:53211
+const mock = await startMockUpstream({ port: 0 }); // 0 => ephemeral port
+process.env.UPSTREAM_BASE_URL = mock.url; // http://127.0.0.1:53211
 
-mock.setDefaults({ usage: "none", coldStartMs: 100 });      // server-wide defaults
+mock.setDefaults({ usage: "none", coldStartMs: 100 }); // server-wide defaults
 // ... drive the gateway ...
 const r = mock.lastRequest();
-assert.equal(r.stream, true);                               // gateway forced stream:true
-assert.equal(r.authorization, "Bearer " + RUNPOD_API_KEY);  // platform key not forwarded
-mock.reset();                                               // clear mock.requests
-await mock.close();                                         // destroys hung sockets too
+assert.equal(r.stream, true); // gateway forced stream:true
+assert.equal(r.authorization, "Bearer " + RUNPOD_API_KEY); // platform key not forwarded
+mock.reset(); // clear mock.requests
+await mock.close(); // destroys hung sockets too
 ```
 
 `startMockUpstream({ port, host, defaults, log })` resolves to:
 
-| member | meaning |
-|---|---|
-| `url` | `http://127.0.0.1:<port>` — use as `UPSTREAM_BASE_URL` |
-| `port` | actual bound port (resolved when `port: 0`) |
-| `requests` | live array of every received request, in order |
-| `lastRequest()` | last element of `requests` |
-| `reset()` | empties `requests` |
-| `setDefaults(partial)` | merges into server-wide defaults, returns the merged object |
-| `getDefaults()` | current defaults |
-| `close()` | destroys all sockets (including `fail=hang`) and closes the server |
-| `server` | the raw `node:http` server |
+| member                 | meaning                                                            |
+| ---------------------- | ------------------------------------------------------------------ |
+| `url`                  | `http://127.0.0.1:<port>` — use as `UPSTREAM_BASE_URL`             |
+| `port`                 | actual bound port (resolved when `port: 0`)                        |
+| `requests`             | live array of every received request, in order                     |
+| `lastRequest()`        | last element of `requests`                                         |
+| `reset()`              | empties `requests`                                                 |
+| `setDefaults(partial)` | merges into server-wide defaults, returns the merged object        |
+| `getDefaults()`        | current defaults                                                   |
+| `close()`              | destroys all sockets (including `fail=hang`) and closes the server |
+| `server`               | the raw `node:http` server                                         |
 
 Each recorded request:
 
 ```js
 {
-  at, method, url, path, query, endpointId,
-  headers,           // ALL raw headers — assert the platform key never appears here
-  authorization,     // convenience copy of headers.authorization
-  rawBody, body, bodyParseError,
-  stream,            // body.stream — assert the gateway forced true
-  streamOptions,     // body.stream_options
-  model, messages,
-  options            // the fully resolved mock options for this request
+  (at,
+    method,
+    url,
+    path,
+    query,
+    endpointId,
+    headers, // ALL raw headers — assert the platform key never appears here
+    authorization, // convenience copy of headers.authorization
+    rawBody,
+    body,
+    bodyParseError,
+    stream, // body.stream — assert the gateway forced true
+    streamOptions, // body.stream_options
+    model,
+    messages,
+    options); // the fully resolved mock options for this request
 }
 ```
 
@@ -80,22 +88,22 @@ Per-request, via **header** or **query param**. Precedence:
 **header > query param > `setDefaults()` / CLI flag > built-in default**.
 An unrecognized or malformed value is ignored (falls through to the next level).
 
-| Option | Header | Query param | Default | Meaning |
-|---|---|---|---|---|
-| cold start | `x-mock-cold-start-ms` | `cold_start_ms` | `0` | withhold **every** byte, response headers included, for N ms. Handles `100000`. |
-| token delay | `x-mock-token-delay-ms` | `token_delay_ms` | `0` | ms between content frames |
-| token count | `x-mock-tokens` | `tokens` | `8` | number of content frames / `completion_tokens` |
-| usage mode | `x-mock-usage` | `usage` | `full` | `full` \| `basic` \| `none` — see below |
+| Option              | Header                       | Query param           | Default | Meaning                                                                                                                                        |
+| ------------------- | ---------------------------- | --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| cold start          | `x-mock-cold-start-ms`       | `cold_start_ms`       | `0`     | withhold **every** byte, response headers included, for N ms. Handles `100000`.                                                                |
+| token delay         | `x-mock-token-delay-ms`      | `token_delay_ms`      | `0`     | ms between content frames                                                                                                                      |
+| token count         | `x-mock-tokens`              | `tokens`              | `8`     | number of content frames / `completion_tokens`                                                                                                 |
+| usage mode          | `x-mock-usage`               | `usage`               | `full`  | `full` \| `basic` \| `none` — see below                                                                                                        |
 | honor include_usage | `x-mock-honor-include-usage` | `honor_include_usage` | `false` | vLLM semantics: when `true`, a **streaming** response emits usage only if the body carries `stream_options: {include_usage: true}` — see below |
-| usage placement | `x-mock-usage-placement` | `usage_placement` | `auto` | `auto` \| `separate` \| `final` |
-| failure mode | `x-mock-fail` | `fail` | `none` | `none` \| `500` \| `429` \| `404` \| `drop` \| `hang` \| `malformed` |
-| drop point | `x-mock-drop-after` | `drop_after` | `3` | content tokens emitted before `fail=drop` kills the socket |
-| malformed point | `x-mock-malformed-after` | `malformed_after` | `2` | token index before which `fail=malformed` injects a bad frame |
-| prompt tokens | `x-mock-prompt-tokens` | `prompt_tokens` | `11` | reported `usage.prompt_tokens` |
-| cached tokens | `x-mock-cached-tokens` | `cached_tokens` | `0` | `usage.prompt_tokens_details.cached_tokens` (`usage=full` only) |
-| token text | `x-mock-token-text` | `token_text` | `null` | repeat this string instead of the built-in lorem |
-| finish reason | `x-mock-finish-reason` | `finish_reason` | `stop` | value on the final chunk |
-| model echo | `x-mock-model` | `model` | `null` | override the echoed model name (default: echo request `model`) |
+| usage placement     | `x-mock-usage-placement`     | `usage_placement`     | `auto`  | `auto` \| `separate` \| `final`                                                                                                                |
+| failure mode        | `x-mock-fail`                | `fail`                | `none`  | `none` \| `500` \| `429` \| `404` \| `drop` \| `hang` \| `malformed`                                                                           |
+| drop point          | `x-mock-drop-after`          | `drop_after`          | `3`     | content tokens emitted before `fail=drop` kills the socket                                                                                     |
+| malformed point     | `x-mock-malformed-after`     | `malformed_after`     | `2`     | token index before which `fail=malformed` injects a bad frame                                                                                  |
+| prompt tokens       | `x-mock-prompt-tokens`       | `prompt_tokens`       | `11`    | reported `usage.prompt_tokens`                                                                                                                 |
+| cached tokens       | `x-mock-cached-tokens`       | `cached_tokens`       | `0`     | `usage.prompt_tokens_details.cached_tokens` (`usage=full` only)                                                                                |
+| token text          | `x-mock-token-text`          | `token_text`          | `null`  | repeat this string instead of the built-in lorem                                                                                               |
+| finish reason       | `x-mock-finish-reason`       | `finish_reason`       | `stop`  | value on the final chunk                                                                                                                       |
+| model echo          | `x-mock-model`               | `model`               | `null`  | override the echoed model name (default: echo request `model`)                                                                                 |
 
 Programmatic names are camelCase of the same options: `coldStartMs`, `tokenDelayMs`, `tokens`,
 `usage`, `honorIncludeUsage`, `usagePlacement`, `fail`, `dropAfter`, `malformedAfter`,
@@ -109,11 +117,11 @@ every upstream request. Real vLLM only emits usage when that flag is present, so
 regresses **nothing errors** — vLLM returns no usage, the gateway's estimator quietly takes over,
 and billing drifts. `honorIncludeUsage` reproduces exactly that.
 
-| `honorIncludeUsage` | request body | result |
-|---|---|---|
-| `false` (default) | anything | usage per the `usage` mode — existing behaviour, unchanged |
-| `true` | `stream_options.include_usage === true` | usage per the `usage` mode |
-| `true` | flag absent, or `include_usage: false` | **no usage anywhere**, regardless of `usage` |
+| `honorIncludeUsage` | request body                            | result                                                     |
+| ------------------- | --------------------------------------- | ---------------------------------------------------------- |
+| `false` (default)   | anything                                | usage per the `usage` mode — existing behaviour, unchanged |
+| `true`              | `stream_options.include_usage === true` | usage per the `usage` mode                                 |
+| `true`              | flag absent, or `include_usage: false`  | **no usage anywhere**, regardless of `usage`               |
 
 `stream_options` is a streaming-only field, so `stream: false` responses ignore this option.
 Turn it on in gateway tests that must fail loudly the moment the injection is dropped:
@@ -134,23 +142,23 @@ bare curl useful. Assert on `requests[i].stream` to prove what the gateway actua
 
 The MVP target is llama.cpp, whose usage emission is build-dependent.
 
-| mode | shape | placement (`auto`) | models the |
-|---|---|---|---|
-| `full` | `prompt_tokens`, `completion_tokens`, `total_tokens`, `prompt_tokens_details.cached_tokens`, `completion_tokens_details.reasoning_tokens` | **separate** trailing chunk with `"choices":[]` | vLLM |
-| `basic` | `prompt_tokens`, `completion_tokens`, `total_tokens` only | on the **final** chunk (the one carrying `finish_reason`) | llama.cpp best case |
-| `none` | no `usage` key anywhere in the stream | — | llama.cpp worst case → forces the gateway's estimator (`UsageResult.source === "estimated"`) |
+| mode    | shape                                                                                                                                     | placement (`auto`)                                        | models the                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `full`  | `prompt_tokens`, `completion_tokens`, `total_tokens`, `prompt_tokens_details.cached_tokens`, `completion_tokens_details.reasoning_tokens` | **separate** trailing chunk with `"choices":[]`           | vLLM                                                                                         |
+| `basic` | `prompt_tokens`, `completion_tokens`, `total_tokens` only                                                                                 | on the **final** chunk (the one carrying `finish_reason`) | llama.cpp best case                                                                          |
+| `none`  | no `usage` key anywhere in the stream                                                                                                     | —                                                         | llama.cpp worst case → forces the gateway's estimator (`UsageResult.source === "estimated"`) |
 
 Placement and shape are independent: `x-mock-usage-placement` forces `separate` or `final`
 regardless of mode, for parsers that must handle both wire layouts.
 
 ### Failure modes
 
-| value | behaviour |
-|---|---|
-| `500` / `429` / `404` | immediate HTTP status + OpenAI error envelope, **before** any cold-start delay. `429` also sends `retry-after: 1`. |
-| `drop` | streams `drop_after` content tokens, flushes them, then destroys the socket. No `[DONE]`. Client sees a premature close (`curl: (18)`). |
-| `hang` | accepts the request and writes **nothing at all** — no status line, no headers — holding the socket open until the client gives up or `close()` is called. For timeout budgets. |
-| `malformed` | injects one syntactically-valid SSE frame carrying truncated JSON at token index `malformed_after`, then continues normally and still terminates with `[DONE]`. |
+| value                 | behaviour                                                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `500` / `429` / `404` | immediate HTTP status + OpenAI error envelope, **before** any cold-start delay. `429` also sends `retry-after: 1`.                                                              |
+| `drop`                | streams `drop_after` content tokens, flushes them, then destroys the socket. No `[DONE]`. Client sees a premature close (`curl: (18)`).                                         |
+| `hang`                | accepts the request and writes **nothing at all** — no status line, no headers — holding the socket open until the client gives up or `close()` is called. For timeout budgets. |
+| `malformed`           | injects one syntactically-valid SSE frame carrying truncated JSON at token index `malformed_after`, then continues normally and still terminates with `[DONE]`.                 |
 
 Cold start composes with everything except the immediate HTTP failures: `fail=hang` with
 `cold_start_ms` still writes nothing, and `fail=drop` drops after the cold start elapses.
@@ -159,7 +167,7 @@ Cold start composes with everything except the immediate HTTP failures: `fail=ha
 
 ## Copy-pasteable curl
 
-Assume `node tools/mock-upstream/cli.js --port 8787` is running, and:
+Assume `node tools/mock-upstream/cli.ts --port 8787` is running, and:
 
 ```bash
 URL=http://127.0.0.1:8787/v2/ep_abc123/openai/v1/chat/completions
@@ -264,7 +272,7 @@ curl -H 'Content-Type: application/json' -H 'x-mock-tokens: 3' \
 ## Tests
 
 ```bash
-cd tools/mock-upstream && node --test "test/*.test.js"
+cd tools/mock-upstream && node --test "test/*.test.ts"
 ```
 
 26 tests, ~1.3 s, no network, no dependencies.

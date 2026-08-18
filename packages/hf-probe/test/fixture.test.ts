@@ -81,8 +81,8 @@ test("fixture: two companions, draft + mmproj, with the right files (FR-DEP-046)
   assert.equal(result.companions.length, expected.companionCount);
   const got = result.companions
     .map((c) => ({ role: c.role, file: c.file }))
-    .sort((a, b) => (a.file < b.file ? -1 : 1));
-  const want = [...expected.companions].sort((a, b) => (a.file < b.file ? -1 : 1));
+    .toSorted((a, b) => (a.file < b.file ? -1 : 1));
+  const want = expected.companions.toSorted((a, b) => (a.file < b.file ? -1 : 1));
   assert.deepEqual(got, want);
   for (const c of result.companions) {
     const sibling = fixture.siblings.find((s) => s.path === c.file);

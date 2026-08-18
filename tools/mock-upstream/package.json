@@ -4,19 +4,20 @@
   "private": true,
   "description": "Zero-dependency mock of RunPod's OpenAI-compatible serverless route, for gateway tests.",
   "type": "module",
-  "main": "./index.js",
-  "types": "./index.d.ts",
+  "main": "./index.ts",
+  "types": "./index.ts",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.ts"
   },
   "bin": {
-    "mock-upstream": "./cli.js"
+    "mock-upstream": "./cli.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
   "scripts": {
-    "start": "node cli.js",
-    "test": "node --test \"test/*.test.js\""
+    "start": "node cli.ts",
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
   }
 }

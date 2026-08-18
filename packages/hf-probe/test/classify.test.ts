@@ -60,7 +60,7 @@ test("split shards: two split quants do not merge with each other", () => {
       f("Big-Model-Q8_0-00002-of-00002.gguf", 35 * GB),
     ],
   });
-  assert.deepEqual(r.variants.map((v) => v.id).sort(), ["base:Q4_K_M", "base:Q8_0"]);
+  assert.deepEqual(r.variants.map((v) => v.id).toSorted(), ["base:Q4_K_M", "base:Q8_0"]);
   assert.equal(r.variants.find((v) => v.id === "base:Q4_K_M")!.weightsBytes, 40 * GB);
   assert.equal(r.variants.find((v) => v.id === "base:Q8_0")!.weightsBytes, 70 * GB);
 });

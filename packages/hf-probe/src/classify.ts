@@ -346,7 +346,7 @@ function classifySafetensors(
   quantMethod: "awq" | "gptq" | null,
 ): ClassifyResult {
   // safetensors: ONE variant — the repo's native precision (FR-DEP-040).
-  const sorted = [...files].sort((a, b) => (a.path < b.path ? -1 : 1));
+  const sorted = files.toSorted((a, b) => (a.path < b.path ? -1 : 1));
   const weightsBytes = sorted.reduce((n, f) => n + f.sizeBytes, 0);
   const format: WeightsFormat = quantMethod ?? "safetensors";
   const tag = quantMethod ? quantMethod.toUpperCase() : null;

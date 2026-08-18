@@ -1,0 +1,21 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+package-lock.json
+tsconfig.tsbuildinfo
+
+# Prose. Reflowing the PRD/contracts costs 1300+ lines of churn and buries real diffs.
+docs/
+
+# "contract — read-only" per docs/CONTRACTS.md.
+tests/fixtures/
+
+# Owned by other agents / not JS-toolchain territory.
+supabase/migrations/
+supabase/.temp/
+tools/modal/
+tools/runpod/
+
+# Deno formats this tree with `deno fmt` (see supabase/functions/gateway/deno.json).
+supabase/functions/

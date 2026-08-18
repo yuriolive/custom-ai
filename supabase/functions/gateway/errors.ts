@@ -110,7 +110,7 @@ export function errorResponse(
     [REQUEST_ID_HEADER]: requestId,
     ...CORS_HEADERS,
     ...ge.extraHeaders,
-    ...(extra ?? {}),
+    ...extra,
   };
 
   return new Response(JSON.stringify(ge.toEnvelope()), {
