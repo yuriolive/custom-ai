@@ -75,8 +75,18 @@ export function CodeBlock({
       </div>
 
       {/* tabIndex on <pre> so a keyboard user can scroll a long snippet
-          horizontally without a mouse; the code itself is not interactive. */}
-      <pre className="max-w-full overflow-x-auto p-4 text-[0.8125rem] leading-relaxed" tabIndex={0}>
+          horizontally without a mouse; the code itself is not interactive.
+          A focus stop with no role or name is what makes a linter (rightly)
+          suspicious of tabIndex on a non-interactive element, so this is
+          declared as what it actually is: a named scrollable region. That is
+          the pattern WCAG 2.1.1 wants for scrollable content, and it gives a
+          screen-reader user something meaningful on arrival. */}
+      <pre
+        aria-label={`${label} snippet`}
+        className="max-w-full overflow-x-auto p-4 text-[0.8125rem] leading-relaxed"
+        role="region"
+        tabIndex={0}
+      >
         <code className="font-mono">
           {tokens.map((token, index) =>
             token.kind === "plain" ? (
