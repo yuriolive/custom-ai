@@ -318,3 +318,88 @@ jobs:
       - name: supabase stop
         if: always()
         run: npx supabase stop --no-backup || true
+
+  # ===========================================================================
+  # DEPLOY — Supabase only. The Next.js app is deployed by Vercel's own Git
+  # integration, deliberately: that keeps Vercel's token out of GitHub entirely,
+  # so this repo holds exactly one set of deploy credentials instead of two.
+  #
+  # Reachable ONLY from a push to main. `github.event_name == 'push'` is the
+  # load-bearing half — a fork cannot produce a push event on this repo, so a
+  # fork PR can never reach these secrets no matter what it changes in the tree
+  # (see the fork-exfiltration note in the header). `environment: production`
+  # adds a second, human gate if required reviewers are configured on it.
+  #
+  # `needs:` all four verification jobs, so a deploy cannot outrun the 129
+  # billing invariants — the tests that protect money are a prerequisite for
+  # shipping, not a parallel activity.
+  # ===========================================================================
+  deploy-supabase:
+    name: deploy (supabase migrations + gateway)
+    needs: [node, python, deno, pgtap]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # The CLI is a devDependency, so the deployed schema is applied by the same
+      # version that CI tested with. An ad-hoc `npx supabase@latest` here would
+      # mean a CLI release could change deploy behaviour with no diff.
+      - name: Install
+        run: npm ci
+
+      - name: Link project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: npx supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+
+      # Shows exactly which migrations the remote is missing BEFORE applying them.
+      # Cheap, and it turns "the deploy did something" into a reviewable log line.
+      - name: Pending migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: npx supabase migration list --linked
+
+      # `db push` applies MIGRATIONS ONLY. It does not run supabase/seed.sql, and
+      # it must never be replaced with `db reset --linked`:
+      #   * `db reset` DROPS the remote database, and
+      #   * seed.sql inserts an ACTIVE api_keys row whose plaintext is committed
+      #     to this public repo, so seeding production publishes a working
+      #     credential to anyone who can read the repository.
+      # After the first deploy, confirm `select count(*) from api_keys` is 0.
+      - name: Push migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: npx supabase db push --linked
+
+      # verify_jwt = false comes from config.toml (platform API keys are opaque
+      # tokens, not JWTs — the gateway authenticates them itself). Without that
+      # setting Supabase's platform auth rejects every OpenAI SDK client with
+      # UNAUTHORIZED_INVALID_JWT_FORMAT before our code runs.
+      #
+      # Function SECRETS (MODAL_KEY, MODAL_SECRET, UPSTREAM_PROVIDER,
+      # UPSTREAM_BASE_URL) are set ONCE out of band — see docs/DEPLOY.md. They are
+      # deliberately NOT managed here: putting Modal credentials in GitHub too
+      # would double the number of places holding them for no benefit.
+      - name: Deploy gateway function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: npx supabase functions deploy gateway --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+
+      - name: Deployed
+        run: |
+          echo "Migrations and gateway deployed to ${{ secrets.SUPABASE_PROJECT_REF }}."
+          echo "Vercel deploys the web app from its own Git integration."
