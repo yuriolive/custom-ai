@@ -1763,6 +1763,24 @@ The weights format determines the **inference runtime**, and the two runtimes ar
 | Weight selection | whole repo | **a specific file** — the chosen variant |
 
 ```
+FR-DEP-059 (P1)  RUNTIME IS NOT A FREE CHOICE, and GGUF must NOT be routed to vLLM.
+                 vLLM's in-tree GGUF support was deprecated in 2026 in favour of an
+                 out-of-tree plugin, its own docs frame GGUF as a memory-footprint
+                 feature rather than a speed one, and GGUF-in-vLLM throughput trails
+                 vLLM's native quant paths (Marlin-AWQ) by roughly 8x. llama.cpp is
+                 where GGUF is the native, optimized format. Forcing GGUF through vLLM
+                 to obtain vLLM-only features (TurboQuant KV, global prefix caching)
+                 loses far more than it gains.
+                 The corollary is a VARIANT-SELECTION rule, not a runtime one: when a
+                 repo offers BOTH GGUF and safetensors/AWQ/GPTQ, prefer the
+                 safetensors family, because vLLM delivers 2-3x throughput at 32+
+                 concurrent requests on datacenter GPUs, plus global prefix caching and
+                 sub-8-bit KV. When a repo is GGUF-only — as the MVP target is — that
+                 choice does not exist and llama.cpp is simply correct.
+                 Counterweight to record: llama.cpp uses roughly 35% less VRAM for the
+                 same model, so on a small GPU at low concurrency it can fit a variant
+                 that vLLM cannot. The recommendation is traffic-dependent, and the
+                 solver should say which way it went and why (FR-DEP-051).
 FR-DEP-060 (P0)  Runtime is DERIVED from weights_format, never selected by a creator:
                    gguf                      -> llamacpp
                    safetensors | awq | gptq  -> vllm
