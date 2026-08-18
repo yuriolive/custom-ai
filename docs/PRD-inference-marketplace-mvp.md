@@ -2237,6 +2237,68 @@ FR-ANTH-007 (P2)  Claude Code is tool-call-driven, so §4.5 is a HARD PREREQUISI
 > That combination is a coherent paid **"agent tier"**, and it should be priced and named
 > as one rather than presented as ordinary inference that happens to be slow.
 
+### 4.7 Model Creation: Abliteration and Fine-Tuning (Phase 3 — far future)
+
+> **Status: parked, deliberately.** Recorded now so the architecture does not
+> accidentally foreclose it. Nothing here is scheduled, and none of it should influence
+> MVP decisions beyond the two "do not foreclose" notes at the end.
+
+Today the platform *serves* models other people made. This phase makes it *produce* them — turning the marketplace from a distribution channel into a place where a model comes into existence. That is a strategically different product, and the reason it fits is that the platform already owns the two things it needs: on-demand GPUs with scale-to-zero, and a billing system that meters GPU-seconds.
+
+#### 4.7.1 Abliteration-as-a-service (Heretic)
+
+[Heretic](https://github.com/p-e-w/heretic) removes refusal behavior by co-minimizing refusal count against KL divergence from the base model — no hand-written refusal-removal code, no fine-tuning, no additional training data. **The MVP's own target model was produced this way**, and its repo still carries the `heretic-study/` artifacts (`abliteration_metrics.json`, `optuna-journal.jsonl`). So this is not a hypothetical workflow; it is the workflow that created the platform's first model, currently done by hand off-platform.
+
+```
+FR-ABL-001 (P3)  One-click: pick any registered model -> run Heretic -> get a new
+                 derived model registered to the same creator, with lineage recorded.
+FR-ABL-002 (P3)  Publish the Optuna study alongside the model, as the source repo does.
+                 Abliteration is a QUALITY TRADE, not a free upgrade — refusal count
+                 against KL divergence is exactly the curve a user needs to judge it.
+                 Hiding it would make the platform's own "uncensored" claims unfalsifiable.
+FR-ABL-003 (P3)  Lineage is first-class: derived models link to their parent, and the
+                 parent's licence and the creator's attestation (NFR-LEG-003) propagate.
+                 A derivative cannot have weaker provenance than its source.
+FR-ABL-004 (P3)  Runs are metered as GPU-seconds against the creator's wallet using the
+                 SAME ledger as inference. A job that outruns its budget is killed, not
+                 completed-and-invoiced — the prepaid model exists precisely so the
+                 platform never extends credit.
+```
+
+#### 4.7.2 LoRA and custom fine-tuning
+
+```
+FR-FT-001 (P3)   Upload a dataset -> pick a base model -> train a LoRA adapter -> serve
+                 it. LoRA specifically, because adapters are small (tens of MB against
+                 tens of GB) and can be applied without duplicating base weights.
+FR-FT-002 (P3)   LoRA MULTIPLEXING is the structural unlock and the reason this belongs
+                 on this platform rather than anywhere else: many adapters share one
+                 loaded base model on one GPU. The marginal cost of an additional
+                 fine-tune approaches zero, which is the same economic inversion
+                 scale-to-zero performed for the long tail (§1.4). Both runtimes support
+                 it — vLLM natively, llama.cpp via `--lora`.
+FR-FT-003 (P3)   Training is long-running and expensive, so it needs a genuine job
+                 system: queue, progress, checkpoints, resume, hard budget ceiling,
+                 cancellation. This is NOT the inference path and must not be forced
+                 through the gateway, whose entire design assumes sub-second dispatch
+                 and a streaming response.
+FR-FT-004 (P3)   Uploaded training data is the most sensitive material the platform
+                 would ever hold — far more so than prompts, which MVP deliberately does
+                 not store (NFR-SEC-009). Encryption at rest, explicit retention limits,
+                 deletion on request, and a clear statement that it is never used to
+                 train anything else. Decide this BEFORE accepting the first byte.
+FR-FT-005 (P3)   Evaluation must ship with training. A fine-tune with no before/after
+                 measurement is a model nobody can price, rank, or trust — and the
+                 platform would be selling inference on an unknown quantity.
+```
+
+#### 4.7.3 Two things MVP must not foreclose
+
+Everything above is Phase 3, but two cheap decisions today keep the door open:
+
+1. **Model lineage** — `custom_models` should be able to reference a parent model. Adding a nullable `derived_from_model_id` later is easy; reconstructing lineage after thousands of untracked derivatives exist is not.
+2. **Companion-asset discovery already detects LoRA files** (FR-DEP-041a classifies `lora`/`adapter` GGUFs as companions). That classifier is the seed of adapter support — do not simplify it away on the grounds that nothing consumes it yet.
+
 ---
 
 ## 5. Complete PostgreSQL Database Schema
@@ -4410,6 +4472,8 @@ Four two-week sprints, 8 weeks to GA. Assumed team: 2 full-stack engineers + 1 p
 | **P2.5** | `ComputeProvider` second implementation (Modal / Fly.io GPU); BYO-cloud |
 | **P2.6** | Team accounts, per-key spend caps, org billing, postpaid invoicing |
 | **P2.7** | Model quality leaderboards, community ratings, curated collections |
+| **P3.1** | **Abliteration-as-a-service** (§4.7) — run Heretic on any model, one click |
+| **P3.2** | **LoRA creation and custom fine-tuning** (§4.7) |
 
 ---
 
