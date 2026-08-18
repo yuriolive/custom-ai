@@ -106,8 +106,7 @@ test("a local URL needs no flag, and the trailing slash is normalised away", () 
 });
 
 test("a JWT anywhere in argv is refused, and is never echoed back", () => {
-  const jwt =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sIgNaTuRe";
+  const jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sIgNaTuRe";
   for (const argv of [
     ["create", "--user", "devcaller", "--service-role", jwt],
     [`--service-role=${jwt}`],

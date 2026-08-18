@@ -145,7 +145,8 @@ async function main(): Promise<number> {
       return 0;
 
     case "revoke": {
-      const selector = positional[0] ?? (typeof flags.get("id") === "string" ? String(flags.get("id")) : "");
+      const selector =
+        positional[0] ?? (typeof flags.get("id") === "string" ? String(flags.get("id")) : "");
       if (!selector) throw new CommandError("revoke needs a key id or display prefix.");
       await revoke(store, { selector, yes: flags.get("yes") === true }, io);
       return 0;

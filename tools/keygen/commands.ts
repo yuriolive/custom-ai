@@ -43,11 +43,7 @@ export interface CreateOptions {
  * Mints one key. Returns the persisted row — WITHOUT the plaintext, which was
  * already printed and is now unrecoverable by design.
  */
-export async function create(
-  store: KeyStore,
-  opts: CreateOptions,
-  io: Io,
-): Promise<ApiKeyRow> {
+export async function create(store: KeyStore, opts: CreateOptions, io: Io): Promise<ApiKeyRow> {
   if (!isValidKeyName(opts.name)) {
     throw new CommandError(
       `--name must be 1..${KEY_NAME_MAX_LENGTH} characters (api_keys.name CHECK constraint).`,
@@ -145,7 +141,10 @@ export async function list(store: KeyStore, user: string, io: Io): Promise<ApiKe
     width[h] = Math.max(h.length, ...table.map((r) => r[h].length));
   }
   const line = (cells: readonly string[]) =>
-    cells.map((c, i) => c.padEnd(width[headers[i]!]!)).join("  ").trimEnd();
+    cells
+      .map((c, i) => c.padEnd(width[headers[i]!]!))
+      .join("  ")
+      .trimEnd();
 
   io.out(line(headers));
   io.out(line(headers.map((h) => "─".repeat(width[h]!))));
@@ -165,11 +164,7 @@ export interface RevokeOptions {
   yes: boolean;
 }
 
-export async function revoke(
-  store: KeyStore,
-  opts: RevokeOptions,
-  io: Io,
-): Promise<ApiKeyRow> {
+export async function revoke(store: KeyStore, opts: RevokeOptions, io: Io): Promise<ApiKeyRow> {
   const selector = opts.selector.trim();
   if (!isUuid(selector) && !KEY_PREFIX_CHECK_RE.test(selector)) {
     throw new CommandError(

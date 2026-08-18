@@ -71,15 +71,12 @@ test("live: mint → row lands with the right hash → revoke", async () => {
   // PostgREST to match on the digest we computed independently — we never read
   // key_hash back, we only prove the server has it.
   const digest = createHash("sha256").update(plaintext, "utf8").digest("hex");
-  const byHash = await fetch(
-    `${cfg.url}/rest/v1/api_keys?select=id&key_hash=eq.${digest}`,
-    {
-      headers: {
-        apikey: cfg.serviceRoleKey,
-        authorization: `Bearer ${cfg.serviceRoleKey}`,
-      },
+  const byHash = await fetch(`${cfg.url}/rest/v1/api_keys?select=id&key_hash=eq.${digest}`, {
+    headers: {
+      apikey: cfg.serviceRoleKey,
+      authorization: `Bearer ${cfg.serviceRoleKey}`,
     },
-  );
+  });
   assert.equal(byHash.status, 200);
   const hits = (await byHash.json()) as Array<{ id: string }>;
   assert.deepEqual(

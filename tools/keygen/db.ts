@@ -95,9 +95,7 @@ export class PostgrestKeyStore implements KeyStore {
     const filter = isUuid(ref)
       ? `id=eq.${encodeURIComponent(ref)}`
       : `handle=eq.${encodeURIComponent(ref)}`;
-    const rows = await this.#request<ProfileRef[]>(
-      `/profiles?select=id,handle&${filter}&limit=2`,
-    );
+    const rows = await this.#request<ProfileRef[]>(`/profiles?select=id,handle&${filter}&limit=2`);
     if (rows.length === 0) return null;
     return rows[0]!;
   }

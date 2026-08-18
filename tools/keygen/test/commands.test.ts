@@ -45,7 +45,9 @@ class FakeStore implements KeyStore {
   }
 
   async findKeys(selector: string): Promise<ApiKeyRow[]> {
-    return this.rows.filter((r) => (isUuid(selector) ? r.id === selector : r.key_prefix === selector));
+    return this.rows.filter((r) =>
+      isUuid(selector) ? r.id === selector : r.key_prefix === selector,
+    );
   }
 
   async revokeKey(id: string): Promise<ApiKeyRow> {
@@ -123,7 +125,7 @@ test("create persists ONLY the hash — the plaintext never reaches the database
   assert.equal(write.key_prefix, plaintext.slice(0, 16));
   assert.equal(write.user_id, "00000000-0000-0000-0000-0000000000a2");
   assert.equal(write.name, "laptop");
-  assert.deepEqual(Object.keys(write).sort(), ["key_hash", "key_prefix", "name", "user_id"]);
+  assert.deepEqual(Object.keys(write).toSorted(), ["key_hash", "key_prefix", "name", "user_id"]);
 });
 
 test("create carries an unmissable one-time warning", async () => {
@@ -138,11 +140,7 @@ test("create carries an unmissable one-time warning", async () => {
 test("create resolves a user by uuid as well as by handle", async () => {
   const store = new FakeStore();
   const cap = makeIo();
-  await create(
-    store,
-    { user: "00000000-0000-0000-0000-0000000000a1", name: "by-uuid" },
-    cap.io,
-  );
+  await create(store, { user: "00000000-0000-0000-0000-0000000000a1", name: "by-uuid" }, cap.io);
   assert.equal(store.writes[0]!.user_id, "00000000-0000-0000-0000-0000000000a1");
 });
 
@@ -323,6 +321,7 @@ test("revoke rejects a selector that is neither uuid nor display prefix", async 
   const store = new FakeStore();
   await assert.rejects(
     () => revoke(store, { selector: "laptop", yes: true }, makeIo().io),
-    (e: Error) => e instanceof CommandError && /neither a key uuid nor a display prefix/.test(e.message),
+    (e: Error) =>
+      e instanceof CommandError && /neither a key uuid nor a display prefix/.test(e.message),
   );
 });
