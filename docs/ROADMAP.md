@@ -114,6 +114,31 @@ tier (~149 tok/s predicted on H100) **and** always-warm. That combination is a p
 
 ---
 
+## Decided, not open
+
+**Cached-token pricing: no discount.** Reconfirmed by the owner with the competitive
+context known — together.ai advertises `Cached Input` as a headline number on every
+model card, so this choice has a real cost. It stands anyway because under
+scale-to-zero the hit rate depends on whether an unrelated caller hit the same model
+seconds earlier, and a discount nobody can predictably earn is a pricing surface, not
+a feature. `cached_prompt_tokens` is recorded on every transaction regardless, so the
+decision can be revisited against real hit-rate data rather than argument.
+**Trigger to revisit: the always-warm tier existing** (NFR-CS-006), which is what makes
+a hit rate predictable enough to price.
+
+**Production email is unconfigured and blocks signup.** `enable_confirmations = true`
+with no `[auth.email.smtp]` block means production falls back to Supabase's built-in
+sender, which is rate-limited to a few per hour and not intended for production. Fix
+with real SMTP before any real user; for an operator account, create the user in
+Dashboard → Authentication → Users with auto-confirm and skip email entirely.
+
+**GitHub OAuth needs credentials, not code.** `signInWithOAuth` is wired and the
+authorize URL was verified correct including PKCE. Missing only a GitHub OAuth App
+(callback `https://gexxzdlppbplfpfqhszf.supabase.co/auth/v1/callback`) and its client
+id/secret in Dashboard → Authentication → Providers.
+
+---
+
 ## Parked — Phase 3 (§4.7)
 
 Abliteration-as-a-service (Heretic) and LoRA/fine-tuning. Recorded only so the
