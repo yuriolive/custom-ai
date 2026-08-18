@@ -1161,6 +1161,17 @@ FR-GW-044b (P0) RUNTIME-AWARE USAGE EXTRACTION. The two runtimes report differen
                 Because the MVP's acceptance target is a GGUF model, the fallback
                 estimator is on the critical path from day one and must be built and
                 tested in Sprint 1 — not deferred as defensive code.
+FR-GW-044e (P0) REASONING MODELS: completion tokens are split across TWO delta fields.
+                The MVP's own target streams chain-of-thought as
+                `delta.reasoning_content` and only the final answer as `delta.content`.
+                Both are generated, both consume GPU time, and both are included in the
+                worker's `usage.completion_tokens`.
+                Any local estimator MUST count both. Counting only `content`
+                under-counts billed output by up to 89% — measured: a 27-token
+                generation reported as 0 tokens. Because the shortfall lands in the
+                platform's favour it produces no error, no alert, and no complaint;
+                it simply bills less than the GPU time cost. Handle `delta.text`
+                (legacy) as well.
 FR-GW-044d (P0) SSE frame parsing must be TOLERANT, because the runtime with the least
                 reliable usage reporting is also the one most likely to emit
                 non-canonical framing:
@@ -1776,7 +1787,50 @@ FR-DEP-065 (P2)  Speculative decoding using a discovered 'draft' companion (FR-D
                  which can roughly double effective throughput on the same hardware.
 ```
 
-The `saveTemplate` env block in §4.3.4 is the **vLLM** contract. The llama.cpp contract:
+##### 4.3.3.6a Modal runtime contract (verified live)
+
+The platform runs on **Modal**, not RunPod. Modal deploys *apps*, not per-model endpoints, so the marketplace shape is a **parameterized class**: one `@app.cls(gpu=...)` per GPU tier, parameterized by model. Each distinct parameter set gets its own autoscaled, independently scale-to-zero container pool. One deploy serves N models, and the entire provisioning-mutation layer disappears.
+
+Every item below was corrected against Modal 1.5.4 by live deployment. Trusting the pre-verification description would have failed at each point.
+
+| Claim | Reality |
+|---|---|
+| GPU string `A10G` | **`A10`.** Valid set: `T4, L4, A10, L40S, A100, A100-40GB, A100-80GB, RTX-PRO-6000, H100, H100!, H200, B200, B200+, B300` |
+| `container_idle_timeout` / `keep_warm` renamed | Renamed to `scaledown_window` / `min_containers`, and the old names are **hard `DeprecationError`s** in 1.5.4, not warnings. Modal's own migration guide is stale. |
+| Parameters bind in the hostname | Bind via **URL query string**: `…modal.run/v1/chat/completions?model_repo=…&ctx_size=8192` |
+| `requires_proxy_auth` on `@app.cls` | Goes on the **web decorator**. Auth headers are `Modal-Key` / `Modal-Secret`, **not** `Authorization: Bearer` |
+| `@modal.web_server(port)` waits for readiness | **It waits only for the port to bind.** llama-server binds instantly and then returns `503 {"message":"Loading model"}` for the entire load. The first cold request fails. |
+
+```
+FR-DEP-070 (P0)  Readiness MUST be gated on llama.cpp's /health inside @modal.enter().
+                 @modal.web_server returns as soon as the port is bound, which for a
+                 15 GB model is ~14 s before the server can actually answer. Without
+                 this gate the first request after every cold start fails with a 503
+                 that looks like a platform fault. Confirmed live.
+FR-DEP-071 (P0)  `--ctx-size` in llama.cpp is the TOTAL context, divided across
+                 `--parallel` slots — it is NOT per-slot. Passing the per-slot value
+                 silently gives each slot ctx/parallel tokens and truncates long
+                 prompts at runtime with no error. The solver's context_length must be
+                 multiplied by max_concurrent_streams before it is passed.
+FR-DEP-072 (P0)  Do NOT put `from __future__ import annotations` in the Modal app
+                 module. Modal reads runtime annotations to select a parameter
+                 serializer; PEP 563 breaks it with
+                 `AttributeError: 'str' object has no attribute '__name__'`.
+FR-DEP-073 (P1)  `startup_timeout` on the web decorator defaults to 5 SECONDS, which is
+                 useless for a multi-GB model. Set it from the per-model cold-start
+                 budget (NFR-CACHE-010).
+FR-DEP-074 (P1)  llama.cpp emits a non-standard `timings` block alongside `usage`,
+                 carrying server-side `predicted_per_second`. That is free ground truth
+                 for calibrating the solver's MFU constant against reality — capture it.
+FR-DEP-075 (P1)  MFU is currently a GUESSED 0.75. Measured on L4: predicted 13 tok/s
+                 vs actual 14.0-14.2, implying ~0.79. This is not academic — at the
+                 default 30 tok/s target the solver picks L40S ($1.95/hr) while A10
+                 misses by 1 tok/s (26 vs a 27.0 floor). Recalibrating from measured
+                 data flips that choice and saves $0.85/hr. Tier selection currently
+                 rests on a guessed constant and should not be treated as settled.
+```
+
+The `saveTemplate` env block in §4.3.4 below is retained as the **RunPod/vLLM** reference contract for a future second provider (NFR-EXT-001). The llama.cpp env contract, which is what MVP actually ships:
 
 ```graphql
 mutation CreateTemplateLlamaCpp {
@@ -1789,8 +1843,11 @@ mutation CreateTemplateLlamaCpp {
     env: [
       { key: "MODEL_REPO",   value: "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF" }
       { key: "MODEL_FILE",   value: "Qwen3.8-27B-Uncensored-Q4_K_M.gguf" }  # FR-DEP-061
-      { key: "CTX_SIZE",     value: "8192" }      # = creator's context window
-      { key: "PARALLEL",     value: "4" }         # = solver's max_concurrent_streams
+      # CTX_SIZE is TOTAL across all slots, not per-slot (FR-DEP-071):
+      #   ctx_size_total = creator_context_window x max_concurrent_streams
+      # e.g. 8192 x 46 = 376832. Passing 8192 here gives each of 46 slots 178 tokens.
+      { key: "CTX_SIZE",     value: "376832" }
+      { key: "PARALLEL",     value: "46" }        # = solver's max_concurrent_streams
       { key: "N_GPU_LAYERS", value: "999" }       # offload everything; solver proved it fits
       { key: "CACHE_TYPE_K", value: "q8_0" }      # when solver picks 1-byte KV
       { key: "CACHE_TYPE_V", value: "q8_0" }
@@ -3643,7 +3700,25 @@ Six distinct caches exist in this system. They are frequently conflated, they fa
 
 The MVP's stated approach of `volumeInGb: 0` with weights "baked into the container cache" is **only true for the second cold start onward on the same physical node**, and it is not achievable per-model without building a bespoke 20–80 GB Docker image per deployment — a pipeline the MVP does not have.
 
-The honest MVP behavior:
+**Measured on Modal, MVP target (Q4_K_M, 15.66 GiB), L4:**
+
+| | First-ever container | Cold, Volume warm | Warm |
+|---|---|---|---|
+| Time to first token | **115 s** (104.0 s HF download + 9.3 s load) | **23.0 s** p50 | **0.93 s** p50 |
+| Time to headers | — | 22.5 s p50 | 0.77 s p50 |
+| Decode | — | 14.0 tok/s | 14.1 tok/s |
+
+**The Volume is a 5× cold-start lever and the single highest-value optimization in this
+document.** Cold start decomposes as ~8 s container + ~14 s llama.cpp load-to-healthy once
+weights are local. The 101 s estimate elsewhere in this PRD was right for the first-ever
+start and wrong by 5× for every start after it.
+
+> **Warm TTFT p50 of 926 ms misses NFR-CS-002** (p50 < 400 ms, p95 < 900 ms). The last two
+> settled runs reached 683/692 ms, so the target is not absurd, but it is not met today.
+> Either the SLO is wrong for a 27B model on a budget GPU, or the path needs work. It must
+> not be quietly restated to match what we measured.
+
+The honest MVP behavior without a Volume:
 
 ```
 First worker on a cold node    : pull image (~8 GB) + download weights from HF (size-dependent)
@@ -3731,13 +3806,17 @@ FR-BIL-041 (P0)  cached_tokens is passed through VERBATIM in the response usage 
                  An OpenAI-compatible client reading prompt_tokens_details must see
                  the truth. Suppressing it to hide non-discounted billing would be
                  a deliberate misrepresentation.
-FR-BIL-041a (P0) llama.cpp does not report cached_tokens. For runtime='llamacpp' the
-                 field is reported as 0 — which is ACCURATE as a statement about what
-                 was measured, and is exactly why FR-BIL-042's no-discount position is
-                 the only defensible MVP stance: the platform cannot presently measure
-                 cache hits on the runtime its own target model uses. Shipping a
-                 discount that is structurally unavailable to every GGUF model would be
-                 a two-tier price masquerading as one.
+FR-BIL-041a (P0) CORRECTED BY MEASUREMENT. An earlier revision asserted that llama.cpp
+                 does not report cached_tokens, and rested part of the no-discount
+                 argument on that. It is FALSE for the pinned build (`b10454`):
+                 `prompt_tokens_details.cached_tokens` is present on the trailing usage
+                 chunk and genuinely populated — 42 observed on a shared prefix, 0 when
+                 cold. Cache hits ARE measurable on both runtimes.
+                 FR-BIL-042's no-discount position still stands, but on the surviving
+                 half of the argument only: with scale-to-zero, hit rate depends on
+                 whether an unrelated caller happened to hit the same model seconds
+                 earlier, so a discount is unpredictable rather than unmeasurable.
+                 Do not cite measurability as the reason.
 FR-BIL-042 (P0)  MVP billing: cached tokens are billed at the FULL prompt rate, and
                  this is stated plainly in the pricing docs and on every model card.
                  RATIONALE: with scale-to-zero, hit rates are near zero for the long-tail

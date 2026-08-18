@@ -343,7 +343,7 @@ export type ProxyStreamFn = (
 
 let depsCache: GatewayDeps | null = null;
 
-async function defaultDeps(): Promise<GatewayDeps> {
+function defaultDeps(): GatewayDeps {
   if (depsCache) return depsCache;
   const supabaseUrl = getEnv("SUPABASE_URL") ?? "";
   const serviceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -864,7 +864,7 @@ export async function handleRequest(
 
   try {
     const route = routeOf(new URL(req.url).pathname);
-    const deps = depsOverride ?? await defaultDeps();
+    const deps = depsOverride ?? defaultDeps();
 
     if (route === "chat") {
       if (req.method !== "POST") {
