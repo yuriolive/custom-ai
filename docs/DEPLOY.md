@@ -97,23 +97,48 @@ link → migration list → db push → functions deploy gateway.
 
 ## 3. Vercel — the web app
 
-1. New Project → import this repo → framework auto-detects Next.js
-2. Environment variables:
+**Already done** (project linked, `.vercel/` is gitignored):
+
+    project   custom-ai   prj_eZdaV2VMr6awRNeGg1V2HET42AXs
+    scope     yuri-olives-projects-852572a4
+
+Production env vars already set — these need no credential, they are derived
+from the project ref:
 
 | Variable | Value |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://gexxzdlppbplfpfqhszf.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | project anon key |
-| `SUPABASE_URL` | same as above |
-| `SUPABASE_ANON_KEY` | same anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | **secret** — `/api/keys` needs it to mint keys |
+| `SUPABASE_URL` | same |
 | `GATEWAY_BASE_URL` | `https://gexxzdlppbplfpfqhszf.supabase.co/functions/v1/gateway/v1` |
-| `PLATFORM_API_KEY` | **secret** — a real minted key, for the Playground route |
 
-Never put a secret in a `NEXT_PUBLIC_*` variable; `npm run check:env` fails the build
-if you do.
+### Remaining four — each blocked on a credential only you can read
 
-3. Deploy, then set the Vercel URL as Supabase's Site URL (step 2c).
+Get the anon and service-role keys from
+**Dashboard → Project Settings → API**. Each command below prompts for the value,
+so it never lands in shell history:
+
+    vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
+    vercel env add SUPABASE_ANON_KEY production        # same value as above
+    vercel env add SUPABASE_SERVICE_ROLE_KEY production # SECRET
+
+`PLATFORM_API_KEY` cannot be set yet **in principle**, not just in practice: it must
+be a key minted against the *production* database, which does not exist until step
+2d has run. Mint it after the Supabase deploy:
+
+    node tools/keygen/cli.ts create --user <handle> --name "playground"       --i-know-this-is-production
+    vercel env add PLATFORM_API_KEY production
+
+### Then deploy
+
+    vercel --prod
+
+**Do not deploy before the anon key is set.** The build genuinely fails without it —
+`/auth/callback` page-data collection throws on the auth module's absence check, and
+Next inlines `NEXT_PUBLIC_*` at build time. CI hit exactly this and it is why the
+build step carries placeholder values.
+
+Finally, set the resulting Vercel URL as Supabase's Site URL (step 2c), or every
+confirmation email still points at localhost.
 
 ---
 
