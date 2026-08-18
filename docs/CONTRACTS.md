@@ -146,6 +146,42 @@ All are `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `EXECUTE` revok
 
 Lock order is always `usage_transactions` → `profiles(payer)` → `profiles(creator)`.
 
+## Frontend / auth contract (FROZEN — auth, console and marketplace build against this)
+
+Supabase Auth via `@supabase/ssr`. Three client factories, one per execution context — mixing them up is the usual source of "session works locally, vanishes in production":
+
+```
+lib/supabase/client.ts   createClient()        browser / "use client"   — createBrowserClient, anon key
+lib/supabase/server.ts   createClient()        RSC + route handlers     — createServerClient, async, cookies()
+lib/supabase/middleware.ts updateSession(req)  middleware only          — refreshes the auth cookie
+```
+
+Route protection:
+
+| Public | Authenticated |
+|---|---|
+| `/`, `/models/**`, `/login`, `/signup`, `/auth/**` | `/console/**`, `/studio/**`, `/playground/**` |
+
+**What the browser may do directly** (RLS enforces all of it — no route handler needed):
+
+| Table | Browser access |
+|---|---|
+| `profiles` | SELECT own; UPDATE only `display_name`, `avatar_url`, `bio` |
+| `api_keys` | SELECT own · UPDATE (rename/revoke) · DELETE own |
+| `usage_transactions` | SELECT own |
+| `wallet_ledger` | SELECT own |
+| `creator_earnings_feed` | SELECT own (view) |
+| `custom_models` | SELECT public+ready, or own in any status |
+
+**What it may NOT**, and therefore needs a server route with the service role:
+
+- **Creating an API key.** `api_keys` has no client INSERT policy, by design — the plaintext must be generated server-side, returned exactly once, and never persisted. Reuse `generateApiKey`/`hashApiKey` from `supabase/functions/gateway/auth.ts`; do not write a second implementation of the format.
+- Anything touching `usage_transactions`, `wallet_ledger`, `creator_earnings` as a write. Those are RPC-only.
+
+`profiles` rows are created automatically by a trigger on `auth.users`, and `handle` is **immutable** by RLS — there is no handle-claim flow to build. Display it; do not offer to edit it.
+
+`SUPABASE_SERVICE_ROLE_KEY` is server-only and must never appear in a `NEXT_PUBLIC_*` variable or a `"use client"` module. `lib/env.ts` imports `server-only` for this reason, and `npm run check:env` fails the build on violations.
+
 ## Definition of done
 
 Your work is done when it builds clean, its tests pass, and someone else can use it from the contract alone. Report honestly: if a test fails or you skipped something, say so plainly with the output. A green report that hides a failure costs more than the failure.
