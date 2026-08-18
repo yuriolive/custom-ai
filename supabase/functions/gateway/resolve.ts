@@ -364,6 +364,19 @@ function envelopeToRow(env: GatewayResolveEnvelope): RawResolveRow {
  *     get 404 instead of 401 `revoked_api_key`, inverting the documented check
  *     order. It costs one extra round trip only on an error path.
  */
+/**
+ * Upstream/RPC faults are reported to the caller as an opaque internal error:
+ * a PostgREST failure is a platform fault, never the caller's, and its detail
+ * must not leak (FR-GW-034). Hoisted to module scope because it captures
+ * nothing from its parent.
+ */
+function internalError(): GatewayError {
+  return new GatewayError(
+    "internal_error",
+    "The server encountered an internal error. Please retry.",
+  );
+}
+
 export function makePostgrestExecutor(
   supabaseUrl: string,
   serviceRoleKey: string,
@@ -378,11 +391,7 @@ export function makePostgrestExecutor(
     "accept-profile": "public",
   };
 
-  const internal = () =>
-    new GatewayError(
-      "internal_error",
-      "The server encountered an internal error. Please retry.",
-    );
+  const internal = internalError;
 
   async function lookupKeyOnly(keyHash: string): Promise<RawApiKeyRow | null> {
     const params = new URLSearchParams({
