@@ -82,5 +82,21 @@ test(
     assert.ok(result.architecture!.nKvHeads > 0);
     assert.ok(result.architecture!.nKvHeads <= result.architecture!.nAttentionHeads);
     assert.ok(result.architecture!.headDim > 0);
+
+    // The exact hybrid geometry the capacity solver is blocked on. These are
+    // the live header's own values, not estimates: qwen35, 65 blocks of which
+    // 1 is an MTP head, 1 full-attention block every 4 -> 16 KV-bearing layers.
+    assert.equal(result.architecture!.architecture, "qwen35");
+    assert.equal(result.architecture!.nLayers, 65);
+    assert.equal(result.architecture!.fullAttentionInterval, 4);
+    assert.equal(result.architecture!.nAttentionLayers, 16);
+    assert.equal(result.architecture!.headDim, 256);
+    assert.equal(result.architecture!.nKvHeads, 4);
+    assert.deepEqual(result.architecture!.ssm, {
+      stateSize: 128,
+      innerSize: 6144,
+      groupCount: 16,
+      convKernel: 4,
+    });
   },
 );

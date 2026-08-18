@@ -1,0 +1,31 @@
+[project]
+name = "nexus-modal"
+version = "0.1.0"
+description = "Modal serverless llama.cpp deployment, capacity solver, and cold-start measurement for the inference marketplace"
+requires-python = ">=3.13"
+
+# Intentionally EMPTY. The test suite and the capacity solver are stdlib-only:
+# test_measure.py imports measure.py and tiers.py, neither of which touches a
+# third-party package. Only app.py imports `modal`, and app.py is never imported
+# by the tests — so CI runs the full 41-test suite with nothing installed.
+dependencies = []
+
+[dependency-groups]
+# Deploying or measuring against real hardware needs the SDK:  uv sync --group deploy
+deploy = ["modal>=1.5.4"]
+dev = ["ruff==0.14.2"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+# `ruff format` owns line length. What it leaves over-long are string literals it
+# cannot split, so E501 on top of a formatter reports only unfixable noise.
+ignore = ["E501"]
+
+[tool.uv]
+# Keep the default dev group out of `uv sync` unless asked, so the common path
+# (running tests) installs nothing at all.
+default-groups = []

@@ -37,6 +37,7 @@ never logged and never written to a report.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -45,8 +46,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field, asdict
-
+from dataclasses import asdict, dataclass, field
 
 # ═════════════════════════════════════════════════════════════════════════════
 # SSE analyzer — the testable core. Pure; the clock is injected.
@@ -61,13 +61,13 @@ class StreamResult:
     saw_done: bool = False
     finish_reason: str | None = None
     model: str | None = None
-    completion_tokens_observed: int = 0   # ALL generated tokens (content + reasoning)
-    content_tokens: int = 0               # tokens in delta.content
-    reasoning_tokens: int = 0             # tokens in delta.reasoning_content
+    completion_tokens_observed: int = 0  # ALL generated tokens (content + reasoning)
+    content_tokens: int = 0  # tokens in delta.content
+    reasoning_tokens: int = 0  # tokens in delta.reasoning_content
     text: str = ""
     reasoning_text: str = ""
     system_fingerprint: str | None = None  # llama.cpp build id — what "pinning" pins
-    server_timings: dict | None = None     # llama.cpp's own timings block, if present
+    server_timings: dict | None = None  # llama.cpp's own timings block, if present
 
     ttft_ms: float | None = None
     last_token_ms: float | None = None
@@ -78,8 +78,8 @@ class StreamResult:
 
     # ── The finding that decides how the gateway bills ────────────────────────
     usage_emitted: bool = False
-    usage_shape: str = "none"          # "full" | "basic" | "none"
-    usage_placement: str | None = None # "separate" | "final"
+    usage_shape: str = "none"  # "full" | "basic" | "none"
+    usage_placement: str | None = None  # "separate" | "final"
     cached_tokens_reported: bool = False
     usage: dict | None = None
     prompt_tokens: int | None = None
@@ -117,9 +117,9 @@ class SseAnalyzer:
             if idx_n == -1 and idx_rn == -1:
                 break
             if idx_rn != -1 and (idx_n == -1 or idx_rn < idx_n):
-                frame, self._buf = self._buf[:idx_rn], self._buf[idx_rn + 4:]
+                frame, self._buf = self._buf[:idx_rn], self._buf[idx_rn + 4 :]
             else:
-                frame, self._buf = self._buf[:idx_n], self._buf[idx_n + 2:]
+                frame, self._buf = self._buf[:idx_n], self._buf[idx_n + 2 :]
             self._handle_frame(frame, at)
 
     def _handle_frame(self, frame: str, at: float) -> None:
@@ -221,13 +221,17 @@ class SseAnalyzer:
         r.usage_shape = "none" if u is None else ("full" if cached is not None else "basic")
         r.cached_tokens = cached
         if isinstance(u, dict):
-            r.prompt_tokens = u.get("prompt_tokens") if isinstance(u.get("prompt_tokens"), int) else None
+            r.prompt_tokens = (
+                u.get("prompt_tokens") if isinstance(u.get("prompt_tokens"), int) else None
+            )
             ct = u.get("completion_tokens")
             r.completion_tokens_reported = ct if isinstance(ct, int) else None
 
         ms = lambda a, b: round((a - b) * 1000, 1)  # noqa: E731
         r.ttft_ms = ms(self._first_token_at, self.t0) if self._first_token_at is not None else None
-        r.last_token_ms = ms(self._last_token_at, self.t0) if self._last_token_at is not None else None
+        r.last_token_ms = (
+            ms(self._last_token_at, self.t0) if self._last_token_at is not None else None
+        )
         r.total_ms = ms(end, self.t0)
 
         if self._first_token_at is not None and self._last_token_at is not None:
@@ -336,10 +340,10 @@ def run_once(
         rec.headers_ms = round((time.monotonic() - t0) * 1000, 1)
         rec.http_status = e.code
         detail = ""
-        try:
+        # Reading the error body is best-effort: the socket may already be gone.
+        # A failure here must not mask the HTTPError we are actually reporting.
+        with contextlib.suppress(Exception):
             detail = e.read().decode("utf-8", "replace")[:500]
-        except Exception:
-            pass
         rec.error = {"code": f"http_{e.code}", "message": detail}
         rec.stream = analyzer.finish().to_dict()
     except Exception as e:  # noqa: BLE001 — a transport failure is data, not a crash
@@ -451,7 +455,9 @@ def summarize(records: list[dict]) -> dict:
             "any_cached_tokens": any_cached,
             "all_cached_tokens": all_cached,
             "placements": sorted({r["usage_placement"] for r in ok if r.get("usage_placement")}),
-            "raw_usage_frame": next((r.get("raw_usage_frame") for r in ok if r.get("raw_usage_frame")), None),
+            "raw_usage_frame": next(
+                (r.get("raw_usage_frame") for r in ok if r.get("raw_usage_frame")), None
+            ),
             "billing_implication": implication,
         },
         "warnings": _warnings(records, ok),
@@ -470,14 +476,21 @@ def _warnings(records: list[dict], ok: list[dict]) -> list[str]:
         )
     mal = [r for r in records if r.get("malformed_frames")]
     if mal:
-        w.append(f"{len(mal)} run(s) contained malformed SSE frames — a stream losing frames can also lose usage.")
+        w.append(
+            f"{len(mal)} run(s) contained malformed SSE frames — a stream losing frames can also lose usage."
+        )
     nodone = [r for r in ok if not r.get("saw_done")]
     if nodone:
-        w.append(f"{len(nodone)} run(s) ended without a [DONE] sentinel — the stream was truncated.")
+        w.append(
+            f"{len(nodone)} run(s) ended without a [DONE] sentinel — the stream was truncated."
+        )
     for f in (r for r in records if not r.get("ok")):
-        w.append(f"run failed: {(f.get('error') or {}).get('code')} — {(f.get('error') or {}).get('message')}")
+        w.append(
+            f"run failed: {(f.get('error') or {}).get('code')} — {(f.get('error') or {}).get('message')}"
+        )
     mismatch = [
-        r for r in ok
+        r
+        for r in ok
         if isinstance(r.get("completion_tokens_reported"), int)
         and abs(r["completion_tokens_reported"] - r.get("completion_tokens_observed", 0)) > 1
     ]
@@ -528,22 +541,38 @@ def measure(
 
     for i in range(cold_runs):
         if wait > 0:
-            log(f"[cold {i+1}/{cold_runs}] waiting {wait}s for scaledown_window={scaledown_window_s}s to scale to zero...")
+            log(
+                f"[cold {i + 1}/{cold_runs}] waiting {wait}s for scaledown_window={scaledown_window_s}s to scale to zero..."
+            )
             time.sleep(wait)
-        log(f"[cold {i+1}/{cold_runs}] requesting...")
-        rec = run_once(url, model=model, prompt=prompt, max_tokens=max_tokens,
-                       timeout_s=timeout_s, cold=True, headers=headers)
+        log(f"[cold {i + 1}/{cold_runs}] requesting...")
+        rec = run_once(
+            url,
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+            cold=True,
+            headers=headers,
+        )
         records.append(rec)
-        log(f"[cold {i+1}/{cold_runs}] {_fmt(rec)}")
+        log(f"[cold {i + 1}/{cold_runs}] {_fmt(rec)}")
 
         # Warm samples ride the container the cold run just started.
         n_warm = warm_runs if i == cold_runs - 1 else max(1, warm_runs // cold_runs)
         for j in range(n_warm):
-            log(f"[warm {i+1}.{j+1}] requesting immediately, same container...")
-            rec = run_once(url, model=model, prompt=prompt, max_tokens=max_tokens,
-                           timeout_s=timeout_s, cold=False, headers=headers)
+            log(f"[warm {i + 1}.{j + 1}] requesting immediately, same container...")
+            rec = run_once(
+                url,
+                model=model,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                timeout_s=timeout_s,
+                cold=False,
+                headers=headers,
+            )
             records.append(rec)
-            log(f"[warm {i+1}.{j+1}] {_fmt(rec)}")
+            log(f"[warm {i + 1}.{j + 1}] {_fmt(rec)}")
 
     dicts = [r.to_dict() for r in records]
     return {
@@ -567,7 +596,9 @@ def measure(
 
 def _fmt(rec: RunRecord) -> str:
     if not rec.ok:
-        return f"FAILED {(rec.error or {}).get('code')}: {(rec.error or {}).get('message', '')[:160]}"
+        return (
+            f"FAILED {(rec.error or {}).get('code')}: {(rec.error or {}).get('message', '')[:160]}"
+        )
     s = rec.stream
     return (
         f"headers {rec.headers_ms}ms · TTFT {s.get('ttft_ms')}ms · "
@@ -598,8 +629,12 @@ def render_summary(report: dict) -> str:
     L += [bar, "Modal cold-start measurement", bar]
     L.append(f"  url        {cfg['url']}")
     L.append(f"  model      {cfg['model']}")
-    L.append(f"  runs       {s['ok_runs']} ok / {s['total_runs']} total  ({s['failed_runs']} failed)")
-    L.append(f"  policy     scaledown_window={cfg['scaledown_window_s']}s, cold forced by a {cfg['cold_wait_s']}s wait")
+    L.append(
+        f"  runs       {s['ok_runs']} ok / {s['total_runs']} total  ({s['failed_runs']} failed)"
+    )
+    L.append(
+        f"  policy     scaledown_window={cfg['scaledown_window_s']}s, cold forced by a {cfg['cold_wait_s']}s wait"
+    )
     L.append("")
     L.append(f"-- COLD ({s['cold']['runs']} runs) -- first request after scale-to-zero " + "-" * 12)
     L.append(stat("time to headers", s["cold"]["headers_ms"], "ms"))
@@ -618,7 +653,9 @@ def render_summary(report: dict) -> str:
     L += ["", "=" * 78, "USAGE FINDING -- the output that decides how the gateway bills", "=" * 78]
     uf = s["usage_finding"]
     L.append(f"  verdict                      {uf['verdict'].upper()}")
-    L.append(f"  usage object emitted         {uf['usage_emitted_runs']}/{s['ok_runs']} successful runs")
+    L.append(
+        f"  usage object emitted         {uf['usage_emitted_runs']}/{s['ok_runs']} successful runs"
+    )
     L.append(f"  cached_tokens present        {uf['cached_tokens_runs']}/{s['ok_runs']} runs")
     L.append(f"  wire placement               {', '.join(uf['placements']) or 'n/a'}")
     L.append("")
@@ -672,7 +709,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Measure Modal cold start and the llama.cpp usage-emission fact.",
     )
-    ap.add_argument("--url", required=True, help="Modal web endpoint base URL, or a mock-upstream base")
+    ap.add_argument(
+        "--url", required=True, help="Modal web endpoint base URL, or a mock-upstream base"
+    )
     ap.add_argument("--model", default="JonathanColetti/Qwen3.8-27B-Uncensored-GGUF")
     ap.add_argument("--model-repo", default=None, help="Modal class parameter model_repo")
     ap.add_argument("--model-file", default=None, help="Modal class parameter model_file")
@@ -687,9 +726,14 @@ def main(argv=None) -> int:
     ap.add_argument("--scaledown-window-s", type=int, default=30)
     ap.add_argument("--timeout-s", type=float, default=600.0)
     ap.add_argument("--out", default=None, help="write the JSON report here")
-    ap.add_argument("--json", action="store_true", help="print JSON instead of the readable summary")
-    ap.add_argument("--proxy-auth", action="store_true",
-                    help="send Modal-Key / Modal-Secret from MODAL_KEY / MODAL_SECRET env vars")
+    ap.add_argument(
+        "--json", action="store_true", help="print JSON instead of the readable summary"
+    )
+    ap.add_argument(
+        "--proxy-auth",
+        action="store_true",
+        help="send Modal-Key / Modal-Secret from MODAL_KEY / MODAL_SECRET env vars",
+    )
     args = ap.parse_args(argv)
 
     if args.path:
@@ -711,7 +755,10 @@ def main(argv=None) -> int:
         # Modal proxy auth uses Modal-Key / Modal-Secret, NOT Authorization: Bearer.
         key, secret = os.environ.get("MODAL_KEY"), os.environ.get("MODAL_SECRET")
         if not key or not secret:
-            print("[error] --proxy-auth needs MODAL_KEY and MODAL_SECRET in the environment", file=sys.stderr)
+            print(
+                "[error] --proxy-auth needs MODAL_KEY and MODAL_SECRET in the environment",
+                file=sys.stderr,
+            )
             return 2
         headers["Modal-Key"] = key
         headers["Modal-Secret"] = secret

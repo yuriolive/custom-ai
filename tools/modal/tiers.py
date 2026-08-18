@@ -31,7 +31,7 @@ integer micro-USD per hour so no float ever enters a monetary path (CONTRACTS.md
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 
 GIB = 1024**3
 
@@ -40,10 +40,10 @@ GIB = 1024**3
 class GpuTier:
     id: str
     label: str
-    modal_gpu_string: str          # the exact value passed to @app.cls(gpu=...)
+    modal_gpu_string: str  # the exact value passed to @app.cls(gpu=...)
     vram_bytes: int
     memory_bandwidth_bytes_s: int
-    usd_per_hour_micro: int        # integer micro-USD/hour, from Modal's per-second rate
+    usd_per_hour_micro: int  # integer micro-USD/hour, from Modal's per-second rate
     usd_per_second_micro: int
     sort_order: int = 0
     is_enabled: bool = True
@@ -57,55 +57,100 @@ class GpuTier:
 # part, and "H100" is the 80GB SXM part.
 GPU_TIERS: tuple[GpuTier, ...] = (
     GpuTier(
-        id="t4", label="T4 16GB", modal_gpu_string="T4",
-        vram_bytes=16 * GIB, memory_bandwidth_bytes_s=320_000_000_000,
-        usd_per_hour_micro=590_400, usd_per_second_micro=164, sort_order=10,
+        id="t4",
+        label="T4 16GB",
+        modal_gpu_string="T4",
+        vram_bytes=16 * GIB,
+        memory_bandwidth_bytes_s=320_000_000_000,
+        usd_per_hour_micro=590_400,
+        usd_per_second_micro=164,
+        sort_order=10,
     ),
     GpuTier(
         # Same VRAM as the A10 below, HALF its bandwidth, ~70% of its price.
         # Cheapest card that holds a ~16 GB model — and the slowest one that does.
-        id="l4", label="L4 24GB", modal_gpu_string="L4",
-        vram_bytes=24 * GIB, memory_bandwidth_bytes_s=300_000_000_000,
-        usd_per_hour_micro=800_000, usd_per_second_micro=222, sort_order=20,
+        id="l4",
+        label="L4 24GB",
+        modal_gpu_string="L4",
+        vram_bytes=24 * GIB,
+        memory_bandwidth_bytes_s=300_000_000_000,
+        usd_per_hour_micro=800_000,
+        usd_per_second_micro=222,
+        sort_order=20,
     ),
     GpuTier(
-        id="a10g", label="A10 24GB", modal_gpu_string="A10",
-        vram_bytes=24 * GIB, memory_bandwidth_bytes_s=600_000_000_000,
-        usd_per_hour_micro=1_100_000, usd_per_second_micro=306, sort_order=30,
+        id="a10g",
+        label="A10 24GB",
+        modal_gpu_string="A10",
+        vram_bytes=24 * GIB,
+        memory_bandwidth_bytes_s=600_000_000_000,
+        usd_per_hour_micro=1_100_000,
+        usd_per_second_micro=306,
+        sort_order=30,
     ),
     GpuTier(
         # 2x the VRAM of an A10 but only 1.44x the bandwidth: buying it for SPEED is
         # a bad trade, buying it for CAPACITY is a good one. Two different decisions.
-        id="l40s", label="L40S 48GB", modal_gpu_string="L40S",
-        vram_bytes=48 * GIB, memory_bandwidth_bytes_s=864_000_000_000,
-        usd_per_hour_micro=1_950_000, usd_per_second_micro=542, sort_order=40,
+        id="l40s",
+        label="L40S 48GB",
+        modal_gpu_string="L40S",
+        vram_bytes=48 * GIB,
+        memory_bandwidth_bytes_s=864_000_000_000,
+        usd_per_hour_micro=1_950_000,
+        usd_per_second_micro=542,
+        sort_order=40,
     ),
     GpuTier(
         # LESS VRAM than the L40S, 1.8x the bandwidth. The clearest proof the list
         # is not a ladder: tier order by VRAM and tier order by speed disagree here.
-        id="a100_40", label="A100 40GB", modal_gpu_string="A100-40GB",
-        vram_bytes=40 * GIB, memory_bandwidth_bytes_s=1_555_000_000_000,
-        usd_per_hour_micro=2_100_000, usd_per_second_micro=583, sort_order=50,
+        id="a100_40",
+        label="A100 40GB",
+        modal_gpu_string="A100-40GB",
+        vram_bytes=40 * GIB,
+        memory_bandwidth_bytes_s=1_555_000_000_000,
+        usd_per_hour_micro=2_100_000,
+        usd_per_second_micro=583,
+        sort_order=50,
     ),
     GpuTier(
-        id="a100_80", label="A100 80GB", modal_gpu_string="A100-80GB",
-        vram_bytes=80 * GIB, memory_bandwidth_bytes_s=1_935_000_000_000,
-        usd_per_hour_micro=2_500_000, usd_per_second_micro=694, sort_order=60,
+        id="a100_80",
+        label="A100 80GB",
+        modal_gpu_string="A100-80GB",
+        vram_bytes=80 * GIB,
+        memory_bandwidth_bytes_s=1_935_000_000_000,
+        usd_per_hour_micro=2_500_000,
+        usd_per_second_micro=694,
+        sort_order=60,
     ),
     GpuTier(
-        id="h100", label="H100 80GB", modal_gpu_string="H100",
-        vram_bytes=80 * GIB, memory_bandwidth_bytes_s=3_350_000_000_000,
-        usd_per_hour_micro=3_950_000, usd_per_second_micro=1097, sort_order=70,
+        id="h100",
+        label="H100 80GB",
+        modal_gpu_string="H100",
+        vram_bytes=80 * GIB,
+        memory_bandwidth_bytes_s=3_350_000_000_000,
+        usd_per_hour_micro=3_950_000,
+        usd_per_second_micro=1097,
+        sort_order=70,
     ),
     GpuTier(
-        id="h200", label="H200 141GB", modal_gpu_string="H200",
-        vram_bytes=141 * GIB, memory_bandwidth_bytes_s=4_800_000_000_000,
-        usd_per_hour_micro=4_539_600, usd_per_second_micro=1261, sort_order=80,
+        id="h200",
+        label="H200 141GB",
+        modal_gpu_string="H200",
+        vram_bytes=141 * GIB,
+        memory_bandwidth_bytes_s=4_800_000_000_000,
+        usd_per_hour_micro=4_539_600,
+        usd_per_second_micro=1261,
+        sort_order=80,
     ),
     GpuTier(
-        id="b200", label="B200 180GB", modal_gpu_string="B200",
-        vram_bytes=180 * GIB, memory_bandwidth_bytes_s=8_000_000_000_000,
-        usd_per_hour_micro=6_250_000, usd_per_second_micro=1736, sort_order=90,
+        id="b200",
+        label="B200 180GB",
+        modal_gpu_string="B200",
+        vram_bytes=180 * GIB,
+        memory_bandwidth_bytes_s=8_000_000_000_000,
+        usd_per_hour_micro=6_250_000,
+        usd_per_second_micro=1736,
+        sort_order=90,
     ),
 )
 
@@ -114,10 +159,10 @@ TIERS_BY_ID = {t.id: t for t in GPU_TIERS}
 
 # Solver constants. Config, not code — recalibrate from measured production data.
 SOLVER_CONFIG = {
-    "mfu": 0.75,                 # achieved fraction of theoretical memory bandwidth
+    "mfu": 0.75,  # achieved fraction of theoretical memory bandwidth
     "vram_utilization": 0.92,
-    "assumed_utilization": 0.35, # endpoints are not saturated; used for the cost floor
-    "speed_tolerance": 0.90,     # fraction of target tok/s accepted as meeting target
+    "assumed_utilization": 0.35,  # endpoints are not saturated; used for the cost floor
+    "speed_tolerance": 0.90,  # fraction of target tok/s accepted as meeting target
 }
 
 
@@ -128,6 +173,7 @@ class ModelShape:
     nothing here is guessed, because a model whose memory profile is unknown must be
     rejected rather than provisioned on an assumption.
     """
+
     weights_bytes: int
     context_length: int
     n_layers: int
@@ -142,7 +188,7 @@ class ModelShape:
     # blocks. Only the full-attention blocks hold a per-token KV cache; the SSM blocks
     # hold a fixed-size recurrent state that does NOT grow with context. Treating all
     # 65 blocks as attention over-estimates KV by ~4x and picks a GPU two tiers too big.
-    full_attention_interval: int | None = None   # e.g. 4 => 1 block in 4 is attention
+    full_attention_interval: int | None = None  # e.g. 4 => 1 block in 4 is attention
     ssm_state_size: int | None = None
     ssm_inner_size: int | None = None
 
@@ -207,7 +253,9 @@ class TierEvaluation:
 def evaluate_tier(tier: GpuTier, shape: ModelShape) -> TierEvaluation:
     """Pure arithmetic. No I/O."""
     usable = int(tier.vram_bytes * SOLVER_CONFIG["vram_utilization"])
-    per_stream = shape.kv_bytes_per_token * shape.context_length + shape.ssm_state_bytes_per_sequence
+    per_stream = (
+        shape.kv_bytes_per_token * shape.context_length + shape.ssm_state_bytes_per_sequence
+    )
     budget = usable - shape.weights_bytes - shape.overhead_bytes
 
     max_concurrent = budget // per_stream if budget > 0 and per_stream > 0 else 0
@@ -222,7 +270,9 @@ def evaluate_tier(tier: GpuTier, shape: ModelShape) -> TierEvaluation:
     cost_floor = None
     if fits and predicted > 0:
         gpu_micro_per_sec = tier.usd_per_hour_micro / 3600
-        seconds_per_mtoken = 1e6 / (predicted * max_concurrent * SOLVER_CONFIG["assumed_utilization"])
+        seconds_per_mtoken = 1e6 / (
+            predicted * max_concurrent * SOLVER_CONFIG["assumed_utilization"]
+        )
         cost_floor = math.ceil(gpu_micro_per_sec * seconds_per_mtoken)
 
     reason = None
@@ -244,11 +294,18 @@ def evaluate_tier(tier: GpuTier, shape: ModelShape) -> TierEvaluation:
         )
 
     return TierEvaluation(
-        tier_id=tier.id, label=tier.label, fits=fits, meets_speed=meets_speed,
-        usable_vram_bytes=usable, max_concurrent_streams=int(max_concurrent),
-        predicted_tokens_per_second=predicted, kv_bytes_per_token=shape.kv_bytes_per_token,
-        bytes_per_stream=per_stream, usd_per_hour_micro=tier.usd_per_hour_micro,
-        cost_floor_micro_per_mtoken=cost_floor, reject_reason=reason,
+        tier_id=tier.id,
+        label=tier.label,
+        fits=fits,
+        meets_speed=meets_speed,
+        usable_vram_bytes=usable,
+        max_concurrent_streams=int(max_concurrent),
+        predicted_tokens_per_second=predicted,
+        kv_bytes_per_token=shape.kv_bytes_per_token,
+        bytes_per_stream=per_stream,
+        usd_per_hour_micro=tier.usd_per_hour_micro,
+        cost_floor_micro_per_mtoken=cost_floor,
+        reject_reason=reason,
     )
 
 
@@ -289,8 +346,7 @@ def select_tier(shape: ModelShape, allowed_ids: list[str] | None = None) -> Plac
     """
     attempts: list[TierEvaluation] = []
     candidates_pool = [
-        t for t in GPU_TIERS
-        if t.is_enabled and (allowed_ids is None or t.id in allowed_ids)
+        t for t in GPU_TIERS if t.is_enabled and (allowed_ids is None or t.id in allowed_ids)
     ]
 
     for kv_dtype in (2, 1):

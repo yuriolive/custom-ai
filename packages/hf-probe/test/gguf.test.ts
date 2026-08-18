@@ -8,6 +8,7 @@ import test from "node:test";
 
 import {
   architectureFromHeader,
+  deriveAttentionLayers,
   parseGgufHeader,
   readGgufArchitecture,
 } from "../src/gguf.ts";
@@ -114,11 +115,16 @@ for (const version of [2, 3]) {
     assert.ok(r.ok, r.ok ? "" : r.error);
     assert.deepEqual(r.architecture, {
       nLayers: 64,
+      // Plain transformer: no interval key, so every block holds KV.
+      nAttentionLayers: 64,
+      fullAttentionInterval: null,
       nKvHeads: 8,
       nAttentionHeads: 40,
       hiddenSize: 5120,
       headDim: 128,
       maxPositionEmbeddings: 262144,
+      ssm: null,
+      architecture: "qwen3",
       source: "gguf-header",
     });
   });
@@ -156,6 +162,99 @@ test("Qwen3 geometry: head_dim is decoupled from hidden_size / head_count", () =
   );
   assert.equal(noKeyLen.ok, false);
   assert.match((noKeyLen as { error: string }).error, /cannot derive head_dim/);
+});
+
+// ─── hybrid attention/SSM geometry ──────────────────────────────────────────
+
+/** The MVP target's REAL header, transcribed from the live 2 MB range read. */
+const QWEN35_LIVE_KV: KvPair[] = [
+  ["general.architecture", T.STRING, "qwen35"],
+  ["qwen35.block_count", T.UINT32, 65],
+  ["qwen35.context_length", T.UINT32, 262144],
+  ["qwen35.embedding_length", T.UINT32, 5120],
+  ["qwen35.feed_forward_length", T.UINT32, 17408],
+  ["qwen35.attention.head_count", T.UINT32, 24],
+  ["qwen35.attention.head_count_kv", T.UINT32, 4],
+  ["qwen35.attention.key_length", T.UINT32, 256],
+  ["qwen35.attention.value_length", T.UINT32, 256],
+  ["qwen35.nextn_predict_layers", T.UINT32, 1],
+  ["qwen35.ssm.conv_kernel", T.UINT32, 4],
+  ["qwen35.ssm.state_size", T.UINT32, 128],
+  ["qwen35.ssm.group_count", T.UINT32, 16],
+  ["qwen35.ssm.inner_size", T.UINT32, 6144],
+  ["qwen35.full_attention_interval", T.UINT32, 4],
+];
+
+test("hybrid: the live MVP target header yields 16 attention layers of 65 blocks", () => {
+  const r = architectureFromHeader(parseGgufHeader(buildGguf(3, QWEN35_LIVE_KV)));
+  assert.ok(r.ok, r.ok ? "" : r.error);
+  assert.deepEqual(r.architecture, {
+    nLayers: 65,
+    // 65 blocks - 1 MTP block = 64 transformer blocks; 1 in 4 is full attention.
+    // Multiplying KV over all 65 would over-size the cache by ~4x.
+    nAttentionLayers: 16,
+    fullAttentionInterval: 4,
+    nKvHeads: 4,
+    nAttentionHeads: 24,
+    hiddenSize: 5120,
+    headDim: 256,
+    maxPositionEmbeddings: 262144,
+    ssm: { stateSize: 128, innerSize: 6144, groupCount: 16, convKernel: 4 },
+    architecture: "qwen35",
+    source: "gguf-header",
+  });
+});
+
+test("hybrid: the noMTP family independently agrees on 16 attention layers", () => {
+  // Same repo, other family: 64 blocks and no MTP block. If the MTP
+  // subtraction were wrong the two families would disagree here.
+  const kv = QWEN35_LIVE_KV.map(([k, t, v]): KvPair =>
+    k === "qwen35.block_count" ? [k, t, 64] : k === "qwen35.nextn_predict_layers" ? [k, t, 0] : [k, t, v],
+  );
+  const r = architectureFromHeader(parseGgufHeader(buildGguf(3, kv)));
+  assert.ok(r.ok, r.ok ? "" : r.error);
+  assert.equal(r.architecture.nLayers, 64);
+  assert.equal(r.architecture.nAttentionLayers, 16);
+});
+
+test("deriveAttentionLayers: the rule, stated as a table", () => {
+  //          nLayers, interval, mtp -> attention layers
+  const rows: [number, number | null, number, number][] = [
+    [65, 4, 1, 16], // MVP target, base family
+    [64, 4, 0, 16], // MVP target, noMTP family
+    [64, null, 0, 64], // plain transformer: every block holds KV
+    [64, 1, 0, 64], // interval 1 is a plain transformer spelled out
+    [48, 4, 0, 12],
+    [65, 4, 0, 16], // floor: the trailing partial group is not counted
+    [3, 4, 0, 1], // never zero out a model that does have attention
+    [64, null, 2, 62], // MTP heads hold no KV for the served sequence
+  ];
+  for (const [n, interval, mtp, want] of rows) {
+    assert.equal(deriveAttentionLayers(n, interval, mtp), want, `${n}/${interval}/${mtp}`);
+  }
+});
+
+test("hybrid: ssm is null on a plain transformer, and group_count defaults to 1", () => {
+  const plain = architectureFromHeader(parseGgufHeader(buildGguf(3, QWEN_KV)));
+  assert.ok(plain.ok);
+  assert.equal(plain.architecture.ssm, null);
+  assert.equal(plain.architecture.fullAttentionInterval, null);
+
+  // Mamba-1 style: no ssm.group_count key at all.
+  const mamba = QWEN35_LIVE_KV.filter(([k]) => k !== "qwen35.ssm.group_count");
+  const r = architectureFromHeader(parseGgufHeader(buildGguf(3, mamba)));
+  assert.ok(r.ok, r.ok ? "" : r.error);
+  assert.equal(r.architecture.ssm!.groupCount, 1);
+});
+
+test("the raw architecture string is passed through, never validated", () => {
+  const kv = QWEN35_LIVE_KV.map(([k, t, v]): KvPair =>
+    k === "general.architecture" ? [k, t, "some-arch-invented-next-week"] : [k.replace(/^qwen35\./, "some-arch-invented-next-week."), t, v],
+  );
+  const r = architectureFromHeader(parseGgufHeader(buildGguf(3, kv)));
+  assert.ok(r.ok, r.ok ? "" : r.error);
+  assert.equal(r.architecture.architecture, "some-arch-invented-next-week");
+  assert.equal(r.architecture.nAttentionLayers, 16);
 });
 
 test("head_count_kv absent means MHA, not unknown", () => {

@@ -38,3 +38,14 @@ coverage/
 # supabase local state (schema itself is tracked by its owner)
 supabase/.branches/
 supabase/.temp/
+
+# python (tools/modal)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/

@@ -25,12 +25,11 @@ import sys
 import urllib.parse
 
 from tiers import (
-    GPU_TIERS,
     GIB,
-    Infeasible,
-    ModelShape,
     MVP_TARGET_SHAPE,
     TIERS_BY_ID,
+    Infeasible,
+    ModelShape,
     select_tier,
 )
 
@@ -189,8 +188,10 @@ def resolve_url_via_sdk(class_name: str, params: dict) -> str:
 def render(cfg: dict) -> str:
     L = ["=" * 78, "Modal deployment config (DRY RUN — nothing deployed, nothing spent)", "=" * 78]
     L.append(f"  app                    {cfg['app_name']}")
-    L.append(f"  class                  {cfg['class_name']}   (@app.cls(gpu=\"{cfg['gpu']}\"))")
-    L.append(f"  tier                   {cfg['tier_label']}  [{cfg['tier_id']}]  via {cfg['placement_source']}")
+    L.append(f'  class                  {cfg["class_name"]}   (@app.cls(gpu="{cfg["gpu"]}"))')
+    L.append(
+        f"  tier                   {cfg['tier_label']}  [{cfg['tier_id']}]  via {cfg['placement_source']}"
+    )
     L.append("")
     L.append("  class parameters (bound as URL query params -> one container pool each)")
     for k, v in cfg["class_parameters"].items():
@@ -205,17 +206,25 @@ def render(cfg: dict) -> str:
     c = cfg["capacity"]
     L.append("  capacity")
     L.append(f"    weights            {c['weights_gib']} GiB")
-    L.append(f"    attention layers   {c['attention_layers']} of {c['attention_layers'] + c['ssm_layers']} (rest are SSM, no KV cache)")
-    L.append(f"    kv per token       {c['kv_bytes_per_token']} B ({c['kv_bytes_per_token'] / 1024:.0f} KiB)")
-    L.append(f"    kv per stream      {c['kv_gib_per_stream']} GiB at {cfg['class_parameters']['ctx_size']} ctx")
+    L.append(
+        f"    attention layers   {c['attention_layers']} of {c['attention_layers'] + c['ssm_layers']} (rest are SSM, no KV cache)"
+    )
+    L.append(
+        f"    kv per token       {c['kv_bytes_per_token']} B ({c['kv_bytes_per_token'] / 1024:.0f} KiB)"
+    )
+    L.append(
+        f"    kv per stream      {c['kv_gib_per_stream']} GiB at {cfg['class_parameters']['ctx_size']} ctx"
+    )
     L.append(f"    max concurrent     {c['max_concurrent_streams']} streams")
     L.append(f"    predicted speed    {c['predicted_tokens_per_second']} tok/s")
     L.append(f"    GPU price          ${c['usd_per_hour_micro'] / 1e6:.2f}/hr")
     if c["cost_floor_micro_per_mtoken"]:
         L.append(f"    cost floor         {c['cost_floor_micro_per_mtoken']} micro-USD / 1M tokens")
     L.append("")
-    L.append(f"  llama-server --ctx-size {cfg['llama_server_total_ctx']} --parallel {cfg['class_parameters']['parallel']}")
-    L.append(f"    (total ctx = per-slot ctx x parallel — llama.cpp splits it across slots)")
+    L.append(
+        f"  llama-server --ctx-size {cfg['llama_server_total_ctx']} --parallel {cfg['class_parameters']['parallel']}"
+    )
+    L.append("    (total ctx = per-slot ctx x parallel — llama.cpp splits it across slots)")
     L.append("")
     L.append("  serving URL")
     L.append(f"    {web_url(cfg['class_name'], cfg['class_parameters'])}")
@@ -241,7 +250,9 @@ def main(argv=None) -> int:
     ap.add_argument("--n-layers", type=int, default=MVP_TARGET_SHAPE["n_layers"])
     ap.add_argument("--n-kv-heads", type=int, default=MVP_TARGET_SHAPE["n_kv_heads"])
     ap.add_argument("--head-dim", type=int, default=MVP_TARGET_SHAPE["head_dim"])
-    ap.add_argument("--full-attention-interval", type=int, default=MVP_TARGET_SHAPE["full_attention_interval"])
+    ap.add_argument(
+        "--full-attention-interval", type=int, default=MVP_TARGET_SHAPE["full_attention_interval"]
+    )
     ap.add_argument("--ssm-state-size", type=int, default=MVP_TARGET_SHAPE["ssm_state_size"])
     ap.add_argument("--ssm-inner-size", type=int, default=MVP_TARGET_SHAPE["ssm_inner_size"])
     ap.add_argument("--target-tps", type=int, default=30)
@@ -249,7 +260,11 @@ def main(argv=None) -> int:
     ap.add_argument("--parallel", type=int, default=None, help="override solved concurrency")
     ap.add_argument("--dry-run", action="store_true", default=True)
     ap.add_argument("--json", action="store_true")
-    ap.add_argument("--url-only", action="store_true", help="resolve the live URL via the Modal SDK (needs a token)")
+    ap.add_argument(
+        "--url-only",
+        action="store_true",
+        help="resolve the live URL via the Modal SDK (needs a token)",
+    )
     args = ap.parse_args(argv)
 
     try:

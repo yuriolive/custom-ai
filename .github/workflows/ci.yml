@@ -10,7 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  node:
+    name: node (lint, typecheck, test, build)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -20,12 +21,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: npm # caches ~/.npm (the download cache), not node_modules
 
       - name: Install
         run: npm ci
 
-      # oxlint first: it is ~50x faster than eslint, so a broken tree fails in ~1s.
+      # Next.js incremental build cache. Without this every CI run recompiles the
+      # whole app from cold. Keyed on the lockfile plus sources so a source-only
+      # change still restores a warm cache via restore-keys.
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('app/**', 'components/**', 'lib/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}-
+            nextjs-${{ runner.os }}-
+
+      # oxlint first: ~50x faster than eslint, so a broken tree fails in ~1s.
       - name: oxlint
         run: npm run oxlint
 
@@ -53,3 +66,39 @@ jobs:
       - name: format:check
         run: npm run format:check
         continue-on-error: true
+
+  python:
+    name: python (tools/modal)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Runs in parallel with the node job. tools/modal holds the capacity solver and
+    # the SSE usage analyzer — the code that decides which GPU a model lands on and
+    # how many tokens a caller is billed for. It had 41 tests that CI never ran.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/modal/uv.lock
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: tools/modal/pyproject.toml
+
+      # test_measure.py imports only measure.py and tiers.py, both stdlib-only.
+      # `modal` is needed solely by app.py, which the tests never import — so
+      # --no-project runs the full suite with nothing installed at all.
+      - name: test
+        working-directory: tools/modal
+        run: uv run --no-project python -m unittest test_measure -v
+
+      - name: ruff check
+        working-directory: tools/modal
+        run: uv run --group dev ruff check .
+
+      - name: ruff format --check
+        working-directory: tools/modal
+        run: uv run --group dev ruff format --check .

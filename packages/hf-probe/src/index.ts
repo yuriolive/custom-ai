@@ -32,6 +32,7 @@ export {
 
 export {
   architectureFromHeader,
+  deriveAttentionLayers,
   moeFromHeader,
   parseGgufHeader,
   readGgufArchitecture,

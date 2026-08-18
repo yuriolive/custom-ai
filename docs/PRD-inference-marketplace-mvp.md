@@ -1550,10 +1550,28 @@ Throughput by tier (depends only on weight bytes, so these are firm):
 
 Cold-start budget: 16.81 GB ÷ 300 MB/s + 45 s ≈ **101 s**, above the old fixed 90 s ceiling — the per-model budget (NFR-CACHE-010) is load-bearing for the MVP's own model. Within this single repo, `Q6_K` (22.4 GB) and `Q8_0` (29.0 GB) cross the 20 GB volume threshold while `Q4_K_M` does not, so one repo spans both weight-cache strategies.
 
-> **Open, and it moves pricing:** `active_weights_bytes` is currently set equal to total
-> weights. On a hybrid model the SSM blocks read far less than the full weight set per
-> decoded token, so 45 tok/s is a **floor** and every cost floor above is conservative.
-> Deciding what "active bytes" means for `qwen35` is a pricing decision, not a detail.
+> **Resolved — and an earlier claim in this document was wrong.** A previous revision
+> asserted that hybrid SSM blocks read less of the weight set per decoded token, making
+> `active_weights_bytes` a placeholder and the cost floors conservative. That conflates
+> two different kinds of memory traffic. An SSM block reads **all** of its own projection
+> weights on every decoded token, exactly as an attention block does. What a hybrid model
+> avoids is re-reading a **KV cache that grows with context** — KV traffic, not weight
+> traffic. `qwen35` reports no `expert_count`, so it is dense: every byte of the 16.81 GB
+> is read per token, and `active_weights_bytes == weights_bytes` is **correct here**.
+>
+> Two consequences, both the opposite of what the earlier claim implied:
+> - 45 tok/s is **not** a floor for that reason, and the cost floors above carry no such
+>   hidden headroom. Do not book it.
+> - The hybrid advantage shows up at **long** context, where a pure transformer's KV
+>   re-read term grows and this model's barely does (16 of 65 blocks, plus constant SSM
+>   state). A throughput model that ignores the KV-read term entirely will therefore
+>   **under**-predict this model at 100k+ context.
+>
+> `active_weights_bytes` diverges from total only for **MoE**, and that split cannot be
+> read from the header prefix — it needs the tensor-info section, which sits past the
+> ~150k-entry tokenizer arrays and outside the range window. Detection of
+> `expert_count` / `expert_used_count` exists so such a model can be rejected or
+> re-probed rather than silently mispriced.
 
 ```
 FR-DEP-047 (P0)  This repo's file list is committed as a test fixture. The variant
@@ -1727,8 +1745,10 @@ The weights format determines the **inference runtime**, and the two runtimes ar
 | Concurrency flag | `MAX_NUM_SEQS` | `--parallel` (slots) |
 | Prefix caching | automatic prefix caching (APC) | slot context reuse — per-slot, not global |
 | KV quantization | `KV_CACHE_DTYPE=fp8` | `--cache-type-k/v q8_0` |
-| `usage` on stream | reliable w/ `include_usage` | **build-dependent** |
-| `cached_tokens` | reported | **not reported** |
+| `usage` on stream | reliable w/ `include_usage` | **MEASURED PRESENT** (build `b10454`, 8/8 runs) |
+| `cached_tokens` | reported | **MEASURED PRESENT and populated** (observed 42 on a shared prefix) |
+| usage placement | separate trailing `choices:[]` chunk | **same** — separate trailing chunk, NOT the finish chunk |
+| bonus telemetry | — | non-standard `timings` block with server-side `predicted_per_second` |
 | Weight selection | whole repo | **a specific file** — the chosen variant |
 
 ```

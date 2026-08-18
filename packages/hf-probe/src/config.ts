@@ -5,6 +5,7 @@
  */
 
 import type { ModelArchitecture } from "../../shared/types.ts";
+import { deriveAttentionLayers } from "./gguf.ts";
 
 export interface HfConfigJson {
   model_type?: string;

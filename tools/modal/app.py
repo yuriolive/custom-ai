@@ -129,20 +129,31 @@ def _launch_llama_server(model_path: str, ctx_size: int, parallel: int, alias: s
     total_ctx = ctx_size * parallel
     cmd = [
         "/app/llama-server",
-        "--host", "0.0.0.0",
-        "--port", str(SERVER_PORT),
-        "--model", model_path,
-        "--ctx-size", str(total_ctx),
-        "--parallel", str(parallel),
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(SERVER_PORT),
+        "--model",
+        model_path,
+        "--ctx-size",
+        str(total_ctx),
+        "--parallel",
+        str(parallel),
         # Offload every layer; the solver already proved the whole model fits in VRAM.
-        "--n-gpu-layers", "999",
+        "--n-gpu-layers",
+        "999",
         "--cont-batching",
-        "--flash-attn", "on",
+        "--flash-attn",
+        "on",
         "--metrics",
-        "--alias", alias,
+        "--alias",
+        alias,
         "--jinja",
     ]
-    print(f"[serve] ctx_size(per slot)={ctx_size} parallel={parallel} total_ctx={total_ctx}", flush=True)
+    print(
+        f"[serve] ctx_size(per slot)={ctx_size} parallel={parallel} total_ctx={total_ctx}",
+        flush=True,
+    )
     print(f"[serve] $ {' '.join(cmd)}", flush=True)
     # Inherit stdout/stderr so llama.cpp's own startup report — including the KV cache
     # size it actually allocates — lands in the Modal log. That number is ground truth
@@ -176,12 +187,13 @@ def _wait_until_ready(timeout_s: int = 600) -> float:
     while time.monotonic() - t0 < timeout_s:
         attempt += 1
         try:
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:{SERVER_PORT}/health", timeout=5
-            ) as r:
+            with urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/health", timeout=5) as r:
                 if r.status == 200:
                     elapsed = time.monotonic() - t0
-                    print(f"[serve] llama-server HEALTHY after {elapsed:.1f}s ({attempt} polls)", flush=True)
+                    print(
+                        f"[serve] llama-server HEALTHY after {elapsed:.1f}s ({attempt} polls)",
+                        flush=True,
+                    )
                     return elapsed
         except (urllib.error.HTTPError, urllib.error.URLError, OSError):
             pass  # 503 while loading, or connection refused before the bind

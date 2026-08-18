@@ -295,8 +295,15 @@ function classifyGguf(repoSlug: string, ggufFiles: HfFile[]): ClassifyResult {
       role: head.quantTag === null ? "unknown" : "model",
       files: members.map((m) => m.path),
       weightsBytes,
-      // Dense: bytes read per token == all weights. MoE is corrected later,
-      // once the architecture read reports expert counts.
+      // FR-DEP-044. Bytes read per DECODED TOKEN, which for a dense model is
+      // every weight in the file — including on a hybrid attention/SSM model.
+      // An SSM block reads all of its own projection weights on every token
+      // exactly like an attention block does; what a hybrid avoids is re-reading
+      // a KV cache that grows with context, which is a KV-traffic saving, not a
+      // weight-bytes saving. So active == total is CORRECT here, not a
+      // placeholder. It diverges from total only for MoE, where the unread
+      // experts are genuinely not fetched — and that split cannot be computed
+      // from the GGUF header prefix (see moeFromHeader).
       activeWeightsBytes: weightsBytes,
       bitsPerWeight,
       qualityLabel,

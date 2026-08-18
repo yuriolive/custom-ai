@@ -51,11 +51,22 @@ Never read a secret from a `NEXT_PUBLIC_*` variable. Never log an API key, an HF
 All money is `BIGINT` micro-USD (1 unit = $0.000001). **No floats anywhere in a monetary path** — not in SQL, not in TS, not in JSON. Prices are micro-USD per 1,000,000 tokens.
 
 ```
-cost_micro = CEIL(prompt_tokens     * price_prompt_micro     / 1e6)
-           + CEIL(completion_tokens * price_completion_micro / 1e6)
+cost_micro = GREATEST(1,  CEIL(prompt_tokens     * price_prompt_micro     / 1e6)
+                        + CEIL(completion_tokens * price_completion_micro / 1e6))
 platform_micro = CEIL(cost_micro * fee_bps / 10000)   -- remainder to platform
 creator_micro  = cost_micro - platform_micro          -- sum is exact
 ```
+
+The `GREATEST(1, …)` minimum billable unit (FR-BIL-004) is deliberate: without it, any
+request whose token counts round to zero micro-USD engages a GPU for free, which is a
+trivially exploitable free-inference path on cheaply-priced models. A settlement that
+delivered **zero** tokens is voided rather than charged the floor, so the floor only ever
+applies when real work was done.
+
+**Reasoning models:** `completion_tokens` from the worker covers BOTH `delta.content` and
+`delta.reasoning_content`. Any local estimator must count both — the MVP's own target model
+streams chain-of-thought as `reasoning_content`, and counting only `content` under-counts
+billed output by up to 89%.
 
 ## Gateway wire contract
 

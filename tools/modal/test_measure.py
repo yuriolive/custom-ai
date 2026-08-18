@@ -21,6 +21,7 @@ import unittest
 import urllib.parse
 import urllib.request
 
+import deploy
 from measure import (
     SseAnalyzer,
     analyze_sse_text,
@@ -30,16 +31,13 @@ from measure import (
     summarize,
 )
 from tiers import (
-    GPU_TIERS,
-    Infeasible,
-    ModelShape,
     MVP_TARGET_SHAPE,
     TIERS_BY_ID,
+    Infeasible,
+    ModelShape,
     evaluate_tier,
     select_tier,
 )
-import deploy
-
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MOCK_DIR = os.path.join(HERE, "..", "mock-upstream")
@@ -88,10 +86,17 @@ class TestUsageDetection(unittest.TestCase):
             frame(chunk(delta={"content": "a"}))
             + frame(chunk(delta={"content": "b"}))
             + frame(chunk(delta={}, finish="stop"))
-            + frame(chunk(choices=[], usage={
-                "prompt_tokens": 55, "completion_tokens": 2, "total_tokens": 57,
-                "prompt_tokens_details": {"cached_tokens": 42},
-            }))
+            + frame(
+                chunk(
+                    choices=[],
+                    usage={
+                        "prompt_tokens": 55,
+                        "completion_tokens": 2,
+                        "total_tokens": 57,
+                        "prompt_tokens_details": {"cached_tokens": 42},
+                    },
+                )
+            )
             + "data: [DONE]\n\n"
         )
         r = analyze_sse_text(body)
@@ -107,9 +112,17 @@ class TestUsageDetection(unittest.TestCase):
         """llama.cpp best case: totals only, riding the finish chunk."""
         body = (
             frame(chunk(delta={"content": "a"}))
-            + frame(chunk(delta={}, finish="stop", usage={
-                "prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11,
-            }))
+            + frame(
+                chunk(
+                    delta={},
+                    finish="stop",
+                    usage={
+                        "prompt_tokens": 10,
+                        "completion_tokens": 1,
+                        "total_tokens": 11,
+                    },
+                )
+            )
             + "data: [DONE]\n\n"
         )
         r = analyze_sse_text(body)
@@ -134,10 +147,20 @@ class TestUsageDetection(unittest.TestCase):
 
     def test_cached_tokens_zero_still_counts_as_full(self):
         """cached_tokens: 0 means 'reported, and it was zero' — not 'not reported'."""
-        body = frame(chunk(choices=[], usage={
-            "prompt_tokens": 5, "completion_tokens": 0, "total_tokens": 5,
-            "prompt_tokens_details": {"cached_tokens": 0},
-        })) + "data: [DONE]\n\n"
+        body = (
+            frame(
+                chunk(
+                    choices=[],
+                    usage={
+                        "prompt_tokens": 5,
+                        "completion_tokens": 0,
+                        "total_tokens": 5,
+                        "prompt_tokens_details": {"cached_tokens": 0},
+                    },
+                )
+            )
+            + "data: [DONE]\n\n"
+        )
         r = analyze_sse_text(body)
         self.assertEqual(r.usage_shape, "full")
         self.assertTrue(r.cached_tokens_reported)
@@ -189,7 +212,7 @@ class TestStreamMechanics(unittest.TestCase):
     def test_malformed_frame_counted_not_fatal(self):
         body = (
             frame(chunk(delta={"content": "a"}))
-            + "data: {\"choices\": [trunc\n\n"
+            + 'data: {"choices": [trunc\n\n'
             + frame(chunk(delta={"content": "b"}))
             + "data: [DONE]\n\n"
         )
@@ -198,13 +221,21 @@ class TestStreamMechanics(unittest.TestCase):
         self.assertEqual(r.completion_tokens_observed, 2)
 
     def test_keepalive_comments_are_not_tokens(self):
-        body = ": keepalive\n\n" + ": keepalive\n\n" + frame(chunk(delta={"content": "a"})) + "data: [DONE]\n\n"
+        body = (
+            ": keepalive\n\n"
+            + ": keepalive\n\n"
+            + frame(chunk(delta={"content": "a"}))
+            + "data: [DONE]\n\n"
+        )
         r = analyze_sse_text(body)
         self.assertEqual(r.keepalives, 2)
         self.assertEqual(r.completion_tokens_observed, 1)
 
     def test_crlf_frame_separators(self):
-        body = frame(chunk(delta={"content": "a"})).replace("\n\n", "\r\n\r\n") + "data: [DONE]\r\n\r\n"
+        body = (
+            frame(chunk(delta={"content": "a"})).replace("\n\n", "\r\n\r\n")
+            + "data: [DONE]\r\n\r\n"
+        )
         r = analyze_sse_text(body)
         self.assertEqual(r.completion_tokens_observed, 1)
         self.assertTrue(r.saw_done)
@@ -218,7 +249,7 @@ class TestStreamMechanics(unittest.TestCase):
         body = frame(chunk(delta={"content": "hello"})) + "data: [DONE]\n\n"
         a = SseAnalyzer(now=lambda: 0.0, started_at=0.0)
         for i in range(0, len(body), 7):
-            a.push(body[i:i + 7])
+            a.push(body[i : i + 7])
         r = a.finish()
         self.assertEqual(r.completion_tokens_observed, 1)
         self.assertTrue(r.saw_done)
@@ -238,13 +269,19 @@ class TestStreamMechanics(unittest.TestCase):
 class TestSummary(unittest.TestCase):
     def _run(self, cold, shape, tokens=64, ok=True):
         return {
-            "ok": ok, "cold": cold, "headers_ms": 100.0, "ttft_ms": 200.0,
-            "decode_tokens_per_second": 14.0, "total_ms": 5000.0,
-            "completion_tokens_observed": tokens, "usage_shape": shape,
+            "ok": ok,
+            "cold": cold,
+            "headers_ms": 100.0,
+            "ttft_ms": 200.0,
+            "decode_tokens_per_second": 14.0,
+            "total_ms": 5000.0,
+            "completion_tokens_observed": tokens,
+            "usage_shape": shape,
             "usage_emitted": shape != "none",
             "cached_tokens_reported": shape == "full",
             "usage_placement": "separate" if shape != "none" else None,
-            "saw_done": True, "malformed_frames": 0,
+            "saw_done": True,
+            "malformed_frames": 0,
         }
 
     def test_cold_and_warm_reported_separately(self):
@@ -255,7 +292,12 @@ class TestSummary(unittest.TestCase):
     def test_intermittent_usage_is_flagged_not_averaged_away(self):
         """One good run in three is 'works sometimes', which is worse than never."""
         s = summarize([self._run(True, "full"), self._run(False, "none"), self._run(False, "full")])
-        self.assertEqual(s["summary"]["usage_finding"]["verdict"] if "summary" in s else s["usage_finding"]["verdict"], "intermittent")
+        self.assertEqual(
+            s["summary"]["usage_finding"]["verdict"]
+            if "summary" in s
+            else s["usage_finding"]["verdict"],
+            "intermittent",
+        )
 
     def test_all_none_verdict(self):
         s = summarize([self._run(True, "none"), self._run(False, "none")])
@@ -270,7 +312,12 @@ class TestSummary(unittest.TestCase):
         self.assertTrue(any("fewer than 64 tokens" in w for w in s["warnings"]))
 
     def test_failed_run_excluded_from_stats_and_warned(self):
-        s = summarize([self._run(True, "full"), {"ok": False, "cold": True, "error": {"code": "timeout", "message": "x"}}])
+        s = summarize(
+            [
+                self._run(True, "full"),
+                {"ok": False, "cold": True, "error": {"code": "timeout", "message": "x"}},
+            ]
+        )
         self.assertEqual(s["failed_runs"], 1)
         self.assertEqual(s["cold"]["runs"], 1)
 
@@ -291,7 +338,9 @@ class TestTiers(unittest.TestCase):
         by_id = TIERS_BY_ID
         # Same VRAM, 2x bandwidth apart.
         self.assertEqual(by_id["l4"].vram_bytes, by_id["a10g"].vram_bytes)
-        self.assertLess(by_id["l4"].memory_bandwidth_bytes_s, by_id["a10g"].memory_bandwidth_bytes_s)
+        self.assertLess(
+            by_id["l4"].memory_bandwidth_bytes_s, by_id["a10g"].memory_bandwidth_bytes_s
+        )
         # More VRAM, LESS bandwidth: the L40S is bigger and slower than the A100-40GB.
         self.assertGreater(by_id["l40s"].vram_bytes, by_id["a100_40"].vram_bytes)
         self.assertLess(
@@ -305,7 +354,9 @@ class TestTiers(unittest.TestCase):
         self.assertEqual(hybrid.n_attention_layers, 16)
         self.assertEqual(hybrid.n_ssm_layers, 49)
         self.assertEqual(hybrid.kv_bytes_per_token, 65536)  # 64 KiB/token
-        self.assertAlmostEqual(naive.kv_bytes_per_token / hybrid.kv_bytes_per_token, 65 / 16, places=2)
+        self.assertAlmostEqual(
+            naive.kv_bytes_per_token / hybrid.kv_bytes_per_token, 65 / 16, places=2
+        )
 
     def test_head_dim_is_key_length_not_hidden_over_heads(self):
         """head_dim 256 (declared key_length), not 213 (hidden_size/head_count)."""
@@ -332,8 +383,11 @@ class TestTiers(unittest.TestCase):
 
     def test_impossible_model_raises_infeasible(self):
         huge = ModelShape(
-            weights_bytes=900 * 1024**3, context_length=8192,
-            n_layers=100, n_kv_heads=8, head_dim=128,
+            weights_bytes=900 * 1024**3,
+            context_length=8192,
+            n_layers=100,
+            n_kv_heads=8,
+            head_dim=128,
         )
         with self.assertRaises(Infeasible) as cm:
             select_tier(huge)
@@ -351,24 +405,38 @@ class TestDeployConfig(unittest.TestCase):
     def test_model_file_is_mandatory(self):
         with self.assertRaises(ValueError) as cm:
             deploy.resolve_config(
-                model_repo="a/b", model_file="", weights_bytes=1000, context_length=8192,
-                n_layers=65, n_kv_heads=4, head_dim=256,
+                model_repo="a/b",
+                model_file="",
+                weights_bytes=1000,
+                context_length=8192,
+                n_layers=65,
+                n_kv_heads=4,
+                head_dim=256,
             )
         self.assertIn("mandatory", str(cm.exception))
 
     def test_non_gguf_file_rejected(self):
         with self.assertRaises(ValueError):
             deploy.resolve_config(
-                model_repo="a/b", model_file="model.safetensors", weights_bytes=1000,
-                context_length=8192, n_layers=65, n_kv_heads=4, head_dim=256,
+                model_repo="a/b",
+                model_file="model.safetensors",
+                weights_bytes=1000,
+                context_length=8192,
+                n_layers=65,
+                n_kv_heads=4,
+                head_dim=256,
             )
 
     def test_mvp_target_resolves_to_a_deployed_class(self):
         cfg = deploy.resolve_config(
             model_repo="JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
             model_file="Qwen3.8-27B-Uncensored-Q4_K_M.gguf",
-            context_length=8192, **{k: v for k, v in MVP_TARGET_SHAPE.items()
-                                    if k not in ("context_length", "target_tokens_per_second")},
+            context_length=8192,
+            **{
+                k: v
+                for k, v in MVP_TARGET_SHAPE.items()
+                if k not in ("context_length", "target_tokens_per_second")
+            },
         )
         self.assertIn(cfg["class_name"], deploy.TIER_CLASS_NAMES.values())
         self.assertEqual(cfg["scaling"]["min_containers"], 0)
@@ -376,10 +444,16 @@ class TestDeployConfig(unittest.TestCase):
 
     def test_total_ctx_is_per_slot_times_parallel(self):
         cfg = deploy.resolve_config(
-            model_repo="a/b", model_file="m.gguf",
-            weights_bytes=MVP_TARGET_SHAPE["weights_bytes"], context_length=8192,
-            n_layers=65, n_kv_heads=4, head_dim=256, full_attention_interval=4,
-            pin_tier="l4", parallel_override=4,
+            model_repo="a/b",
+            model_file="m.gguf",
+            weights_bytes=MVP_TARGET_SHAPE["weights_bytes"],
+            context_length=8192,
+            n_layers=65,
+            n_kv_heads=4,
+            head_dim=256,
+            full_attention_interval=4,
+            pin_tier="l4",
+            parallel_override=4,
         )
         self.assertEqual(cfg["llama_server_total_ctx"], 8192 * 4)
 
@@ -413,7 +487,8 @@ class TestAgainstMockUpstream(unittest.TestCase):
         cls.port = _free_port()
         cls.proc = subprocess.Popen(
             ["node", MOCK_CLI, "--port", str(cls.port), "--quiet"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         deadline = time.time() + 20
         while time.time() < deadline:
@@ -435,8 +510,13 @@ class TestAgainstMockUpstream(unittest.TestCase):
         return base + ("?" + urllib.parse.urlencode(mock_opts) if mock_opts else "")
 
     def test_full_usage_end_to_end(self):
-        rec = run_once(self._url(usage="full", tokens=70, cached_tokens=12),
-                       model="m", prompt="hi", max_tokens=70, timeout_s=30)
+        rec = run_once(
+            self._url(usage="full", tokens=70, cached_tokens=12),
+            model="m",
+            prompt="hi",
+            max_tokens=70,
+            timeout_s=30,
+        )
         self.assertTrue(rec.ok, rec.error)
         self.assertEqual(rec.stream["usage_shape"], "full")
         self.assertTrue(rec.stream["cached_tokens_reported"])
@@ -444,22 +524,29 @@ class TestAgainstMockUpstream(unittest.TestCase):
         self.assertEqual(rec.stream["completion_tokens_observed"], 70)
 
     def test_basic_usage_end_to_end(self):
-        rec = run_once(self._url(usage="basic", tokens=64),
-                       model="m", prompt="hi", max_tokens=64, timeout_s=30)
+        rec = run_once(
+            self._url(usage="basic", tokens=64), model="m", prompt="hi", max_tokens=64, timeout_s=30
+        )
         self.assertTrue(rec.ok, rec.error)
         self.assertEqual(rec.stream["usage_shape"], "basic")
         self.assertFalse(rec.stream["cached_tokens_reported"])
 
     def test_no_usage_end_to_end(self):
-        rec = run_once(self._url(usage="none", tokens=64),
-                       model="m", prompt="hi", max_tokens=64, timeout_s=30)
+        rec = run_once(
+            self._url(usage="none", tokens=64), model="m", prompt="hi", max_tokens=64, timeout_s=30
+        )
         self.assertTrue(rec.ok, rec.error)
         self.assertEqual(rec.stream["usage_shape"], "none")
         self.assertFalse(rec.stream["usage_emitted"])
 
     def test_ttft_reflects_injected_cold_start(self):
-        rec = run_once(self._url(usage="basic", tokens=64, cold_start_ms=1200),
-                       model="m", prompt="hi", max_tokens=64, timeout_s=60)
+        rec = run_once(
+            self._url(usage="basic", tokens=64, cold_start_ms=1200),
+            model="m",
+            prompt="hi",
+            max_tokens=64,
+            timeout_s=60,
+        )
         self.assertTrue(rec.ok, rec.error)
         self.assertGreaterEqual(rec.headers_ms, 1000)
         self.assertGreaterEqual(rec.stream["ttft_ms"], 1000)
@@ -470,8 +557,13 @@ class TestAgainstMockUpstream(unittest.TestCase):
         self.assertEqual(rec.error["code"], "http_500")
 
     def test_truncated_stream_has_no_done_sentinel(self):
-        rec = run_once(self._url(usage="basic", tokens=20, fail="drop", drop_after=3),
-                       model="m", prompt="hi", max_tokens=20, timeout_s=30)
+        rec = run_once(
+            self._url(usage="basic", tokens=20, fail="drop", drop_after=3),
+            model="m",
+            prompt="hi",
+            max_tokens=20,
+            timeout_s=30,
+        )
         self.assertFalse(rec.stream["saw_done"])
 
     def test_stream_options_include_usage_is_always_sent(self):
@@ -481,8 +573,13 @@ class TestAgainstMockUpstream(unittest.TestCase):
         tool having forgotten to ask. honor_include_usage=true makes the mock withhold
         usage unless the flag is present, so this test fails loudly if it regresses.
         """
-        rec = run_once(self._url(usage="full", tokens=64, honor_include_usage="true"),
-                       model="m", prompt="hi", max_tokens=64, timeout_s=30)
+        rec = run_once(
+            self._url(usage="full", tokens=64, honor_include_usage="true"),
+            model="m",
+            prompt="hi",
+            max_tokens=64,
+            timeout_s=30,
+        )
         self.assertTrue(rec.ok, rec.error)
         self.assertEqual(rec.stream["usage_shape"], "full")
 
