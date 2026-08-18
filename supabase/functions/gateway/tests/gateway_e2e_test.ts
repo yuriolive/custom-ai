@@ -52,7 +52,9 @@ const SSE_OK = [
 interface Harness {
   deps: GatewayDeps;
   rpcCalls: Array<{ name: string; args: Record<string, unknown> }>;
-  upstreamCalls: Array<{ url: string; init: RequestInit & { headers: Record<string, string> } }>;
+  upstreamCalls: Array<
+    { url: string; init: RequestInit & { headers: Record<string, string> } }
+  >;
 }
 
 function harness(over: { authorize?: unknown; sse?: string } = {}): Harness {
@@ -125,7 +127,10 @@ test("E2E streaming: proxies bytes, stamps the request id, settles exactly once"
 
   assert.equal(res.status, 200);
   const rid = res.headers.get(REQUEST_ID_HEADER);
-  assert.match(rid ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.match(
+    rid ?? "",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
   assert.ok(res.headers.has("x-nexus-overhead-ms"));
 
   const text = await res.text();
@@ -137,7 +142,10 @@ test("E2E streaming: proxies bytes, stamps the request id, settles exactly once"
   assert.equal(sent.stream, true);
   assert.deepEqual(sent.stream_options, { include_usage: true });
   assert.equal(sent.model, SERVED_NAME);
-  assert.equal(h.upstreamCalls[0].url, `${UPSTREAM_BASE}/v2/${ENDPOINT_ID}/openai/v1/chat/completions`);
+  assert.equal(
+    h.upstreamCalls[0].url,
+    `${UPSTREAM_BASE}/v2/${ENDPOINT_ID}/openai/v1/chat/completions`,
+  );
   assert.ok(!JSON.stringify(h.upstreamCalls[0]).includes("sk-plat-"));
 
   const authorize = h.rpcCalls.find((c) => c.name === "authorize_request");

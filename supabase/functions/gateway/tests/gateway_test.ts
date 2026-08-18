@@ -283,7 +283,10 @@ test("errorResponse always carries x-nexus-request-id, even for errors", async (
 });
 
 test("an unknown thrown value degrades to a 500 envelope that leaks nothing", async () => {
-  const res = errorResponse(new Error("connect ECONNREFUSED 10.0.0.4:5432 at db.internal"), "rid-1");
+  const res = errorResponse(
+    new Error("connect ECONNREFUSED 10.0.0.4:5432 at db.internal"),
+    "rid-1",
+  );
   assert.equal(res.status, 500);
   const body = await res.json();
   assert.equal(body.error.code, "internal_error");
@@ -328,9 +331,14 @@ test("a private model requested by a NON-owner returns 404, never 403", async ()
 test("private-not-owner is byte-identical to model-does-not-exist", async () => {
   invalidateModelCache();
   const missing = await expectGatewayError(() =>
-    resolveRequest(KEY_HASH, parsedId, execReturning({ api_key: liveKeyStranger, model: null }), {
-      useCache: false,
-    })
+    resolveRequest(
+      KEY_HASH,
+      parsedId,
+      execReturning({ api_key: liveKeyStranger, model: null }),
+      {
+        useCache: false,
+      },
+    )
   );
   const forbidden = await expectGatewayError(() =>
     resolveRequest(
@@ -467,10 +475,14 @@ const UPSTREAM_BASE = "http://127.0.0.1:8787";
 const RUNPOD_KEY = "rp_test_secret_key";
 
 test("stream:true is forced upstream even when the client asked for stream:false", () => {
-  const built = buildUpstreamRequest({ model: "owner/m", messages: [], stream: false }, resolvedFixture, {
-    baseUrl: UPSTREAM_BASE,
-    runpodApiKey: RUNPOD_KEY,
-  });
+  const built = buildUpstreamRequest(
+    { model: "owner/m", messages: [], stream: false },
+    resolvedFixture,
+    {
+      baseUrl: UPSTREAM_BASE,
+      runpodApiKey: RUNPOD_KEY,
+    },
+  );
   assert.equal(built.payload.stream, true);
   const sent = JSON.parse(built.init.body as string);
   assert.equal(sent.stream, true);

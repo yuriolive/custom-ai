@@ -2028,6 +2028,91 @@ FR-BIL-037 (P1)  New accounts receive a $1.00 promotional grant as a wallet_ledg
 FR-BIL-038 (P1)  Email at 20% and 5% of the 30-day rolling average balance.
 ```
 
+### 4.5 Tool Calling (Phase 2.1a)
+
+MVP rejects `tools` / `functions` / `tool_choice` / `function_call` with 501. That single rejection is what makes the platform unusable for agentic clients — Cline, Aider, OpenAI Agents SDK, LangGraph, and Claude Code are all fundamentally tool-call loops. Lifting it is the highest-leverage unlock available, and it is worth doing **before** any wire-format work for a specific client.
+
+```
+FR-TOOL-001 (P1)  Accept and forward `tools`, `tool_choice`, `functions`,
+                  `function_call` instead of rejecting them. Delete the 501 branch.
+FR-TOOL-002 (P1)  llama.cpp must run with `--jinja` so the MODEL'S OWN chat template
+                  drives tool formatting. Without it the server ignores `tools`
+                  entirely and returns ordinary prose that merely looks like a tool
+                  call — the worst failure mode, because it parses as success.
+FR-TOOL-003 (P1)  Per-model capability flag `supports_tools`, set at provisioning by
+                  probing whether the GGUF chat template declares tool support.
+                  A model without it must return a clear 400, never a silent
+                  prose-instead-of-tool-call.
+FR-TOOL-004 (P1)  The stream tee must handle `delta.tool_calls[]`: entries carry an
+                  `index`, an `id`, and `function.arguments` that arrives as
+                  INCREMENTAL STRING FRAGMENTS, frequently split mid-JSON across chunk
+                  boundaries. Reassembly is per-index. Forwarding stays verbatim, so
+                  this affects the usage/accumulator branch only.
+FR-TOOL-005 (P1)  `finish_reason: "tool_calls"` must survive to the client, and the
+                  non-streaming assembler must rebuild `tool_calls[]` correctly from
+                  the fragments.
+FR-TOOL-006 (P1)  Tool tokens are ordinary completion tokens and are already inside
+                  `usage.completion_tokens`. No billing change — but verify against a
+                  real tool-calling response rather than assuming.
+FR-TOOL-007 (P2)  Grammar-constrained decoding (llama.cpp GBNF) to guarantee
+                  syntactically valid tool JSON, for models whose template is weak.
+```
+
+### 4.6 Anthropic Messages API — Claude Code support (Phase 2.1b)
+
+Claude Code honors `ANTHROPIC_BASE_URL`, but it speaks the **Anthropic Messages API**, not OpenAI Chat Completions. The two differ in route, auth, request shape, content model, and streaming protocol.
+
+| | OpenAI (what the gateway serves) | Anthropic (what Claude Code requires) |
+|---|---|---|
+| Route | `/v1/chat/completions` | `/v1/messages` |
+| Auth | `Authorization: Bearer` | `x-api-key` + `anthropic-version` |
+| System prompt | a `system` message | **top-level** `system` field |
+| `max_tokens` | optional | **required** |
+| Assistant content | a string | an array of typed blocks |
+| Tool call | `tool_calls[].function.arguments` (JSON string) | `tool_use` block, `input` (parsed object) |
+| Tool result | `{role:"tool"}` message | `tool_result` block inside a user message |
+| Stream | flat `chat.completion.chunk` list | stateful event sequence: `message_start` → `content_block_start` → `content_block_delta` → `content_block_stop` → `message_delta` → `message_stop` |
+| Usage | `prompt_tokens` / `completion_tokens` | `input_tokens` / `output_tokens` |
+
+```
+FR-ANTH-001 (P2)  Translation lives in `packages/anthropic-adapter` as PURE functions
+                  with no gateway coupling, so it is testable without a running
+                  gateway and reusable by a future standalone proxy.
+FR-ANTH-002 (P2)  `POST /v1/messages` on the gateway, reusing the SAME auth ->
+                  resolve -> authorize -> proxy -> settle pipeline. The billing path
+                  is wire-format agnostic by construction and must not be duplicated.
+FR-ANTH-003 (P2)  Accept `x-api-key` in addition to bearer, on this route only.
+FR-ANTH-004 (P2)  Anthropic streaming block indices are sequential across the whole
+                  message and shared between text and tool_use blocks. A new
+                  `content_block_start` opens when OpenAI's `delta.tool_calls[].index`
+                  advances, and the previous block must be explicitly closed.
+FR-ANTH-005 (P2)  KNOWN DEVIATION, must be documented to users: Anthropic reports
+                  `input_tokens` in `message_start`, but our upstream reports usage
+                  only on the FINAL chunk. We emit `message_start` with
+                  `input_tokens: 0` and correct it in `message_delta`. A client that
+                  trusts `message_start.usage` will under-count.
+FR-ANTH-006 (P2)  Map `reasoning_content` to a `thinking` block. It is billed output
+                  and must never be silently dropped.
+FR-ANTH-007 (P2)  Claude Code is tool-call-driven, so §4.5 is a HARD PREREQUISITE.
+                  Shipping the wire adapter first yields a client that connects and
+                  then cannot do anything — worse than not shipping it.
+```
+
+> **Honest viability note.** Wire compatibility is necessary, not sufficient. Measured
+> decode for the MVP target on an L4 is **14 tok/s**, and an agentic turn emits far more
+> tokens than a chat turn. Three things must hold together for agentic coding to feel
+> usable, and they define a distinct product tier rather than a flag:
+> 1. **Tool calling** (§4.5).
+> 2. **A fast tier.** The same model is predicted at ~149 tok/s on an H100 versus 14 on
+>    an L4 — a 10x difference that decides whether an agent loop is usable at all.
+> 3. **Always-warm** (`min_containers >= 1`, NFR-CS-006). Agent loops re-send a large,
+>    stable system prompt every turn, which is the ideal prefix-cache case — but
+>    scale-to-zero discards that cache every 30 s. Here, and only here, the platform's
+>    core economic mechanism works directly against the use case.
+>
+> That combination is a coherent paid **"agent tier"**, and it should be priced and named
+> as one rather than presented as ordinary inference that happens to be slow.
+
 ---
 
 ## 5. Complete PostgreSQL Database Schema
@@ -4048,7 +4133,9 @@ Four two-week sprints, 8 weeks to GA. Assumed team: 2 full-stack engineers + 1 p
 | Phase | Scope |
 |---|---|
 | **P2.1** | Creator payouts (Stripe Connect), tax collection, payout threshold |
-| **P2.2** | `/v1/embeddings`, `/v1/completions`, tool/function calling |
+| **P2.2** | `/v1/embeddings`, `/v1/completions` |
+| **P2.1a** | **Tool calling** (§4.5) — the single highest-leverage unlock; brings every agentic OpenAI client |
+| **P2.1b** | **Anthropic Messages API** (§4.6) — Claude Code and Anthropic-SDK clients |
 | **P2.3** | Always-warm paid tier; baked-weights images; network-volume cold-start reduction |
 | **P2.4** | LoRA multiplexing (many adapters, one base model, one GPU) — a structural margin unlock |
 | **P2.5** | `ComputeProvider` second implementation (Modal / Fly.io GPU); BYO-cloud |

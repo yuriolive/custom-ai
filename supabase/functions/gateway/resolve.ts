@@ -13,10 +13,7 @@
  *   authorize_request transaction (FR-GW-053).
  */
 
-import type {
-  ModelRuntime,
-  ResolvedRequest,
-} from "../../../packages/shared/types.ts";
+import type { ModelRuntime, ResolvedRequest } from "../../../packages/shared/types.ts";
 import { GatewayError } from "./errors.ts";
 
 // ─── Model id parsing (FR-GW-002) ────────────────────────────────────────────

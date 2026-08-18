@@ -5,10 +5,7 @@
  * No imports beyond the shared type module (FR-GW-051: nothing heavy on the hot path).
  */
 
-import type {
-  GatewayErrorCode,
-  OpenAIErrorEnvelope,
-} from "../../../packages/shared/types.ts";
+import type { GatewayErrorCode, OpenAIErrorEnvelope } from "../../../packages/shared/types.ts";
 
 export const REQUEST_ID_HEADER = "x-nexus-request-id";
 export const BALANCE_HEADER = "x-nexus-balance-micro-usd";
@@ -97,12 +94,10 @@ export function errorResponse(
   requestId: string,
   extra?: Record<string, string>,
 ): Response {
-  const ge = err instanceof GatewayError
-    ? err
-    : new GatewayError(
-      "internal_error",
-      "The server encountered an internal error. Please retry.",
-    );
+  const ge = err instanceof GatewayError ? err : new GatewayError(
+    "internal_error",
+    "The server encountered an internal error. Please retry.",
+  );
 
   const headers: Record<string, string> = {
     "content-type": "application/json; charset=utf-8",
@@ -148,7 +143,10 @@ export function sanitizeUpstreamText(input: string | null | undefined): string {
   s = s.replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, "[redacted-ip]");
   // Stack frames and filesystem paths.
   s = s.replace(/^\s*(?:at\s+|File\s+").*$/gim, "");
-  s = s.replace(/(?:\/[\w.@-]+){2,}\.(?:py|ts|js|rs|c|cc|cpp|so)\b(?::\d+)?/g, "[redacted-path]");
+  s = s.replace(
+    /(?:\/[\w.@-]+){2,}\.(?:py|ts|js|rs|c|cc|cpp|so)\b(?::\d+)?/g,
+    "[redacted-path]",
+  );
   s = s.replace(/[A-Za-z]:\\[^\s"'<>)]+/g, "[redacted-path]");
   s = s.replace(/\bTraceback \(most recent call last\):/gi, "");
 

@@ -7,10 +7,10 @@ import assert from "node:assert/strict";
 
 import {
   CHARS_PER_TOKEN,
-  UsageAccumulator,
   deltaChars,
   estimateTokens,
   extractUsage,
+  UsageAccumulator,
 } from "./usage.ts";
 
 const chunk = (content: string) =>

@@ -93,17 +93,25 @@ function completion() {
     calls += 1;
     d.resolve({ usage, meta });
   };
-  return { onComplete, done: d.promise, get calls() { return calls; } };
+  return {
+    onComplete,
+    done: d.promise,
+    get calls() {
+      return calls;
+    },
+  };
 }
 
 const OPTS = { coldStartBudgetMs: 300_000, totalBudgetMs: 300_000 };
 
 const sseChunk = (content: string) =>
-  `data: ${JSON.stringify({
-    id: "chatcmpl-1",
-    object: "chat.completion.chunk",
-    choices: [{ index: 0, delta: { content }, finish_reason: null }],
-  })}\n\n`;
+  `data: ${
+    JSON.stringify({
+      id: "chatcmpl-1",
+      object: "chat.completion.chunk",
+      choices: [{ index: 0, delta: { content }, finish_reason: null }],
+    })
+  }\n\n`;
 
 const tick = () => new Promise((r) => setImmediate(r));
 
@@ -127,7 +135,11 @@ test("headers are available before the upstream promise resolves", async () => {
     upstreamSettled = true;
   });
   await tick();
-  assert.equal(upstreamSettled, false, "headers were readable while upstream was still pending");
+  assert.equal(
+    upstreamSettled,
+    false,
+    "headers were readable while upstream was still pending",
+  );
 
   up.resolve(staticUpstream([sseChunk("hi"), "data: [DONE]\n\n"]));
   await drain(res);
@@ -190,7 +202,9 @@ test("forwarded bytes are byte-identical to what upstream sent", async () => {
   const frames = [
     sseChunk("Hello"),
     sseChunk(" wörld — 世界 🚀"),
-    `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 5, completion_tokens: 9 } })}\n\n`,
+    `data: ${
+      JSON.stringify({ choices: [], usage: { prompt_tokens: 5, completion_tokens: 9 } })
+    }\n\n`,
     "data: [DONE]\n\n",
   ];
   const original = concat(frames.map((f) => enc.encode(f)));
@@ -253,7 +267,9 @@ test("a terminal usage frame with NO trailing newline is still counted", async (
   // frame entirely and silently moves the request onto the estimator.
   const frames = [
     sseChunk("x"),
-    `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 34 } })}`,
+    `data: ${
+      JSON.stringify({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 34 } })
+    }`,
   ];
   const c = completion();
   const res = proxyStream(Promise.resolve(staticUpstream(frames)), c.onComplete, OPTS);
@@ -284,14 +300,16 @@ test("`data:` with no space after the colon is parsed (llama.cpp / proxy variant
 test("usage path 1 (vLLM terminal usage incl. cached_tokens)", async () => {
   const frames = [
     sseChunk("a"),
-    `data: ${JSON.stringify({
-      choices: [],
-      usage: {
-        prompt_tokens: 31,
-        completion_tokens: 17,
-        prompt_tokens_details: { cached_tokens: 24 },
-      },
-    })}\n\n`,
+    `data: ${
+      JSON.stringify({
+        choices: [],
+        usage: {
+          prompt_tokens: 31,
+          completion_tokens: 17,
+          prompt_tokens_details: { cached_tokens: 24 },
+        },
+      })
+    }\n\n`,
     "data: [DONE]\n\n",
   ];
   const c = completion();
@@ -309,10 +327,12 @@ test("usage path 2 (llama.cpp timings on a trailing frame)", async () => {
   const frames = [
     sseChunk("a"),
     sseChunk("b"),
-    `data: ${JSON.stringify({
-      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-      timings: { prompt_n: 45, predicted_n: 2 },
-    })}\n\n`,
+    `data: ${
+      JSON.stringify({
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        timings: { prompt_n: 45, predicted_n: 2 },
+      })
+    }\n\n`,
     "data: [DONE]\n\n",
   ];
   const c = completion();
@@ -364,7 +384,9 @@ test("client disconnect mid-stream still drains upstream and calls onComplete", 
   upstream.push(sseChunk("three"));
   await tick();
   upstream.push(
-    `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 4, completion_tokens: 3 } })}\n\n`,
+    `data: ${
+      JSON.stringify({ choices: [], usage: { prompt_tokens: 4, completion_tokens: 3 } })
+    }\n\n`,
   );
   upstream.push("data: [DONE]\n\n");
   upstream.close();
@@ -372,7 +394,11 @@ test("client disconnect mid-stream still drains upstream and calls onComplete", 
   const { usage, meta } = await c.done;
   assert.equal(meta.clientGone, true, "disconnect was detected");
   assert.equal(usage.source, "upstream");
-  assert.equal(usage.completionTokens, 3, "tokens produced after the client left are still billed");
+  assert.equal(
+    usage.completionTokens,
+    3,
+    "tokens produced after the client left are still billed",
+  );
   assert.equal(c.calls, 1, "onComplete fired exactly once");
 });
 

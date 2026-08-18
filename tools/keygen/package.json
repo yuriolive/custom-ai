@@ -1,0 +1,24 @@
+{
+  "name": "@custom-ai/keygen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zero-dependency CLI that mints, lists, and revokes sk-plat- API keys via the Supabase service role.",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "bin": {
+    "keygen": "./cli.ts"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "keygen": "node cli.ts",
+    "test": "node --test \"test/*.test.ts\"",
+    "test:live": "node --test \"test/*.live.ts\"",
+    "typecheck": "tsc --noEmit"
+  }
+}

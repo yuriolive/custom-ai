@@ -182,12 +182,17 @@ export function proxyStream(
         let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
         try {
           const remainingTotal = () => totalBudgetMs - (now() - t0);
-          const coldDeadline = () => Math.min(coldStartBudgetMs - (now() - t0), remainingTotal());
+          const coldDeadline = () =>
+            Math.min(coldStartBudgetMs - (now() - t0), remainingTotal());
 
           const upstream = await withDeadline(
             upstreamPromise,
             coldDeadline(),
-            new StreamError("cold_start_timeout", "Upstream did not respond within the cold-start budget", 504),
+            new StreamError(
+              "cold_start_timeout",
+              "Upstream did not respond within the cold-start budget",
+              504,
+            ),
           );
           if (!upstream.ok) {
             throw new StreamError(
@@ -219,8 +224,16 @@ export function proxyStream(
           for (;;) {
             const budget = firstByte ? remainingTotal() : coldDeadline();
             const expired = firstByte
-              ? new StreamError("stream_timeout", "Upstream stream exceeded the total time budget", 504)
-              : new StreamError("cold_start_timeout", "Upstream produced no tokens within the cold-start budget", 504);
+              ? new StreamError(
+                "stream_timeout",
+                "Upstream stream exceeded the total time budget",
+                504,
+              )
+              : new StreamError(
+                "cold_start_timeout",
+                "Upstream produced no tokens within the cold-start budget",
+                504,
+              );
 
             const { done, value } = await withDeadline(reader.read(), budget, expired);
             if (done) break;

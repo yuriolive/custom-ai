@@ -1,13 +1,61 @@
 name: CI
 
+# ---------------------------------------------------------------------------
+# Triggers.
+#
+# `push: ["**"]` is what actually runs CI today — the team works on long-lived
+# branches (mvp-0-foundation) and pushes directly. `pull_request` is kept so a
+# PR opened from a FORK still gets checked, because a fork's pushes never reach
+# this repo's push event.
+#
+# SECURITY — fork PRs and secrets. This repo has no secrets today, so nothing is
+# currently exposed. But `pull_request` runs the workflow *definition from the
+# base branch* with the *code from the PR head*. The moment anyone adds a deploy
+# step, a publish step, or any `secrets.*` reference to a job that runs on
+# `pull_request`, a fork PR can exfiltrate that secret by editing the code the
+# job executes (a test file, a build script, a postinstall hook — all of it runs
+# with the secret in the environment).
+#
+# The rule, therefore:
+#   * jobs in this workflow are BUILD/TEST ONLY and must never reference
+#     `secrets.*` beyond the automatic `GITHUB_TOKEN`;
+#   * anything that needs a real secret (deploy, publish, `supabase link`,
+#     `supabase functions deploy`, Stripe keys, RunPod keys) goes in a SEPARATE
+#     job gated on push-to-main, i.e.
+#
+#       deploy:
+#         needs: [node, python, deno, pgtap]
+#         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+#         environment: production   # adds a second gate: required reviewers
+#
+#     `github.event_name == 'push'` is the load-bearing half — a fork cannot
+#     produce a push event on this repo, so the job is unreachable from a fork.
+#     Never use `pull_request_target` here; it runs base-branch workflow code
+#     with write-scoped credentials and is the other half of this exfil path.
+# ---------------------------------------------------------------------------
 on:
   push:
     branches: ["**"]
   pull_request:
 
+# Least privilege. Every job in this workflow only reads the repo; nothing
+# writes checks, comments, packages, or attestations. Declaring it at workflow
+# level means a future job cannot silently inherit a write-scoped token — it has
+# to ask for the scope explicitly, in its own `permissions:` block, in a diff a
+# reviewer will see.
+permissions:
+  contents: read
+
+# Keyed on head_ref (the PR's source branch) when this is a pull_request, and on
+# the ref otherwise. Without the head_ref fallback a PR run and a branch push run
+# land in different concurrency groups and neither cancels the other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
+
+env:
+  # Supabase CLI telemetry ping — off in CI. Also stops the first-run prompt.
+  DO_NOT_TRACK: "1"
 
 jobs:
   node:
@@ -15,8 +63,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # Same-repo PRs are already covered by the push event on the same commit;
+    # without this guard every branch with an open PR runs the whole matrix
+    # twice, including the ~10-minute pgtap job. Fork PRs have no push event on
+    # this repo, so `head.repo.full_name != github.repository` lets them through.
+    # (GitHub counts a skipped job as success for required status checks, so
+    # this does not block branch protection.)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No step here pushes; dropping the token from .git/config keeps it out
+          # of reach of anything `npm ci` or a build script might run.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -71,12 +131,15 @@ jobs:
     name: python (tools/modal)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
 
     # Runs in parallel with the node job. tools/modal holds the capacity solver and
     # the SSE usage analyzer — the code that decides which GPU a model lands on and
     # how many tokens a caller is billed for. It had 41 tests that CI never ran.
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -102,3 +165,140 @@ jobs:
       - name: ruff format --check
         working-directory: tools/modal
         run: uv run --group dev ruff format --check .
+
+  deno:
+    name: deno (edge function gateway)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+
+    # supabase/functions/gateway ships to Supabase Edge Functions, which is Deno.
+    # Until now it was only ever executed by node's TS type-stripping (`npm test`,
+    # `tsc -p`), which resolves modules differently, has different globals, and
+    # cannot see a Deno-only type error at all. deno.json already declares
+    # check/lint/fmt tasks; nothing ran them. This job is the fastest in the
+    # workflow (~30s incl. install), so it is the cheapest place to fail.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          # Caches ~/.cache/deno (the module + npm registry cache) keyed on the
+          # lockfiles/config it finds. There are no remote imports today, so this
+          # is close to a no-op now and free insurance once std/ or npm: appears.
+          cache: true
+
+      # `deno check` on the runtime sources. Not `deno task check` from deno.json:
+      # that task lists only index/auth/resolve/errors and silently skips
+      # stream.ts and usage.ts, which are the two files that do the streaming and
+      # the billing. Test files are excluded on purpose — they run under
+      # `node --test` in the node job, not under Deno.
+      - name: deno check
+        working-directory: supabase/functions/gateway
+        run: deno check index.ts auth.ts resolve.ts errors.ts stream.ts usage.ts
+        # TODO(unpin): A5/A6 are fixing the Deno-only errors this surfaces right
+        # now (node's type-stripping never type-checked against Deno's lib set).
+        # Once that lands, DELETE this continue-on-error — leaving it makes the
+        # step decorative. Verify by confirming the step is green on main, then
+        # remove the line.
+        continue-on-error: true
+
+      - name: deno lint
+        working-directory: supabase/functions/gateway
+        run: deno lint
+        # TODO(unpin): same as above — remove once the gateway is clean.
+        continue-on-error: true
+
+      - name: deno fmt --check
+        working-directory: supabase/functions/gateway
+        run: deno fmt --check
+        # TODO(unpin): the repo has never been run through `deno fmt`, and
+        # deno.json sets a non-default lineWidth 96, so this will report the whole
+        # directory until someone runs `deno fmt` once. Same rule as the root
+        # prettier format:check: remove after the one-time reformat commit.
+        continue-on-error: true
+
+  pgtap:
+    name: pgtap (129 billing invariants)
+    runs-on: ubuntu-latest
+    # Generous: the first run on a cold runner pulls supabase/postgres (~1.5 GB),
+    # supabase/gotrue and supabase/pg_prove before a single test executes, and
+    # 05_concurrency_test.sql deliberately spends wall-clock time on its
+    # release barriers. 30 min is a hang detector, not a target (~8-12 min real).
+    timeout-minutes: 30
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+
+    # These are the highest-value tests in the repo and CI has never run them.
+    # They assert I1-I5 from docs/CONTRACTS.md against a real Postgres — the
+    # invariants that keep a wallet from going negative and keep GPU work from
+    # going unbilled — and they have already caught two P1 concurrency bugs
+    # (a self-deadlock, and a settlement path that stranded transactions).
+    # They cannot run without a real server: they exercise FOR UPDATE
+    # contention, lock ordering, and the deadlock detector.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # npx would re-download the CLI on every run. The version is pinned so a
+      # CLI release cannot change what "the tests passed" means without a diff.
+      - name: Cache Supabase CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm/_npx
+          key: supabase-cli-${{ runner.os }}-2.114.0
+
+      # NOTE ON DOCKER LAYER CACHING: deliberately not done. The only image worth
+      # caching is supabase/postgres at ~1.5 GB compressed; `docker save` +
+      # actions/cache round-trips it through the 10 GB repo cache, and restoring
+      # 1.5 GB from the Actions cache is not reliably faster than pulling it from
+      # Docker Hub on an Azure-hosted runner — while permanently consuming most of
+      # the repo's cache budget and evicting the npm/Next.js caches that DO pay
+      # off. Revisit only with measurements from this repo's own runs.
+      - name: supabase start
+        run: |
+          npx --yes supabase@2.114.0 start \
+            -x studio,imgproxy,mailpit,logflare,vector,edge-runtime,supavisor
+        # Excludes only services with no schema of their own that any migration,
+        # seed, or test touches. gotrue/realtime/storage-api/postgrest/kong stay
+        # because the migrations and 05_concurrency_test.sql insert into
+        # auth.users, and RLS policies reference auth.uid(). Do not add to this
+        # exclusion list without checking `grep -rn 'auth\.\|storage\.' supabase/`.
+
+      # Applies all 21 migrations to a fresh database, then seed.sql
+      # ([db.seed] enabled, sql_paths = ["./seed.sql"]). This is also the only
+      # thing in CI that proves the migrations still apply cleanly from zero.
+      - name: supabase db reset
+        run: npx --yes supabase@2.114.0 db reset --local
+
+      # The CLI enables pgTAP itself (`create extension if not exists pgtap with
+      # schema extensions`), runs supabase/pg_prove:3.36 against the local db, and
+      # propagates pg_prove's exit code. No `continue-on-error`, no `|| true`, no
+      # `set +e` anywhere in this job: a failing invariant must fail the build.
+      #
+      # 05_concurrency_test.sql creates the `dblink` extension at runtime and fans
+      # each scenario out over genuinely separate backends via
+      # dblink_connect('host=db port=5432 ...'). `db` is a Docker network alias the
+      # CLI assigns to the postgres container (aliases: ["db","db.supabase.internal"]),
+      # so the connection is resolved inside the Compose network by the Postgres
+      # backend itself — it does not depend on anything about the runner's host
+      # networking, and behaves identically in CI and on a developer machine.
+      # If dblink were unavailable the file would abort on line 15 rather than
+      # quietly degrade to single-connection execution, so a silent false-green
+      # on the concurrency scenarios is not a failure mode here.
+      - name: supabase test db (pgTAP)
+        run: npx --yes supabase@2.114.0 test db --local supabase/tests
+
+      # Container logs are the only way to diagnose a failure after the fact:
+      # a deadlock-detector abort or an OOM shows up in the postgres log, not in
+      # pg_prove's TAP output. `if: failure()` so it costs nothing when green.
+      - name: Dump Postgres logs on failure
+        if: failure()
+        run: docker logs supabase_db_custom-ai --tail 400 || docker ps -a
+
+      - name: supabase stop
+        if: always()
+        run: npx --yes supabase@2.114.0 stop --no-backup || true

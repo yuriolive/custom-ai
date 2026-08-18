@@ -12,10 +12,7 @@
  * another agent and imported against the frozen interface documented in README.md.
  */
 
-import type {
-  StreamMeta,
-  UsageResult,
-} from "../../../packages/shared/types.ts";
+import type { StreamMeta, UsageResult } from "../../../packages/shared/types.ts";
 import type { ResolvedRequest } from "../../../packages/shared/types.ts";
 import {
   BALANCE_HEADER,
@@ -31,8 +28,8 @@ import { proxyStream } from "./stream.ts";
 import {
   makePostgrestExecutor,
   parseModelId,
-  resolveRequest,
   type ResolveExecutor,
+  resolveRequest,
 } from "./resolve.ts";
 
 // ─── Environment ─────────────────────────────────────────────────────────────
@@ -74,9 +71,9 @@ export function uuidv7(): string {
 
   let hex = "";
   for (let i = 0; i < 16; i++) hex += bytes[i].toString(16).padStart(2, "0");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
-    hex.slice(16, 20)
-  }-${hex.slice(20)}`;
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${
+    hex.slice(20)
+  }`;
 }
 
 // ─── Structured logging ──────────────────────────────────────────────────────
@@ -234,18 +231,46 @@ export interface UpstreamRequest {
 }
 
 /**
+ * Which upstream dialect to speak. These differ in BOTH url shape and auth scheme,
+ * so they cannot be collapsed into a base-url swap:
+ *
+ *   runpod  POST {base}/v2/{endpoint_id}/openai/v1/chat/completions
+ *           Authorization: Bearer {RUNPOD_API_KEY}
+ *
+ *   modal   POST {base}/v1/chat/completions?{class-parameter query string}
+ *           Modal-Key / Modal-Secret   (NOT Authorization: Bearer)
+ *
+ * On Modal the query string is not decoration — it is what selects the
+ * autoscaled container pool for a given (repo, file, ctx, parallel) tuple.
+ * Dropping it routes to a pool with unbound parameters, which never serves.
+ * `runpod_endpoint_id` therefore carries that query string for modal-backed rows.
+ */
+export type UpstreamProvider = "runpod" | "modal";
+
+export function parseUpstreamProvider(raw: string | undefined): UpstreamProvider {
+  return raw?.trim().toLowerCase() === "modal" ? "modal" : "runpod";
+}
+
+/**
  * Builds the upstream call.
  *
  *   - `stream` is ALWAYS true, regardless of what the client asked for (FR-GW-030).
  *   - `stream_options.include_usage` is always injected (FR-GW-031).
  *   - `model` is the worker's served name, not the platform `creator/slug` (FR-GW-032).
- *   - Authorization is RUNPOD_API_KEY. The caller's `sk-plat-` key is never
+ *   - Auth is the PROVIDER's credential. The caller's `sk-plat-` key is never
  *     forwarded, and no client header is copied through.
  */
 export function buildUpstreamRequest(
   body: ChatBody,
   resolved: ResolvedRequest,
-  opts: { baseUrl: string; runpodApiKey: string; signal?: AbortSignal },
+  opts: {
+    baseUrl: string;
+    runpodApiKey: string;
+    signal?: AbortSignal;
+    provider?: UpstreamProvider;
+    modalKey?: string;
+    modalSecret?: string;
+  },
 ): UpstreamRequest {
   const payload: Record<string, unknown> = {};
   for (const key of HONORED_PARAMS) {
@@ -257,19 +282,37 @@ export function buildUpstreamRequest(
   payload.stream_options = { include_usage: true };
   payload.n = 1;
 
+  const provider = opts.provider ?? "runpod";
   const base = opts.baseUrl.replace(/\/+$/, "");
-  const url = `${base}/v2/${resolved.runpodEndpointId}/openai/v1/chat/completions`;
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "accept": "text/event-stream",
+  };
+
+  let url: string;
+  if (provider === "modal") {
+    const query = (resolved.runpodEndpointId ?? "").replace(/^[?]+/, "");
+    url = query
+      ? `${base}/v1/chat/completions?${query}`
+      : `${base}/v1/chat/completions`;
+    // Modal proxy auth is a header PAIR and is only sent when configured; an
+    // endpoint deployed without `requires_proxy_auth` accepts the call unauthed.
+    if (opts.modalKey && opts.modalSecret) {
+      headers["Modal-Key"] = opts.modalKey;
+      headers["Modal-Secret"] = opts.modalSecret;
+    }
+  } else {
+    url = `${base}/v2/${resolved.runpodEndpointId}/openai/v1/chat/completions`;
+    headers["authorization"] = `Bearer ${opts.runpodApiKey}`;
+  }
 
   return {
     url,
     payload,
     init: {
       method: "POST",
-      headers: {
-        "authorization": `Bearer ${opts.runpodApiKey}`,
-        "content-type": "application/json",
-        "accept": "text/event-stream",
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: opts.signal,
     },
@@ -329,6 +372,10 @@ export interface GatewayDeps {
   fetchImpl: typeof fetch;
   upstreamBaseUrl: string;
   runpodApiKey: string;
+  /** Upstream dialect. Defaults to runpod when unset, so existing tests are unaffected. */
+  upstreamProvider?: UpstreamProvider;
+  modalKey?: string;
+  modalSecret?: string;
   supabaseUrl: string;
   serviceRoleKey: string;
   /** Deferred so this module stays importable before stream.ts lands. */
@@ -338,7 +385,11 @@ export interface GatewayDeps {
 export type ProxyStreamFn = (
   upstreamPromise: Promise<Response>,
   onComplete: (usage: UsageResult, meta: StreamMeta) => void,
-  opts: { coldStartBudgetMs: number; totalBudgetMs: number; estimateFrom?: { promptChars: number } },
+  opts: {
+    coldStartBudgetMs: number;
+    totalBudgetMs: number;
+    estimateFrom?: { promptChars: number };
+  },
 ) => Response;
 
 let depsCache: GatewayDeps | null = null;
@@ -353,6 +404,9 @@ function defaultDeps(): GatewayDeps {
     fetchImpl: fetch,
     upstreamBaseUrl: getEnv("UPSTREAM_BASE_URL") ?? DEFAULT_UPSTREAM_BASE_URL,
     runpodApiKey: getEnv("RUNPOD_API_KEY") ?? "",
+    upstreamProvider: parseUpstreamProvider(getEnv("UPSTREAM_PROVIDER")),
+    modalKey: getEnv("MODAL_KEY") ?? "",
+    modalSecret: getEnv("MODAL_SECRET") ?? "",
     exec: makePostgrestExecutor(supabaseUrl, serviceRoleKey),
     rpc: makeRpcCaller(supabaseUrl, serviceRoleKey),
     proxyStream: proxyStream as ProxyStreamFn,
@@ -417,6 +471,9 @@ async function handleChatCompletions(
   const upstream = buildUpstreamRequest(body, resolved, {
     baseUrl: deps.upstreamBaseUrl,
     runpodApiKey: deps.runpodApiKey,
+    provider: deps.upstreamProvider,
+    modalKey: deps.modalKey,
+    modalSecret: deps.modalSecret,
   });
 
   const failure: { value: GatewayError | null; flagged: boolean; detail: string } = {
@@ -445,7 +502,9 @@ async function handleChatCompletions(
   });
 
   if (clientWantsStream) {
-    return withGatewayHeaders(sse, requestId, { "x-nexus-overhead-ms": String(Math.round(overheadMs)) });
+    return withGatewayHeaders(sse, requestId, {
+      "x-nexus-overhead-ms": String(Math.round(overheadMs)),
+    });
   }
 
   // FR-GW-030: non-streaming clients get the forced stream buffered and assembled.
@@ -663,7 +722,10 @@ export async function assembleNonStreaming(
  * the worker really did prefill the prompt. A completed stream is never left
  * unbilled (FR-GW-044) — revenue leakage is worse than a slightly imprecise charge.
  */
-export function shouldVoid(usage: UsageResult | null | undefined, upstreamFailed: boolean): boolean {
+export function shouldVoid(
+  usage: UsageResult | null | undefined,
+  upstreamFailed: boolean,
+): boolean {
   if (upstreamFailed) return true;
   const prompt = usage?.promptTokens ?? 0;
   const completion = usage?.completionTokens ?? 0;

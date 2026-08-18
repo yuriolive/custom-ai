@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    // Deliberately false, matching supabase/functions/gateway/tsconfig.json.
+    // key.ts re-exports the gateway's auth.ts (the single source of truth for the
+    // key format), so the gateway sources are typechecked as part of THIS project
+    // and must be checked under the same flags their owner compiles them with.
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    // Node's native type stripping refuses non-erasable syntax (enums, namespaces,
+    // parameter properties). This makes tsc reject it at typecheck time instead.
+    "erasableSyntaxOnly": true,
+    "types": ["node"]
+  },
+  "include": ["*.ts", "test/**/*.ts"]
+}
