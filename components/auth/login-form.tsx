@@ -33,10 +33,7 @@ export function LoginForm({
   /** Message forwarded by /auth/callback via `?authError=` (a code, mapped server-side). */
   initialError?: string | null;
 }) {
-  const [state, formAction, isPending] = useActionState(
-    signInAction,
-    initialAuthFormState,
-  );
+  const [state, formAction, isPending] = useActionState(signInAction, initialAuthFormState);
 
   const error = state.status === "error" ? state.message : null;
   const invalidField = state.status === "error" ? state.field : undefined;
@@ -63,15 +60,11 @@ export function LoginForm({
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
-          <span className="text-muted text-xs uppercase tracking-wide">
-            or with email
-          </span>
+          <span className="text-muted text-xs uppercase tracking-wide">or with email</span>
           <Separator className="flex-1" />
         </div>
 
-        {error ? (
-          <AuthAlert description={error} status="danger" title="Sign-in failed" />
-        ) : null}
+        {error ? <AuthAlert description={error} status="danger" title="Sign-in failed" /> : null}
 
         <form action={formAction} className="flex flex-col gap-4" noValidate>
           <input name="next" type="hidden" value={next} />

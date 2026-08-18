@@ -27,19 +27,8 @@ import { fetchApiKeys } from "@/lib/console/queries";
 import type { ApiKeyRow, CreatedApiKey } from "@/lib/console/types";
 import { createClient } from "@/lib/supabase/client";
 
-import {
-  CreateKeyDialog,
-  RenameKeyDialog,
-  RevealKeyModal,
-  RevokeKeyDialog,
-} from "./key-dialogs";
-import {
-  EmptyPanel,
-  ErrorPanel,
-  KeyStatusChip,
-  PanelHeader,
-  TableSkeleton,
-} from "./primitives";
+import { CreateKeyDialog, RenameKeyDialog, RevealKeyModal, RevokeKeyDialog } from "./key-dialogs";
+import { EmptyPanel, ErrorPanel, KeyStatusChip, PanelHeader, TableSkeleton } from "./primitives";
 
 /** Which mutation is in flight, so exactly one control shows a pending state. */
 type Pending = "create" | "rename" | "revoke" | "reload" | null;
@@ -103,9 +92,8 @@ export function KeysPanel({
           const detail =
             typeof body === "object" &&
             body !== null &&
-            typeof (body as { error?: { message?: unknown } }).error?.message ===
-              "string"
-              ? ((body as { error: { message: string } }).error.message)
+            typeof (body as { error?: { message?: unknown } }).error?.message === "string"
+              ? (body as { error: { message: string } }).error.message
               : `Request failed with status ${response.status}.`;
           setDialogError(detail);
           return;
@@ -132,10 +120,7 @@ export function KeysPanel({
       if (!renameTarget) return;
       setPending("rename");
       setDialogError(null);
-      const { error } = await supabase
-        .from("api_keys")
-        .update({ name })
-        .eq("id", renameTarget.id);
+      const { error } = await supabase.from("api_keys").update({ name }).eq("id", renameTarget.id);
       setPending(null);
 
       if (error) {
@@ -205,15 +190,9 @@ export function KeysPanel({
               <Table.Header>
                 <Table.Column isRowHeader>Name</Table.Column>
                 <Table.Column>Key</Table.Column>
-                <Table.Column className="hidden sm:table-cell">
-                  Created
-                </Table.Column>
-                <Table.Column className="hidden md:table-cell">
-                  Last used
-                </Table.Column>
-                <Table.Column className="hidden md:table-cell">
-                  Requests
-                </Table.Column>
+                <Table.Column className="hidden sm:table-cell">Created</Table.Column>
+                <Table.Column className="hidden md:table-cell">Last used</Table.Column>
+                <Table.Column className="hidden md:table-cell">Requests</Table.Column>
                 <Table.Column>Status</Table.Column>
                 <Table.Column>
                   {/* Actions column — the header is decorative, so it is

@@ -21,7 +21,7 @@ export default function PlaygroundPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-baseline gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Playground</h1>
+        <h1 className="text-2xl leading-[1.2] font-semibold tracking-[-0.025em]">Playground</h1>
         <code className="text-muted text-sm">{publicEnv.defaultModel}</code>
       </div>
 

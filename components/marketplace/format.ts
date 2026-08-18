@@ -90,6 +90,16 @@ export function qualityLabel(tier: QualityTier): string {
   return TIER_LABEL[tier];
 }
 
+/**
+ * The tier chip's text — and the only thing that carries the tier.
+ *
+ * There is deliberately no `qualityChipColor` companion. One used to exist and
+ * returned `success` for the top tiers, which put a green chip directly beside
+ * the accent-green throughput chip on every high-quality card: two greens a few
+ * degrees apart in one row, neither of which the eye can assign a meaning to.
+ * The tier reads from this label and, in full, from `qualityNote` in the
+ * tooltip. Do not reintroduce a status colour to carry it.
+ */
 export function qualityChipLabel(tier: QualityTier): string {
   return TIER_SHORT[tier];
 }
@@ -98,19 +108,8 @@ export function qualityNote(tier: QualityTier): string {
   return TIER_NOTE[tier];
 }
 
-/** Chip colour for a tier. Only the genuinely degraded tiers get a warning colour. */
-export function qualityChipColor(
-  tier: QualityTier,
-): "default" | "warning" | "success" {
-  if (tier === "minimum" || tier === "reduced") return "warning";
-  if (tier === "maximum" || tier === "full") return "success";
-  return "default";
-}
-
 /** Price band boundaries, in micro-USD per 1M completion tokens. */
-export const PRICE_BAND_MAX_MICRO: Readonly<
-  Record<Exclude<PriceBand, "premium">, number>
-> = {
+export const PRICE_BAND_MAX_MICRO: Readonly<Record<Exclude<PriceBand, "premium">, number>> = {
   budget: 500_000, // <= $0.50 / 1M out
   standard: 2_000_000, // <= $2.00 / 1M out
 };

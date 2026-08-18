@@ -24,11 +24,11 @@ export function HomeIntro({ baseUrl }: { baseUrl: string }) {
   return (
     <section className="flex flex-col gap-6">
       <div className="flex flex-col items-start gap-4">
-        <Chip color="accent" size="sm" variant="soft">
+        <Chip color="accent" variant="soft">
           OpenAI-compatible · pay per token
         </Chip>
 
-        <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
+        <h1 className="max-w-3xl text-3xl leading-[1.1] font-semibold tracking-[-0.03em] sm:text-4xl">
           Run open models nobody else hosts, behind one endpoint you already know how to call
         </h1>
 
@@ -105,8 +105,10 @@ function Step({
   children?: React.ReactNode;
 }) {
   return (
-    <li className="border-muted/25 bg-surface flex flex-col gap-1 rounded-[var(--radius)] border p-4">
-      <span className="text-accent text-xs font-semibold tracking-wide uppercase">Step {n}</span>
+    <li className="border-border bg-surface flex flex-col gap-1 rounded-lg border p-4">
+      <span className="text-accent font-mono text-[0.6875rem] font-medium tracking-[0.08em] uppercase">
+        Step {n}
+      </span>
       <span className="text-sm font-medium">{title}</span>
       <span className="text-muted text-sm">{body}</span>
       {children}

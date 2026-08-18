@@ -24,9 +24,7 @@ export function ConsoleError({
   reset: () => void;
   title: string;
 }) {
-  const detail = error.digest
-    ? `${error.message} (reference ${error.digest})`
-    : error.message;
+  const detail = error.digest ? `${error.message} (reference ${error.digest})` : error.message;
 
   return <ErrorPanel detail={detail} onRetry={reset} title={title} />;
 }

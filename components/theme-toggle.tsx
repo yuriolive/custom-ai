@@ -53,7 +53,9 @@ export function ThemeToggle() {
 
   return (
     <Button
-      aria-label={mounted ? (isDark ? "Switch to light theme" : "Switch to dark theme") : "Toggle theme"}
+      aria-label={
+        mounted ? (isDark ? "Switch to light theme" : "Switch to dark theme") : "Toggle theme"
+      }
       isIconOnly
       size="sm"
       variant="ghost"

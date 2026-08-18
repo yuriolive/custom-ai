@@ -56,13 +56,19 @@ export function CodeBlock({
   const tokens = tokenize(code, grammar);
 
   return (
-    <div className="relative">
-      <div className="absolute top-2 right-2 z-10">
+    // The copy control sits in its own toolbar rather than floating over the
+    // code. Overlaying it meant reserving a 48px top inset (`pt-12`) against
+    // 16px on the other three sides, which read as a stray gap above the first
+    // line — and a long first line still scrolled underneath the button. A
+    // toolbar row costs the same vertical space, keeps the code padding
+    // symmetric, and nothing can collide.
+    <div className="border-border bg-surface text-surface-foreground overflow-hidden rounded-lg border">
+      <div className="border-separator flex items-center justify-end border-b px-2 py-1.5">
         <Button
           aria-label={`Copy the ${label} snippet`}
           onPress={copy}
           size="sm"
-          variant={state === "copied" ? "primary" : "secondary"}
+          variant={state === "copied" ? "primary" : "ghost"}
         >
           {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
         </Button>
@@ -70,10 +76,7 @@ export function CodeBlock({
 
       {/* tabIndex on <pre> so a keyboard user can scroll a long snippet
           horizontally without a mouse; the code itself is not interactive. */}
-      <pre
-        className="border-muted/25 bg-surface text-surface-foreground max-w-full overflow-x-auto rounded-[var(--radius)] border p-4 pt-12 text-[0.8125rem] leading-relaxed"
-        tabIndex={0}
-      >
+      <pre className="max-w-full overflow-x-auto p-4 text-[0.8125rem] leading-relaxed" tabIndex={0}>
         <code className="font-mono">
           {tokens.map((token, index) =>
             token.kind === "plain" ? (

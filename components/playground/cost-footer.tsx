@@ -20,18 +20,16 @@ export function CostFooter({ metrics }: { metrics: TurnMetrics | undefined }) {
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      <Chip size="sm" variant="soft">
-        prompt {formatTokens(metrics.promptTokens)}
-      </Chip>
+      <Chip variant="soft">prompt {formatTokens(metrics.promptTokens)}</Chip>
 
-      <Chip size="sm" variant="soft">
+      <Chip variant="soft">
         completion {formatTokens(metrics.completionTokens)}
         {estimated ? "*" : ""}
       </Chip>
 
       <Chip
         color={metrics.costMicroUsd == null ? "default" : "accent"}
-        size="sm"
+
         title={
           metrics.costMicroUsd == null
             ? "Cost lands when the gateway settles the transaction"
@@ -44,27 +42,25 @@ export function CostFooter({ metrics }: { metrics: TurnMetrics | undefined }) {
 
       <Chip
         color={metrics.coldStart ? "warning" : "default"}
-        size="sm"
+
         title="Time to first token"
         variant="soft"
       >
         TTFT {formatMs(metrics.ttftMs)}
       </Chip>
 
-      <Chip size="sm" variant="soft">
-        {formatRate(metrics.tokensPerSecond)}
-      </Chip>
+      <Chip variant="soft">{formatRate(metrics.tokensPerSecond)}</Chip>
 
       {metrics.coldStart ? (
-        <Chip color="warning" size="sm" variant="soft">
+        <Chip color="warning" variant="soft">
           cold start
         </Chip>
       ) : null}
 
       {estimated ? (
         <span className="text-muted text-xs">
-          * upstream sent no usage on the final chunk; completion tokens are
-          counted from the stream.
+          * upstream sent no usage on the final chunk; completion tokens are counted from the
+          stream.
         </span>
       ) : null}
     </div>

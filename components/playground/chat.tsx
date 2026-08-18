@@ -57,16 +57,7 @@ export function Chat({ model }: { model: string }) {
       { text },
       { body: { model, temperature, maxTokens, systemPrompt: systemPrompt || undefined } },
     );
-  }, [
-    clearError,
-    input,
-    isBusy,
-    maxTokens,
-    model,
-    sendMessage,
-    systemPrompt,
-    temperature,
-  ]);
+  }, [clearError, input, isBusy, maxTokens, model, sendMessage, systemPrompt, temperature]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
@@ -81,8 +72,8 @@ export function Chat({ model }: { model: string }) {
             <Alert.Content>
               <Alert.Title>The request failed</Alert.Title>
               <Alert.Description>
-                {error.message || "The gateway did not return a response."} Your
-                message is still in the composer — nothing was lost.
+                {error.message || "The gateway did not return a response."} Your message is still in
+                the composer — nothing was lost.
               </Alert.Description>
             </Alert.Content>
             <Button size="sm" variant="danger" onPress={() => clearError()}>
@@ -201,8 +192,8 @@ export function Chat({ model }: { model: string }) {
         </Card>
 
         <p className="text-muted text-xs leading-5">
-          Cold start is roughly {publicEnv.coldStartEstimateSeconds}s on the
-          first request. Subsequent requests hit a warm worker.
+          Cold start is roughly {publicEnv.coldStartEstimateSeconds}s on the first request.
+          Subsequent requests hit a warm worker.
         </p>
       </aside>
     </div>

@@ -190,7 +190,7 @@ export function CatalogControls({ query }: { query: CatalogQuery }) {
       {active.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
           {active.map((item) => (
-            <Chip color="accent" key={item.label} size="sm" variant="soft">
+            <Chip color="accent" key={item.label} variant="soft">
               {item.label}
             </Chip>
           ))}

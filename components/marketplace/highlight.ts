@@ -106,22 +106,30 @@ export function tokenize(code: string, grammar: Grammar): Token[] {
 }
 
 /**
- * Token → Tailwind class. Colours come from the theme's semantic variables
- * (globals.css) rather than raw palette utilities, so both themes stay correct
- * and nothing here has to be re-tuned when the accent changes.
+ * Token → Tailwind class.
+ *
+ * These point at the dedicated `--code-*` tokens (DESIGN.md §1.4), NOT at the
+ * semantic status colours. Syntax and status are different jobs: borrowing
+ * `text-success` for a string literal worked only while the accent was violet
+ * and success was green. With a green accent, `keyword` and `string` would be
+ * near-neighbours and the highlighting would stop distinguishing anything.
+ *
+ * All five are contrast-checked against `--surface`, which is what a code block
+ * sits on, in both themes. `--code-keyword` deliberately equals `--accent` so
+ * the block reads as part of the product; everything else diverges.
  */
 export function tokenClassName(kind: TokenKind): string {
   switch (kind) {
     case "comment":
-      return "text-muted italic";
+      return "text-code-comment italic";
     case "string":
-      return "text-success";
+      return "text-code-string";
     case "keyword":
-      return "text-accent font-medium";
+      return "text-code-keyword font-medium";
     case "number":
-      return "text-warning";
+      return "text-code-number";
     case "property":
-      return "text-foreground font-medium";
+      return "text-code-property";
     case "plain":
       return "";
   }

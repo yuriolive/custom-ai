@@ -9,7 +9,6 @@ import {
   formatLatency,
   formatPricePerMtoken,
   formatSpeed,
-  qualityChipColor,
   qualityChipLabel,
   qualityLabel,
   qualityNote,
@@ -62,24 +61,18 @@ export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: 
         </p>
 
         <div className="flex flex-wrap gap-2">
-          <Chip color="success" size="sm" variant="soft">
+          <Chip color="success" variant="soft">
             Ready
           </Chip>
-          <Chip color="accent" size="sm" variant="soft">
+          <Chip color="accent" variant="soft">
             {formatSpeed(model.measuredTokensPerSecond)} measured
           </Chip>
-          <Chip size="sm" variant="soft">
+          <Chip variant="soft">
             {formatContext(model.contextLength)} context
             {model.contextVerified ? " · verified" : ""}
           </Chip>
-          <Chip color={qualityChipColor(model.qualityTier)} size="sm" variant="soft">
-            {qualityChipLabel(model.qualityTier)}
-          </Chip>
-          {model.quantTag ? (
-            <Chip size="sm" variant="soft">
-              {model.quantTag}
-            </Chip>
-          ) : null}
+          <Chip variant="soft">{qualityChipLabel(model.qualityTier)}</Chip>
+          {model.quantTag ? <Chip variant="soft">{model.quantTag}</Chip> : null}
         </div>
       </header>
 
@@ -199,7 +192,7 @@ export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: 
 function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
     <div
-      className="border-muted/25 bg-surface flex flex-col gap-1 rounded-[var(--radius)] border p-4"
+      className="border-border bg-surface flex flex-col gap-1 rounded-lg border p-4"
       title={hint}
     >
       <span className="text-muted text-xs font-medium tracking-wide uppercase">{label}</span>

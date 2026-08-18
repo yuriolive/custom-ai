@@ -15,6 +15,7 @@ import {
   Alert,
   AlertDialog,
   Button,
+  Checkbox,
   Description,
   Input,
   Label,
@@ -81,8 +82,8 @@ export function CreateKeyDialog({
                   <Label>Name</Label>
                   <Input placeholder="production backend" />
                   <Description>
-                    For your own bookkeeping — up to {KEY_NAME_MAX_LENGTH}{" "}
-                    characters. It is not part of the key.
+                    For your own bookkeeping — up to {KEY_NAME_MAX_LENGTH} characters. It is not
+                    part of the key.
                   </Description>
                 </TextField>
 
@@ -103,18 +104,10 @@ export function CreateKeyDialog({
               </form>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                isDisabled={isPending}
-                onPress={() => onOpenChange(false)}
-                variant="ghost"
-              >
+              <Button isDisabled={isPending} onPress={() => onOpenChange(false)} variant="ghost">
                 Cancel
               </Button>
-              <Button
-                isDisabled={!canSubmit}
-                onPress={() => onSubmit(trimmed)}
-                variant="primary"
-              >
+              <Button isDisabled={!canSubmit} onPress={() => onSubmit(trimmed)} variant="primary">
                 {isPending ? "Creating…" : "Create key"}
               </Button>
             </Modal.Footer>
@@ -173,27 +166,25 @@ export function RevealKeyModal({
               <div className="flex flex-col gap-4">
                 <Alert status="danger">
                   <Alert.Content>
-                    <Alert.Title>
-                      This is the only time this key will be shown.
-                    </Alert.Title>
+                    <Alert.Title>This is the only time this key will be shown.</Alert.Title>
                     <Alert.Description>
-                      Only a SHA-256 hash of it is stored, so nobody — including
-                      us — can show it to you again. If you lose it, revoke this
-                      key and create another.
+                      Only a SHA-256 hash of it is stored, so nobody — including us — can show it to
+                      you again. If you lose it, revoke this key and create another.
                     </Alert.Description>
                   </Alert.Content>
                 </Alert>
 
                 <div className="flex flex-col gap-2">
-                  <label
-                    className="text-sm font-medium"
-                    htmlFor={fieldId}
-                  >
+                  <label className="text-sm font-medium" htmlFor={fieldId}>
                     {created.name}
                   </label>
+                  {/* Deliberately a readonly text input rather than a HeroUI
+                      `Input`: this is a value to select and copy, not a field to
+                      edit. It borrows the field tokens so it still sits in the
+                      same visual family as every real input. */}
                   <input
                     autoComplete="off"
-                    className="border-default bg-surface text-foreground w-full rounded-lg border px-3 py-2 font-mono text-xs break-all select-all sm:text-sm"
+                    className="border-field-border bg-field text-field-foreground rounded-field w-full border px-3 py-2 font-mono text-xs break-all select-all sm:text-sm"
                     id={fieldId}
                     onFocus={(event) => event.currentTarget.select()}
                     readOnly
@@ -203,26 +194,21 @@ export function RevealKeyModal({
                   <CopyButton label="Copy key" value={created.plaintext} />
                 </div>
 
-                <label className="flex items-start gap-2 text-sm">
-                  <input
-                    checked={acknowledged}
-                    className="mt-0.5"
-                    onChange={(event) => setAcknowledged(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>
-                    I have stored this key somewhere safe. I understand it cannot
-                    be retrieved again.
-                  </span>
-                </label>
+                <Checkbox isSelected={acknowledged} onChange={setAcknowledged}>
+                  <Checkbox.Content>
+                    <Checkbox.Control>
+                      <Checkbox.Indicator />
+                    </Checkbox.Control>
+                    <span className="text-sm">
+                      I have stored this key somewhere safe. I understand it cannot be retrieved
+                      again.
+                    </span>
+                  </Checkbox.Content>
+                </Checkbox>
               </div>
             </Modal.Body>
             <Modal.Footer>
-              <Button
-                isDisabled={!acknowledged}
-                onPress={onClose}
-                variant="primary"
-              >
+              <Button isDisabled={!acknowledged} onPress={onClose} variant="primary">
                 Done
               </Button>
             </Modal.Footer>
@@ -291,8 +277,8 @@ export function RenameKeyDialog({
                   <Label>Name</Label>
                   <Input />
                   <Description>
-                    Renaming is cosmetic. The key itself does not change, and any
-                    client using it keeps working.
+                    Renaming is cosmetic. The key itself does not change, and any client using it
+                    keeps working.
                   </Description>
                 </TextField>
 
@@ -314,11 +300,7 @@ export function RenameKeyDialog({
               <Button isDisabled={isPending} onPress={onClose} variant="ghost">
                 Cancel
               </Button>
-              <Button
-                isDisabled={!canSubmit}
-                onPress={() => onSubmit(trimmed)}
-                variant="primary"
-              >
+              <Button isDisabled={!canSubmit} onPress={() => onSubmit(trimmed)} variant="primary">
                 {isPending ? "Saving…" : "Save"}
               </Button>
             </Modal.Footer>
@@ -370,15 +352,13 @@ export function RevokeKeyDialog({
               <div className="flex flex-col gap-3">
                 <p className="text-sm">
                   <span className="font-medium">{target.name}</span>{" "}
-                  <code className="text-muted font-mono text-xs">
-                    {target.key_prefix}…
-                  </code>
+                  <code className="text-muted font-mono text-xs">{target.key_prefix}…</code>
                 </p>
                 <p className="text-muted text-sm">
-                  Revocation takes effect immediately and cannot be undone. Any
-                  client still sending this key will start getting{" "}
-                  <code className="font-mono text-xs">401 invalid_api_key</code>.
-                  The row stays visible here for your records.
+                  Revocation takes effect immediately and cannot be undone. Any client still sending
+                  this key will start getting{" "}
+                  <code className="font-mono text-xs">401 invalid_api_key</code>. The row stays
+                  visible here for your records.
                 </p>
                 {error ? (
                   <Alert status="danger">
@@ -394,11 +374,7 @@ export function RevokeKeyDialog({
               <Button isDisabled={isPending} onPress={onClose} variant="ghost">
                 Keep it
               </Button>
-              <Button
-                isDisabled={isPending}
-                onPress={onConfirm}
-                variant="danger"
-              >
+              <Button isDisabled={isPending} onPress={onConfirm} variant="danger">
                 {isPending ? "Revoking…" : "Revoke key"}
               </Button>
             </AlertDialog.Footer>

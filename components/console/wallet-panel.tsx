@@ -87,15 +87,8 @@ export function WalletPanel({
         </Card.Header>
         <Card.Content>
           <div className="grid gap-6 sm:grid-cols-2">
-            <Stat
-              emphasis
-              label="Available"
-              value={formatBalanceMicroUsd(balanceMicroUsd)}
-            />
-            <Stat
-              label="Lifetime spend"
-              value={formatMicroUsd(lifetimeSpendMicroUsd)}
-            />
+            <Stat label="Available" value={formatBalanceMicroUsd(balanceMicroUsd)} />
+            <Stat label="Lifetime spend" value={formatMicroUsd(lifetimeSpendMicroUsd)} />
           </div>
         </Card.Content>
         <Card.Footer>
@@ -107,11 +100,10 @@ export function WalletPanel({
               Add funds — unavailable
             </Button>
             <p className="text-muted max-w-prose text-xs">
-              Self-service funding is not built in this release: there is no
-              payment processor wired up, so there is no way to add funds from
-              this page. Balances are credited out of band (a{" "}
-              <code className="font-mono">grant</code> row below). Ask an
-              operator if you need more.
+              Self-service funding is not built in this release: there is no payment processor wired
+              up, so there is no way to add funds from this page. Balances are credited out of band
+              (a <code className="font-mono">grant</code> row below). Ask an operator if you need
+              more.
             </p>
           </div>
         </Card.Footer>
@@ -145,7 +137,6 @@ export function WalletPanel({
                       <Table.Cell>
                         <Chip
                           color={row.amount_micro_usd > 0 ? "success" : "default"}
-                          size="sm"
                           variant="soft"
                         >
                           {ledgerKindLabel(row.kind)}
@@ -159,9 +150,7 @@ export function WalletPanel({
                       <Table.Cell className="text-end tabular-nums">
                         {formatBalanceMicroUsd(row.balance_after_micro_usd)}
                       </Table.Cell>
-                      <Table.Cell className="text-muted">
-                        {row.memo ?? "—"}
-                      </Table.Cell>
+                      <Table.Cell className="text-muted">{row.memo ?? "—"}</Table.Cell>
                     </Table.Row>
                   ))}
                 </Table.Body>
@@ -175,11 +164,7 @@ export function WalletPanel({
               {cursor !== null ? " so far" : ""}
             </span>
             {cursor !== null ? (
-              <Button
-                isDisabled={isAppending}
-                onPress={() => void loadMore()}
-                variant="outline"
-              >
+              <Button isDisabled={isAppending} onPress={() => void loadMore()} variant="outline">
                 {isAppending ? "Loading…" : "Load more"}
               </Button>
             ) : (
@@ -195,10 +180,9 @@ export function WalletPanel({
         <Alert.Content>
           <Alert.Title>Why a debit can differ from a hold</Alert.Title>
           <Alert.Description>
-            A request first reserves an estimated maximum, then settles at the
-            real token count. Only the settled amount appears here as a{" "}
-            <code className="font-mono">Usage</code> debit — the reservation
-            itself never touches this ledger.
+            A request first reserves an estimated maximum, then settles at the real token count.
+            Only the settled amount appears here as a <code className="font-mono">Usage</code> debit
+            — the reservation itself never touches this ledger.
           </Alert.Description>
         </Alert.Content>
       </Alert>

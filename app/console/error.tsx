@@ -9,7 +9,5 @@ export default function ConsoleOverviewError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return (
-    <ConsoleError error={error} reset={reset} title="Could not load your overview" />
-  );
+  return <ConsoleError error={error} reset={reset} title="Could not load your overview" />;
 }

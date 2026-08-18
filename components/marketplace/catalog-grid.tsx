@@ -53,7 +53,7 @@ export function CatalogEmpty({
             {/* An anchor, not a <Button>: HeroUI v3's Button is a React Aria
                 <button> with no href, and a real link is what belongs here. */}
             <Link
-              className="bg-accent text-accent-foreground focus-visible:ring-accent inline-flex h-9 items-center rounded-[calc(var(--radius)/1.5)] px-4 text-sm font-medium hover:opacity-90 focus-visible:ring-2 focus-visible:outline-none"
+              className="bg-accent text-accent-foreground focus-visible:ring-accent inline-flex h-9 items-center rounded-field px-4 text-sm font-medium hover:opacity-90 focus-visible:ring-2 focus-visible:outline-none"
               href="/signup"
             >
               Create an account to deploy one

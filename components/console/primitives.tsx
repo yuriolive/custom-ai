@@ -34,10 +34,8 @@ export function PanelHeader({
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description ? (
-          <p className="text-muted max-w-prose text-sm">{description}</p>
-        ) : null}
+        <h1 className="text-2xl leading-[1.2] font-semibold tracking-[-0.025em]">{title}</h1>
+        {description ? <p className="text-muted max-w-prose text-sm">{description}</p> : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>
@@ -53,13 +51,7 @@ export function PanelHeader({
  * data lands. Rows of the right height in the right columns mean the only thing
  * that changes on arrival is the text.
  */
-export function TableSkeleton({
-  columns,
-  rows = 5,
-}: {
-  columns: number;
-  rows?: number;
-}) {
+export function TableSkeleton({ columns, rows = 5 }: { columns: number; rows?: number }) {
   const rowKeys = Array.from({ length: rows }, (_, i) => `r${i}`);
   const colKeys = Array.from({ length: columns }, (_, i) => `c${i}`);
 
@@ -67,7 +59,7 @@ export function TableSkeleton({
     <div
       aria-busy="true"
       aria-live="polite"
-      className="border-default divide-default divide-y overflow-hidden rounded-xl border"
+      className="border-border divide-separator divide-y overflow-hidden rounded-xl border"
     >
       <span className="sr-only">Loading…</span>
       {rowKeys.map((rowKey) => (
@@ -90,17 +82,17 @@ export function TableSkeleton({
  */
 export function StatsSkeleton() {
   return (
-    <div
-      aria-busy="true"
-      className="border-default flex flex-col gap-6 rounded-xl border p-6"
-    >
+    <div aria-busy="true" className="border-border flex flex-col gap-6 rounded-xl border p-6">
       <span className="sr-only">Loading…</span>
       <Skeleton className="h-4 w-24" />
+      {/* Mirrors `Stat`'s three bands at the same heights, so the only thing that
+          changes when the rollup lands is the text. */}
       <div className="grid gap-6 sm:grid-cols-3">
         {["a", "b", "c"].map((slot) => (
-          <div className="flex flex-col gap-2" key={slot}>
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-9 w-32" />
+          <div className="flex flex-col gap-1" key={slot}>
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-7 w-32" />
+            <Skeleton className="mt-1 h-3 w-24" />
           </div>
         ))}
       </div>
@@ -125,7 +117,9 @@ export function EmptyPanel({
   title: string;
 }) {
   return (
-    <div className="border-default flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-14 text-center">
+    // A dashed rule reads weaker than a solid one at the same colour, so this
+    // frame steps up to `border-tertiary` to stay visible in both themes.
+    <div className="border-border-tertiary flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-14 text-center">
       <p className="text-base font-medium">{title}</p>
       <p className="text-muted max-w-md text-sm">{description}</p>
       {action ? <div className="pt-1">{action}</div> : null}
@@ -172,33 +166,36 @@ export function ErrorPanel({
 /**
  * One figure with a label. `tabular-nums` so a column of these does not shimmer
  * as digits change width.
+ *
+ * EVERY FIGURE IN A STAT GRID IS THE SAME SIZE, deliberately. The balance used to
+ * render at text-4xl beside text-xl siblings, and the size jump made the row read
+ * as three things at three different heights rather than one line of figures —
+ * the labels were aligned to the pixel and it still looked broken, because the
+ * eye tracks the numbers, not the labels. A stat row is a comparison; anything
+ * that makes one column structurally taller than its neighbours defeats it.
+ *
+ * Hierarchy inside the row comes from order and from the label, which is what a
+ * reader uses anyway. The three bands — label, figure, hint — line up across all
+ * columns: `h-full` takes the stretch a grid item already gets, and `mt-auto`
+ * drops every hint to a common baseline at the foot of the row even when some
+ * columns have no hint at all.
  */
 export function Stat({
-  emphasis = false,
   hint,
   label,
   value,
 }: {
-  emphasis?: boolean;
   hint?: React.ReactNode;
   label: string;
   value: string;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-muted text-xs font-medium tracking-wide uppercase">
+    <div className="flex h-full flex-col gap-1">
+      <span className="text-muted font-mono text-[0.6875rem] font-medium tracking-[0.08em] uppercase">
         {label}
       </span>
-      <span
-        className={
-          emphasis
-            ? "text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl"
-            : "text-xl font-semibold tracking-tight tabular-nums"
-        }
-      >
-        {value}
-      </span>
-      {hint ? <span className="text-muted text-xs">{hint}</span> : null}
+      <span className="text-2xl font-semibold tracking-[-0.02em] tabular-nums">{value}</span>
+      {hint ? <span className="text-muted mt-auto pt-1 text-xs">{hint}</span> : null}
     </div>
   );
 }
@@ -222,10 +219,7 @@ export function LinkCard({
         <Card.Description>{description}</Card.Description>
       </Card.Header>
       <Card.Footer>
-        <Link
-          className="text-accent text-sm font-medium hover:underline"
-          href={href}
-        >
+        <Link className="text-accent text-sm font-medium hover:underline" href={href}>
           {label} →
         </Link>
       </Card.Footer>
@@ -298,19 +292,18 @@ export function CopyButton({
 
 // ─── Status chips ───────────────────────────────────────────────────────────
 
-const USAGE_STATUS_COLOR: Record<string, "success" | "warning" | "danger" | "default"> =
-  {
-    settled: "success",
-    reserved: "warning",
-    expired: "warning",
-    voided: "default",
-    failed: "danger",
-  };
+const USAGE_STATUS_COLOR: Record<string, "success" | "warning" | "danger" | "default"> = {
+  settled: "success",
+  reserved: "warning",
+  expired: "warning",
+  voided: "default",
+  failed: "danger",
+};
 
 /** `usage_transactions.status`, coloured by what it means for the wallet. */
 export function UsageStatusChip({ status }: { status: string }) {
   return (
-    <Chip color={USAGE_STATUS_COLOR[status] ?? "default"} size="sm" variant="soft">
+    <Chip color={USAGE_STATUS_COLOR[status] ?? "default"} variant="soft">
       {status}
     </Chip>
   );
@@ -320,7 +313,7 @@ export function UsageStatusChip({ status }: { status: string }) {
 export function KeyStatusChip({ revokedAt }: { revokedAt: string | null }) {
   const revoked = revokedAt !== null;
   return (
-    <Chip color={revoked ? "danger" : "success"} size="sm" variant="soft">
+    <Chip color={revoked ? "danger" : "success"} variant="soft">
       {revoked ? "Revoked" : "Active"}
     </Chip>
   );

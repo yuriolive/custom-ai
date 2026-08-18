@@ -19,7 +19,7 @@ export function MessageList({
 }) {
   if (messages.length === 0) {
     return (
-      <div className="text-muted border-default rounded-xl border border-dashed p-10 text-center text-sm">
+      <div className="text-muted border-border rounded-xl border border-dashed p-10 text-center text-sm">
         Send a message to wake the worker.
       </div>
     );
@@ -44,7 +44,7 @@ export function MessageList({
                 "w-fit max-w-[52rem] whitespace-pre-wrap rounded-xl px-4 py-3 text-sm leading-6",
                 isUser
                   ? "bg-accent text-accent-foreground self-end"
-                  : "bg-surface text-surface-foreground border-default border",
+                  : "bg-surface text-surface-foreground border-border border",
                 isLive ? "streaming-caret" : "",
               ]
                 .filter(Boolean)
