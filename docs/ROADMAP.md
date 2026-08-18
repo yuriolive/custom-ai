@@ -45,9 +45,13 @@ at the live Modal endpoint, a funded caller, and a key minted against **producti
 request through the deployed stack.
 
 ### 3. Two dashboard settings (operator, 5 minutes)
-- **Auth URLs** — still `http://127.0.0.1:3000`; confirmation emails are unusable
-- **SSO scope** — `all_except_custom_domains` protects production too, so the public
-  site demands a Vercel login. Attach a custom domain or narrow to preview-only
+- **Auth URLs** — still `http://127.0.0.1:3000`. Set Site URL and Redirect URLs to
+  `https://custom-ai-one.vercel.app` (the live production alias; `custom-ai.vercel.app`
+  belongs to an unrelated project, which is why Vercel appended `-one`).
+- ~~SSO scope~~ — **not needed.** Tested: the production alias serves publicly with no
+  SSO wall, so no custom domain is required. Previews remain protected.
+- **Operator account** — create it in Dashboard → Authentication → Users with
+  auto-confirm, which sidesteps the unconfigured production email entirely.
 
 ---
 

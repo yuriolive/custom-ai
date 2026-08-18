@@ -166,7 +166,18 @@ bypass exactly that.
 the first real user: at that point switch to **Supabase Branching**, which gives each
 preview branch its own isolated database, and turn Preview/Development sync off.
 
-### ⚠️ Launch trap in that same setting
+### Launch trap — TESTED AND DISPROVEN
+
+The paragraph below was written from the setting's NAME and turned out to be wrong.
+Measured instead: `https://custom-ai-one.vercel.app` returns **200 with our app**, no
+Vercel SSO markers, and `/login` is publicly reachable. So the production alias is NOT
+gated by `all_except_custom_domains`, a custom domain is NOT required to launch, and
+previews stay protected — which is the half that matters, since that is where the
+production service-role key lives.
+
+Kept below only so nobody re-derives the same wrong conclusion from the setting name.
+
+<details><summary>Original (incorrect) reasoning</summary>
 
 `deploymentType: "all_except_custom_domains"` protects **every** deployment URL that
 is not a custom domain — which includes the production `*.vercel.app` URL. As
@@ -180,7 +191,7 @@ Two ways out, either is fine:
   Settings → Deployment Protection. The CLI can only toggle SSO on/off, not set the
   scope.
 
-Do this before announcing anything, or the first visitor hits a login wall.
+</details>
 
 ---
 
