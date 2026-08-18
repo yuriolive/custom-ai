@@ -16,7 +16,7 @@ import { publicEnv } from "@/lib/public-env";
 export function HomeCards() {
   return (
     <>
-      <Chip color="warning" size="sm" variant="soft">
+      <Chip color="warning" variant="soft">
         MVP-0 scaffold
       </Chip>
 
@@ -29,16 +29,12 @@ export function HomeCards() {
             </Card.Description>
           </Card.Header>
           <Card.Content className="text-muted text-sm">
-            Streams from{" "}
-            <code className="text-foreground">{publicEnv.defaultModel}</code>.
-            The worker scales to zero, so the first request of a session pays a
-            cold start of roughly {publicEnv.coldStartEstimateSeconds} seconds.
+            Streams from <code className="text-foreground">{publicEnv.defaultModel}</code>. The
+            worker scales to zero, so the first request of a session pays a cold start of roughly{" "}
+            {publicEnv.coldStartEstimateSeconds} seconds.
           </Card.Content>
           <Card.Footer>
-            <Link
-              className="text-accent text-sm font-medium hover:underline"
-              href="/playground"
-            >
+            <Link className="text-accent text-sm font-medium hover:underline" href="/playground">
               Open the playground →
             </Link>
           </Card.Footer>

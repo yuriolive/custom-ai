@@ -23,8 +23,8 @@ export function BalanceChip({ balance = PLACEHOLDER }: { balance?: WalletBalance
 
   return (
     <Chip
+      className="font-mono tabular-nums"
       color={isEmpty ? "danger" : "accent"}
-      size="sm"
       title={
         balance.isPlaceholder
           ? "Placeholder balance — wallet is not wired to Supabase yet"

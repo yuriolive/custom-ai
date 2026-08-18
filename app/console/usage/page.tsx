@@ -25,7 +25,5 @@ export default async function UsagePage() {
     fetchCalledModels(supabase, user.id),
   ]);
 
-  return (
-    <UsagePanel initialPage={initialPage} models={models} userId={user.id} />
-  );
+  return <UsagePanel initialPage={initialPage} models={models} userId={user.id} />;
 }

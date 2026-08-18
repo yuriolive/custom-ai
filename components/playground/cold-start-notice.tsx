@@ -34,10 +34,9 @@ export function ColdStartNotice({ startedAt }: { startedAt: number }) {
         <Alert.Title>Waking the GPU worker</Alert.Title>
         <Alert.Description>
           <span className="block">
-            This model scales to zero when idle, so the first request of a
-            session has to start a worker and load weights. Expect about{" "}
-            <strong>{estimate} seconds</strong>. Once it is warm, replies begin
-            in under a second.
+            This model scales to zero when idle, so the first request of a session has to start a
+            worker and load weights. Expect about <strong>{estimate} seconds</strong>. Once it is
+            warm, replies begin in under a second.
           </span>
           <span className="text-muted mt-1 block text-sm tabular-nums">
             {elapsed}s elapsed

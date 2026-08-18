@@ -17,9 +17,7 @@ export const metadata = {
  * visitor instead of sending them to sign in. It costs one `getUser()` per
  * navigation on a route that is already dynamic and already reads the session.
  */
-export default async function ConsoleLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default async function ConsoleLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/console");
 

@@ -8,7 +8,7 @@ import { StatsSkeleton } from "@/components/console/primitives";
 export default function ConsoleOverviewLoading() {
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Console</h1>
+      <h1 className="text-2xl leading-[1.2] font-semibold tracking-[-0.025em]">Console</h1>
       <StatsSkeleton />
     </div>
   );

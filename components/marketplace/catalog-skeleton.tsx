@@ -32,12 +32,18 @@ export function CatalogSkeleton({ count = 6 }: { count?: number }) {
               <Skeleton className="h-3 w-full rounded" />
               <Skeleton className="h-3 w-4/5 rounded" />
             </Card.Header>
-            <Card.Content className="flex flex-wrap gap-2">
-              <Skeleton className="h-6 w-20 rounded-full" />
-              <Skeleton className="h-6 w-24 rounded-full" />
-              <Skeleton className="h-6 w-16 rounded-full" />
-              <Skeleton className="h-6 w-24 rounded-full" />
-              <Skeleton className="h-6 w-24 rounded-full" />
+            {/* Nested row for the same reason as `model-card.tsx`: HeroUI's
+                unlayered `.card__content` pins the slot to `flex-direction:
+                column`, so a `flex-wrap` utility on it yields a stacked column
+                and the placeholder would not match the card it stands in for. */}
+            <Card.Content>
+              <div className="flex flex-wrap gap-2">
+                <Skeleton className="h-6 w-20 rounded-full" />
+                <Skeleton className="h-6 w-24 rounded-full" />
+                <Skeleton className="h-6 w-16 rounded-full" />
+                <Skeleton className="h-6 w-24 rounded-full" />
+                <Skeleton className="h-6 w-24 rounded-full" />
+              </div>
             </Card.Content>
             <Card.Footer className="mt-auto gap-2">
               <Skeleton className="h-8 w-16 rounded" />

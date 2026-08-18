@@ -7,7 +7,6 @@ import {
   formatContext,
   formatPricePerMtoken,
   formatSpeed,
-  qualityChipColor,
   qualityChipLabel,
   qualityLabel,
   qualityNote,
@@ -37,7 +36,11 @@ export function ModelCard({ model, baseUrl }: { model: CatalogModel; baseUrl: st
 
   return (
     <Card
-      className="has-[a:focus-visible]:ring-accent relative flex h-full flex-col transition-shadow has-[a:focus-visible]:ring-2 hover:shadow-md"
+      // Colour-only hover. `hover:shadow-md` used to live here and was the only
+      // drop shadow in the app; it also fought the hairline that `--surface-shadow`
+      // now carries, since both land in the same box-shadow slot. Elevation comes
+      // from the background step and that hairline, never from a shadow.
+      className="has-[a:focus-visible]:ring-accent hover:bg-surface-secondary relative flex h-full flex-col transition-colors has-[a:focus-visible]:ring-2"
       render={(props) => <article {...props} />}
     >
       <Card.Header>
@@ -56,40 +59,59 @@ export function ModelCard({ model, baseUrl }: { model: CatalogModel; baseUrl: st
         </Card.Description>
       </Card.Header>
 
-      <Card.Content className="flex flex-wrap gap-2">
-        <Chip
-          color="accent"
-          size="sm"
-          title="Measured throughput from the post-deployment smoke test — not an estimate."
-          variant="soft"
-        >
-          {formatSpeed(model.measuredTokensPerSecond)}
-        </Chip>
-        <Chip
-          size="sm"
-          title={
-            model.contextVerified
-              ? "Context window, verified against the running worker."
-              : "Context window as configured by the creator."
-          }
-          variant="soft"
-        >
-          {formatContext(model.contextLength)} context
-        </Chip>
-        <Chip
-          color={qualityChipColor(model.qualityTier)}
-          size="sm"
-          title={`${qualityLabel(model.qualityTier)} — ${qualityNote(model.qualityTier)}`}
-          variant="soft"
-        >
-          {qualityChipLabel(model.qualityTier)}
-        </Chip>
-        <Chip size="sm" title="Price per 1M input tokens" variant="secondary">
-          {formatPricePerMtoken(model.pricePromptMicroPerMtoken)}/M in
-        </Chip>
-        <Chip size="sm" title="Price per 1M output tokens" variant="secondary">
-          {formatPricePerMtoken(model.priceCompletionMicroPerMtoken)}/M out
-        </Chip>
+      {/* Every figure here is mono and tabular-nums, so a column of cards lines
+          its numbers up instead of shimmering as digit widths change. Exactly one
+          chip in this row is accent-coloured — the measured figure that is the
+          card's headline. The rest carry their meaning in the label.
+
+          The row lives in its own div rather than on `Card.Content`. HeroUI ships
+          `.card__content` as unlayered CSS with `flex-direction: column`, and
+          unlayered rules outrank Tailwind's `@layer utilities`, so a `flex-row`
+          utility on the slot loses and the chips stack one per line. Nesting
+          sidesteps the cascade fight instead of reaching for `!important`. */}
+      <Card.Content>
+        <div className="flex flex-wrap gap-2">
+          <Chip
+            className="font-mono tabular-nums"
+            color="accent"
+            title="Measured throughput from the post-deployment smoke test — not an estimate."
+            variant="soft"
+          >
+            {formatSpeed(model.measuredTokensPerSecond)}
+          </Chip>
+          <Chip
+            className="font-mono tabular-nums"
+            title={
+              model.contextVerified
+                ? "Context window, verified against the running worker."
+                : "Context window as configured by the creator."
+            }
+            variant="soft"
+          >
+            {formatContext(model.contextLength)} context
+          </Chip>
+          <Chip
+            className="font-mono"
+            title={`${qualityLabel(model.qualityTier)} — ${qualityNote(model.qualityTier)}`}
+            variant="soft"
+          >
+            {qualityChipLabel(model.qualityTier)}
+          </Chip>
+          <Chip
+            className="font-mono tabular-nums"
+            title="Price per 1M input tokens"
+            variant="secondary"
+          >
+            {formatPricePerMtoken(model.pricePromptMicroPerMtoken)}/M in
+          </Chip>
+          <Chip
+            className="font-mono tabular-nums"
+            title="Price per 1M output tokens"
+            variant="secondary"
+          >
+            {formatPricePerMtoken(model.priceCompletionMicroPerMtoken)}/M out
+          </Chip>
+        </div>
       </Card.Content>
 
       <Card.Footer className="relative z-10 mt-auto flex-wrap gap-2">
@@ -124,7 +146,7 @@ export function ModelCard({ model, baseUrl }: { model: CatalogModel; baseUrl: st
             With exactly one public model that is correct today; when a second
             one lands, this link needs the dynamic playground route. */}
         <Link
-          className="text-muted hover:text-foreground focus-visible:ring-accent inline-flex h-8 items-center rounded-[calc(var(--radius)/1.5)] px-3 text-sm font-medium focus-visible:ring-2 focus-visible:outline-none"
+          className="text-muted hover:text-foreground focus-visible:ring-accent inline-flex h-8 items-center rounded-field px-3 text-sm font-medium focus-visible:ring-2 focus-visible:outline-none"
           href="/playground"
         >
           Try it →

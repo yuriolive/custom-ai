@@ -17,12 +17,9 @@ export async function SiteNav() {
   const profile = await getSessionProfile();
 
   return (
-    <header className="border-b border-default sticky top-0 z-40 bg-background/85 backdrop-blur">
+    <header className="border-b border-border sticky top-0 z-40 bg-background/85 backdrop-blur">
       <nav className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-4">
-        <Link
-          className="font-semibold tracking-tight text-foreground"
-          href="/"
-        >
+        <Link className="font-semibold tracking-tight text-foreground" href="/">
           nexus
           <span className="text-muted font-normal"> / inference</span>
         </Link>

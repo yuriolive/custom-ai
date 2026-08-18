@@ -31,7 +31,7 @@ export function CatalogPagination({
   const last = Math.min(page * pageSize, total);
 
   const linkClass =
-    "border-muted/30 hover:bg-surface inline-flex h-9 items-center rounded-[calc(var(--radius)/1.5)] border px-3 text-sm font-medium";
+    "border-border hover:bg-surface inline-flex h-9 items-center rounded-field border px-3 text-sm font-medium";
 
   return (
     <nav aria-label="Catalog pages" className="flex flex-wrap items-center justify-between gap-3">

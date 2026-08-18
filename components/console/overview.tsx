@@ -23,7 +23,7 @@ export function Overview({ summary }: { summary: ConsoleSummary }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-baseline gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Console</h1>
+        <h1 className="text-2xl leading-[1.2] font-semibold tracking-[-0.025em]">Console</h1>
         {/* handle is immutable by RLS — displayed, never offered for edit. */}
         <code className="text-muted text-sm">@{summary.handle}</code>
       </div>
@@ -33,9 +33,9 @@ export function Overview({ summary }: { summary: ConsoleSummary }) {
           <Alert.Content>
             <Alert.Title>Your wallet is empty</Alert.Title>
             <Alert.Description>
-              The gateway rejects requests it cannot reserve balance for, so calls
-              will fail with a 402 until the wallet is funded. Self-service funding
-              is not available yet — see the wallet page.
+              The gateway rejects requests it cannot reserve balance for, so calls will fail with a
+              402 until the wallet is funded. Self-service funding is not available yet — see the
+              wallet page.
             </Alert.Description>
           </Alert.Content>
         </Alert>
@@ -51,7 +51,6 @@ export function Overview({ summary }: { summary: ConsoleSummary }) {
         <Card.Content>
           <div className="grid gap-6 sm:grid-cols-3">
             <Stat
-              emphasis
               hint="Available to spend"
               label="Balance"
               value={formatBalanceMicroUsd(summary.balanceMicroUsd)}
@@ -74,19 +73,19 @@ export function Overview({ summary }: { summary: ConsoleSummary }) {
         </Card.Content>
         <Card.Footer>
           <div className="flex flex-wrap items-center gap-2">
-            <Chip color="default" size="sm" variant="soft">
+            <Chip color="default" variant="soft">
               Lifetime spend {formatMicroUsd(summary.lifetimeSpendMicroUsd)}
             </Chip>
             {summary.estimated30d > 0 ? (
               // Surfaced here and not only in the ledger: a developer comparing
               // their own token accounting against the bill deserves to know
               // some rows were billed from an estimate.
-              <Chip color="warning" size="sm" variant="soft">
+              <Chip color="warning" variant="soft">
                 {formatTokens(summary.estimated30d)} billed from estimated tokens
               </Chip>
             ) : null}
             {summary.truncated ? (
-              <Chip color="warning" size="sm" variant="soft">
+              <Chip color="warning" variant="soft">
                 30-day spend is a floor, not an exact total
               </Chip>
             ) : null}
@@ -99,9 +98,8 @@ export function Overview({ summary }: { summary: ConsoleSummary }) {
           <Alert.Content>
             <Alert.Title>No requests yet</Alert.Title>
             <Alert.Description>
-              Create an API key, then point an OpenAI-compatible client at the
-              gateway. Every call will show up on the usage page with its tokens,
-              cost, and time to first token.
+              Create an API key, then point an OpenAI-compatible client at the gateway. Every call
+              will show up on the usage page with its tokens, cost, and time to first token.
             </Alert.Description>
           </Alert.Content>
         </Alert>

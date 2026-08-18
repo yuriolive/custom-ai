@@ -43,22 +43,12 @@ export function GitHubButton({
   return (
     <div className="flex flex-col gap-3">
       {state.status === "error" && state.message ? (
-        <AuthAlert
-          description={state.message}
-          status="danger"
-          title="GitHub sign-in unavailable"
-        />
+        <AuthAlert description={state.message} status="danger" title="GitHub sign-in unavailable" />
       ) : null}
 
       <form action={formAction}>
         <input name="next" type="hidden" value={next} />
-        <Button
-          className="w-full"
-          isDisabled={isPending}
-          size="lg"
-          type="submit"
-          variant="primary"
-        >
+        <Button className="w-full" isDisabled={isPending} size="lg" type="submit" variant="primary">
           {isPending ? <Spinner size="sm" /> : <GitHubMark />}
           {isPending ? "Redirecting to GitHub…" : label}
         </Button>

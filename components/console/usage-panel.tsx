@@ -29,13 +29,7 @@ import { fetchUsagePage, type UsagePage } from "@/lib/console/queries";
 import type { CalledModel, UsageRow } from "@/lib/console/types";
 import { createClient } from "@/lib/supabase/client";
 
-import {
-  EmptyPanel,
-  ErrorPanel,
-  PanelHeader,
-  TableSkeleton,
-  UsageStatusChip,
-} from "./primitives";
+import { EmptyPanel, ErrorPanel, PanelHeader, TableSkeleton, UsageStatusChip } from "./primitives";
 
 const ALL_MODELS = "__all__";
 
@@ -118,8 +112,7 @@ export function UsagePanel({
     }
   }, [cursor, filters, supabase, userId]);
 
-  const isFiltered =
-    filters.modelId !== null || filters.from !== "" || filters.to !== "";
+  const isFiltered = filters.modelId !== null || filters.from !== "" || filters.to !== "";
   const estimatedCount = rows.filter((row) => row.usage_estimated).length;
 
   return (
@@ -173,11 +166,7 @@ export function UsagePanel({
         />
 
         {isFiltered ? (
-          <Button
-            onPress={() => void applyFilters(NO_FILTERS)}
-            size="sm"
-            variant="ghost"
-          >
+          <Button onPress={() => void applyFilters(NO_FILTERS)} size="sm" variant="ghost">
             Clear filters
           </Button>
         ) : null}
@@ -188,16 +177,13 @@ export function UsagePanel({
           {/* FR-GW-044's fallback path, made visible. A developer reconciling
               their own token counts against this bill needs to know which rows
               were billed from an estimate rather than reported usage. */}
-          <Chip color="warning" size="sm" variant="soft">
-            {formatTokens(estimatedCount)} of the rows below were billed from
-            estimated token counts
+          <Chip color="warning" variant="soft">
+            {formatTokens(estimatedCount)} of the rows below were billed from estimated token counts
           </Chip>
         </div>
       ) : null}
 
-      {error ? (
-        <ErrorPanel detail={error} onRetry={() => void applyFilters(filters)} />
-      ) : null}
+      {error ? <ErrorPanel detail={error} onRetry={() => void applyFilters(filters)} /> : null}
 
       {phase === "filtering" ? (
         <TableSkeleton columns={7} rows={6} />
@@ -205,10 +191,7 @@ export function UsagePanel({
         <EmptyPanel
           action={
             isFiltered ? (
-              <Button
-                onPress={() => void applyFilters(NO_FILTERS)}
-                variant="outline"
-              >
+              <Button onPress={() => void applyFilters(NO_FILTERS)} variant="outline">
                 Clear filters
               </Button>
             ) : null
@@ -253,7 +236,7 @@ export function UsagePanel({
                         <span className="inline-flex items-center gap-1.5">
                           {formatTokens(row.prompt_tokens)}
                           {row.usage_estimated ? (
-                            <Chip color="warning" size="sm" variant="soft">
+                            <Chip color="warning" variant="soft">
                               est
                             </Chip>
                           ) : null}
@@ -281,10 +264,7 @@ export function UsagePanel({
                         <span className="inline-flex items-center gap-1.5">
                           <UsageStatusChip status={row.status} />
                           {row.error_code ? (
-                            <code
-                              className="text-danger font-mono text-xs"
-                              title={row.error_code}
-                            >
+                            <code className="text-danger font-mono text-xs" title={row.error_code}>
                               {row.error_code}
                             </code>
                           ) : null}
@@ -297,11 +277,11 @@ export function UsagePanel({
                         {row.cold_start === null ? (
                           <span className="text-muted">—</span>
                         ) : row.cold_start ? (
-                          <Chip color="warning" size="sm" variant="soft">
+                          <Chip color="warning" variant="soft">
                             cold
                           </Chip>
                         ) : (
-                          <Chip color="default" size="sm" variant="soft">
+                          <Chip color="default" variant="soft">
                             warm
                           </Chip>
                         )}
@@ -357,7 +337,11 @@ function DateFilter({
     <label className="flex flex-col gap-1.5 text-sm">
       <span className="font-medium">{label}</span>
       <input
-        className="border-default bg-surface text-foreground focus-visible:ring-accent rounded-lg border px-3 py-2 text-sm tabular-nums focus-visible:ring-2 focus-visible:outline-none"
+        // A native date input, not HeroUI's DatePicker: this filter round-trips a
+        // plain `yyyy-mm-dd` through the URL and the native control already gives
+        // that for free with the platform's own calendar and keyboard handling.
+        // It wears the field tokens so it matches every HeroUI input beside it.
+        className="border-field-border bg-field text-field-foreground focus-visible:ring-accent rounded-field h-9 border px-3 text-sm tabular-nums focus-visible:ring-2 focus-visible:outline-none"
         onChange={(event) => onChange(event.target.value)}
         type="date"
         value={value}

@@ -7,10 +7,43 @@
 @import "@heroui/styles";
 
 /* -----------------------------------------------------------------------------
+   Faces (DESIGN.md §2.1). `next/font` self-hosts both files and emits a
+   size-adjusted fallback, so these are swapped in with no layout shift and no
+   third-party request at runtime. The `--font-*-face` variables are set on
+   <html> by app/layout.tsx.
+   -------------------------------------------------------------------------- */
+@theme {
+  --font-sans: var(--font-sans-face), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ---------------------------------------------------------------------------
+     Radius scale (DESIGN.md §1.5).
+
+     HeroUI derives its whole radius scale from `--radius`, and its own house
+     style is a pill: `.button` is `rounded-3xl` (= `--radius` × 3) on a 36px
+     control, and `.card` / `.alert` are `min(32px, --radius-3xl)`. At the stock
+     multipliers that is a 36px radius on a 36px-tall button — the "everything
+     is a lozenge" look the console was showing.
+
+     Overriding the two derived steps the panels and controls actually read is
+     what pins them to 12px. This is the documented Tailwind v4 theming seam,
+     not a component override: every HeroUI surface keeps reading its own token
+     and simply lands on our scale. Radius then reads 2/4/6/8/12/12/12px.
+     -------------------------------------------------------------------------- */
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.75rem;
+}
+
+/* -----------------------------------------------------------------------------
    Theme. HeroUI v3 themes with CSS variables in the oklch color space.
    Light is the bare :root (and .light); dark is .dark / [data-theme="dark"].
    next-themes stamps BOTH `class` and `data-theme` on <html>, so either
    selector matches — see components/theme-provider.tsx.
+
+   Values are DESIGN.md §1.2–1.5. Overriding the full neutral set (not just the
+   nine tokens this file used to carry) is what removes the second, violet
+   neutral ramp: HeroUI computes ~40 more colours from these by `color-mix`,
+   so borders, separators, hovers and every `-soft` fill correct themselves.
    -------------------------------------------------------------------------- */
 
 @layer base {
@@ -19,59 +52,196 @@
   [data-theme="light"] {
     color-scheme: light;
 
-    --radius: 0.75rem;
+    /* ── Geometry ────────────────────────────────────────────────────────── */
+    --radius: 0.5rem;
+    /* Explicit: HeroUI's default is calc(--radius * 1.5), which rendered 18px
+       pill inputs off the old 0.75rem base. */
+    --field-radius: 0.375rem;
 
-    --background: oklch(0.9846 0.0017 247.84);
-    --foreground: oklch(0.2103 0.0059 285.89);
+    /* Form fields ship borderless in HeroUI (`--field-border: transparent` at
+       0px width) and lean on a drop shadow instead. Give them a real 1px
+       hairline: an outlined field is what makes a dense form read as a form. */
+    --field-border-width: 1px;
+
+    /* ── Motion ──────────────────────────────────────────────────────────── */
+    --motion-fast: 120ms;
+    --motion-base: 180ms;
+    --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* ── Core ramp. Neutrals carry a slight green bias (chroma ≤ 0.012 at
+          hue 147) so the greys sit in the accent's family without reading as
+          a colour. ─────────────────────────────────────────────────────────── */
+    --background: oklch(0.982 0.003 147);
+    --foreground: oklch(0.24 0.008 147);
 
     --surface: oklch(1 0 0);
     --surface-foreground: var(--foreground);
 
+    --surface-secondary: oklch(0.965 0.004 147);
+    --surface-secondary-foreground: var(--foreground);
+
+    --surface-tertiary: oklch(0.945 0.005 147);
+    --surface-tertiary-foreground: var(--foreground);
+
     --overlay: oklch(1 0 0);
     --overlay-foreground: var(--foreground);
 
-    --muted: oklch(0.5517 0.0138 285.94);
+    --muted: oklch(0.515 0.012 147);
 
-    /* Brand accent: a cool violet that reads as "compute", not "chat toy". */
-    --accent: oklch(0.5498 0.2079 285.6);
+    /* Hairlines inside a surface vs. the outline of a surface. */
+    --separator: oklch(0.925 0.005 147);
+    --border: oklch(0.89 0.006 147);
+
+    /* HeroUI's neutral FILL (default Button/Chip). Not a border colour. */
+    --default: oklch(0.94 0.004 147);
+    --default-foreground: var(--foreground);
+
+    /* The selected-tab pill. It sits ON the `--default` tab strip, so it has to
+       be a step away from it or the strip reads as having no selection at all. */
+    --segment: oklch(1 0 0);
+    --segment-foreground: var(--foreground);
+
+    --field-background: oklch(1 0 0);
+    --field-foreground: var(--foreground);
+    --field-border: var(--border);
+
+    /* ── Accent and status ───────────────────────────────────────────────── */
+    /* Green, hue 147. 4.95:1 on the page ground; carries white at 5.07:1. */
+    --accent: oklch(0.52 0.14 147);
     --accent-foreground: oklch(0.9911 0 0);
 
-    --success: oklch(0.6421 0.1478 156.2);
+    /* Teal, hue 178 — 31° off the accent, so a status chip never reads as the
+       accent chip sitting next to it. */
+    --success: oklch(0.51 0.095 178);
     --success-foreground: oklch(0.9911 0 0);
 
-    --warning: oklch(0.7819 0.1585 72.33);
-    --warning-foreground: oklch(0.2103 0.0059 285.89);
+    /* A light fill with dark text. Never use --warning as light-mode text. */
+    --warning: oklch(0.77 0.15 62);
+    --warning-foreground: var(--foreground);
+    /* The only token allowed for warning-coloured text. 5.70:1. */
+    --warning-text: oklch(0.52 0.12 62);
 
-    --danger: oklch(0.6532 0.2328 25.74);
+    --danger: oklch(0.56 0.2 22);
     --danger-foreground: oklch(0.9911 0 0);
+
+    --focus: var(--accent);
+    /* Changed from HeroUI's var(--foreground): in-prose links are green. */
+    --link: var(--accent);
+
+    /* ── Elevation ───────────────────────────────────────────────────────── */
+    /* Cards, alerts and tab strips get their elevation from the background
+       step plus a 1px hairline, never from a drop shadow. Expressing the
+       hairline as the surface shadow rather than a border on each component
+       keeps every box the same size it was (a ring adds no layout) and needs
+       no per-component class. */
+    --surface-shadow: 0 0 0 1px var(--border);
+    --overlay-shadow:
+      0 8px 24px -6px oklch(0.24 0.008 147 / 0.12), 0 2px 6px -2px oklch(0.24 0.008 147 / 0.08),
+      0 0 0 1px var(--border);
+    /* Transparent, not none — keeps the ring utilities working on fields. */
+    --field-shadow: 0 0 0 0 transparent;
+
+    /* ── Syntax (DESIGN.md §1.4) ─────────────────────────────────────────── */
+    /* Dedicated, so syntax colour never competes with status colour. Checked
+       against --surface, which is what a code block sits on. */
+    --code-keyword: var(--accent);
+    --code-string: oklch(0.48 0.09 178);
+    --code-number: oklch(0.52 0.12 62);
+    --code-property: oklch(0.45 0.12 240);
+    --code-comment: oklch(0.56 0.01 147);
   }
 
   .dark,
   [data-theme="dark"] {
     color-scheme: dark;
 
-    --background: oklch(0.1822 0.0043 285.98);
-    --foreground: oklch(0.9612 0.0018 286.37);
+    --background: oklch(0.19 0.005 147);
+    --foreground: oklch(0.93 0.004 147);
 
-    --surface: oklch(0.2223 0.0058 285.99);
+    --surface: oklch(0.23 0.005 147);
     --surface-foreground: var(--foreground);
 
-    --overlay: oklch(0.2528 0.0064 285.99);
+    --surface-secondary: oklch(0.265 0.006 147);
+    --surface-secondary-foreground: var(--foreground);
+
+    --surface-tertiary: oklch(0.3 0.006 147);
+    --surface-tertiary-foreground: var(--foreground);
+
+    /* One step ABOVE surface in dark, so a modal reads as nearer than a card. */
+    --overlay: oklch(0.245 0.005 147);
     --overlay-foreground: var(--foreground);
 
-    --muted: oklch(0.7118 0.0129 286.07);
+    --muted: oklch(0.71 0.01 147);
 
-    --accent: oklch(0.6543 0.1878 285.6);
-    --accent-foreground: oklch(0.1822 0.0043 285.98);
+    --separator: oklch(0.28 0.006 147);
+    --border: oklch(0.33 0.007 147);
 
-    --success: oklch(0.7329 0.1435 156.2);
-    --success-foreground: oklch(0.1822 0.0043 285.98);
+    --default: oklch(0.29 0.006 147);
+    --default-foreground: var(--foreground);
 
-    --warning: oklch(0.8219 0.1485 72.33);
-    --warning-foreground: oklch(0.1822 0.0043 285.98);
+    /* Lighter than the `--default` strip it sits on, matching how the light
+       theme puts a white pill on a grey strip. */
+    --segment: oklch(0.37 0.008 147);
+    --segment-foreground: var(--foreground);
 
-    --danger: oklch(0.7032 0.2028 25.74);
-    --danger-foreground: oklch(0.1822 0.0043 285.98);
+    --field-background: oklch(0.23 0.005 147);
+    --field-foreground: var(--foreground);
+    --field-border: var(--border);
+
+    --accent: oklch(0.845 0.195 147);
+    --accent-foreground: oklch(0.19 0.01 147);
+
+    --success: oklch(0.79 0.125 178);
+    --success-foreground: oklch(0.19 0.01 147);
+
+    --warning: oklch(0.81 0.136 62);
+    --warning-foreground: oklch(0.19 0.01 147);
+    --warning-text: oklch(0.81 0.136 62);
+
+    --danger: oklch(0.715 0.165 22);
+    --danger-foreground: oklch(0.19 0.01 147);
+
+    --focus: var(--accent);
+    --link: var(--accent);
+
+    --surface-shadow: 0 0 0 1px var(--border);
+    --overlay-shadow: 0 12px 32px -8px oklch(0 0 0 / 0.55), 0 0 0 1px var(--border);
+    --field-shadow: 0 0 0 0 transparent;
+
+    --code-keyword: var(--accent);
+    --code-string: oklch(0.8 0.1 178);
+    --code-number: oklch(0.81 0.136 62);
+    --code-property: oklch(0.85 0.07 240);
+    --code-comment: oklch(0.62 0.008 147);
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   Expose the tokens HeroUI does not own as Tailwind utilities, so callers write
+   `text-code-string` / `text-warning-text` instead of an arbitrary value.
+   `inline` keeps them out of the emitted :root — they are already defined above.
+   -------------------------------------------------------------------------- */
+@theme inline {
+  --color-warning-text: var(--warning-text);
+  --color-code-keyword: var(--code-keyword);
+  --color-code-string: var(--code-string);
+  --color-code-number: var(--code-number);
+  --color-code-property: var(--code-property);
+  --color-code-comment: var(--code-comment);
+}
+
+@layer base {
+  /* Inter's single-storey `a`. The cheapest half-step away from default Inter. */
+  body {
+    font-feature-settings: "cv11";
+  }
+
+  /* A developer copying `!=` out of a snippet must see the two characters that
+     are actually there. */
+  code,
+  pre,
+  .font-mono {
+    font-variant-ligatures: none;
   }
 }
 

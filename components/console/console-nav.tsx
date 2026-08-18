@@ -24,16 +24,19 @@ export function ConsoleNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Console sections" className="border-default -mx-1 border-b">
-      {/* Scrolls rather than wraps at 375px, so the row stays one line. */}
-      <ul className="flex gap-1 overflow-x-auto px-1">
+    <nav aria-label="Console sections" className="border-border -mx-1 border-b">
+      {/* Scrolls rather than wraps at 375px, so the row stays one line.
+          `overflow-y-hidden` is load-bearing, not tidying: `overflow-x-auto`
+          sets only the x axis, and CSS promotes the other axis from `visible`
+          to `auto` on its own. The tabs carry `-mb-px` to sit on the nav's
+          bottom rule, which overflows this box by exactly that pixel — enough
+          for the browser to fit a full vertical scrollbar in the corner. */}
+      <ul className="flex gap-1 overflow-x-auto overflow-y-hidden px-1">
         {ITEMS.map((item) => {
           // Exact match for the index route; prefix match for the sub-pages, so
           // a future /console/usage/[id] still lights up "Usage".
           const active =
-            item.href === "/console"
-              ? pathname === "/console"
-              : pathname.startsWith(item.href);
+            item.href === "/console" ? pathname === "/console" : pathname.startsWith(item.href);
 
           return (
             <li key={item.href}>

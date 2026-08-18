@@ -35,12 +35,18 @@ export function SnippetTabs({
   return (
     <div className={className}>
       <Tabs defaultSelectedKey="python">
-        <Tabs.ListContainer>
+        {/* Radii here have to nest, not merely match. HeroUI sizes the strip at
+            `calc(--radius * 2.5)` = 20px, and `.tabs__list` insets the selected
+            pill by 4px on every side. Concentric curves need
+            inner = outer − inset, so the strip is 12px (`rounded-xl`) and the
+            pill 8px (`rounded-lg`); giving both 12px leaves the pill's corner
+            cutting across the strip's. */}
+        <Tabs.ListContainer className="rounded-xl">
           <Tabs.List aria-label="Snippet language">
             {SNIPPET_LANGUAGES.map((language) => (
-              <Tabs.Tab id={language.id} key={language.id}>
+              <Tabs.Tab className="rounded-lg" id={language.id} key={language.id}>
                 {language.label}
-                <Tabs.Indicator />
+                <Tabs.Indicator className="rounded-lg" />
               </Tabs.Tab>
             ))}
           </Tabs.List>

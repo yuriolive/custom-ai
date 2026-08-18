@@ -51,16 +51,26 @@ export function ThemeToggle() {
 
   const isDark = resolvedTheme === "dark";
 
+  // Flattened rather than nested in the JSX: before hydration there is no known
+  // theme to describe, so "which way does this toggle go" genuinely has three
+  // outcomes, and three outcomes read better as statements than as a ternary
+  // inside a ternary inside an attribute.
+  let label = "Toggle theme";
+  if (mounted) label = isDark ? "Switch to light theme" : "Switch to dark theme";
+
+  let icon = <span className="size-[18px]" />;
+  if (mounted) icon = isDark ? <SunIcon /> : <MoonIcon />;
+
   return (
     <Button
-      aria-label={mounted ? (isDark ? "Switch to light theme" : "Switch to dark theme") : "Toggle theme"}
+      aria-label={label}
       isIconOnly
       size="sm"
       variant="ghost"
       // HeroUI v3 is React Aria: onPress, never onClick.
       onPress={() => setTheme(isDark ? "light" : "dark")}
     >
-      {mounted ? isDark ? <SunIcon /> : <MoonIcon /> : <span className="size-[18px]" />}
+      {icon}
     </Button>
   );
 }

@@ -38,10 +38,7 @@ export function SignupForm({
   isLocalSupabase: boolean;
   inbucketUrl: string;
 }) {
-  const [state, formAction, isPending] = useActionState(
-    signUpAction,
-    initialAuthFormState,
-  );
+  const [state, formAction, isPending] = useActionState(signUpAction, initialAuthFormState);
 
   const error = state.status === "error" ? state.message : null;
   const invalidField = state.status === "error" ? state.field : undefined;
@@ -52,8 +49,7 @@ export function SignupForm({
         <Card.Header>
           <Card.Title>Confirm your email</Card.Title>
           <Card.Description>
-            We sent a confirmation link to {state.email}. Open it to finish
-            creating your account.
+            We sent a confirmation link to {state.email}. Open it to finish creating your account.
           </Card.Description>
         </Card.Header>
         <Card.Content className="flex flex-col gap-4">
@@ -72,9 +68,7 @@ export function SignupForm({
                 Open Inbucket
               </Link>
             ) : null}
-            <Link href={`/login?next=${encodeURIComponent(next)}`}>
-              Back to sign in
-            </Link>
+            <Link href={`/login?next=${encodeURIComponent(next)}`}>Back to sign in</Link>
           </div>
         </Card.Content>
       </Card>
@@ -95,15 +89,11 @@ export function SignupForm({
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
-          <span className="text-muted text-xs uppercase tracking-wide">
-            or with email
-          </span>
+          <span className="text-muted text-xs uppercase tracking-wide">or with email</span>
           <Separator className="flex-1" />
         </div>
 
-        {error ? (
-          <AuthAlert description={error} status="danger" title="Sign-up failed" />
-        ) : null}
+        {error ? <AuthAlert description={error} status="danger" title="Sign-up failed" /> : null}
 
         <form action={formAction} className="flex flex-col gap-4" noValidate>
           <input name="next" type="hidden" value={next} />
