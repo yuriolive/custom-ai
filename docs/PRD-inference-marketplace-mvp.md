@@ -3874,7 +3874,86 @@ NFR-CACHE-023 (P1)  Report cache_hit_rate per model in Studio analytics. It is t
                     creator's evidence for whether a longer idle timeout would pay.
 ```
 
-#### C3 — Cached prompt tokens: the billing-correct handling
+#### C2a — Persisted KV cache: breaking the scale-to-zero / warm-cache tradeoff
+
+C2 above states that prefix caching is lost whenever a worker scales to zero, and treats that as an inherent cost of the business model. **That is not actually inherent.** llama.cpp can serialize a slot's KV cache to disk and restore it, which means the cache can outlive the container.
+
+```
+llama-server --slot-save-path /runpod-volume/kv --cache-reuse 256
+POST /slots/{id}?action=save    {"filename": "<prefix-hash>.bin"}
+POST /slots/{id}?action=restore {"filename": "<prefix-hash>.bin"}
+```
+
+**Why this matters far more than it first appears.** Measured prompt evaluation on the MVP target (L4) is **133 tok/s** — decode is 14 tok/s, but *prefill* is the cost that dominates any workload with a large stable prefix:
+
+| Stable prefix | Prefill from cold | KV state size | Restore @ ~1 GB/s |
+|---|---|---|---|
+| 4,000 tok | **30 s** | 250 MiB | ~0.24 s |
+| 10,000 tok | **75 s** | 625 MiB | ~0.61 s |
+| 32,000 tok | **241 s** | 2,000 MiB | ~1.95 s |
+
+A 10k-token system prompt costs **75 seconds of prefill on every cold start**, versus well under a second to restore the same state from the Volume that already holds the weights. That is a ~100x difference on the exact bottleneck that makes agentic use unusable under scale-to-zero.
+
+```
+NFR-CACHE-024 (P2)  Persist slot KV state to the model's Volume, keyed by a hash of
+                    the token prefix plus (model, variant, ctx_size, kv_dtype). Restore
+                    on cold start before serving. This decouples cache warmth from
+                    container lifetime, so the platform keeps scale-to-zero economics
+                    AND warm-cache latency instead of trading one for the other.
+NFR-CACHE-025 (P2)  The cache key MUST include every parameter that changes KV layout.
+                    A restored cache from a different quantization, context size, or KV
+                    dtype is silently wrong output, not an error — the worst failure
+                    class in this document.
+NFR-CACHE-026 (P2)  Bound it: KV state is ~64 KiB/token at fp16, so a 32k prefix is
+                    2 GB per distinct prefix. Needs an LRU with a per-model byte cap
+                    and a real eviction policy, or storage cost silently replaces the
+                    GPU cost we removed.
+NFR-CACHE-027 (P2)  Measure prefill throughput at REALISTIC prefix lengths before
+                    committing. The 133 tok/s figure comes from a 71-token prompt;
+                    longer prompts batch better, so the true prefill rate is likely
+                    higher and the payback correspondingly smaller. The direction is
+                    certain, the magnitude is not.
+```
+
+> **This revises the §4.6 conclusion.** That section argues an agentic tier must be
+> always-warm (`min_containers >= 1`), because agent loops re-send a large stable system
+> prompt every turn and scale-to-zero discards the cache. With persisted KV, a cold
+> container can restore that prefix in under a second — so always-warm may be an
+> optimization rather than a requirement, and the agent tier could keep zero idle cost.
+> Do not treat §4.6's always-warm claim as settled until this is measured.
+
+#### C2b — KV cache quantization: TurboQuant and the llama.cpp equivalent
+
+KV cache is the term that decides GPU tier and concurrency (§4.3.3.3), so compressing it changes unit economics directly rather than marginally.
+
+**TurboQuant** (Google Research) is a training-free, data-oblivious vector quantization for the KV cache reaching ~3.5 effective bits per value — roughly **4.6x** versus fp16 — with reported 6x memory reduction and up to 8x attention-logit speedup on H100. As of August 2026 it ships in **vLLM** and in Qdrant 1.18.
+
+Modelled against the MVP target's real geometry (64 KiB/token at fp16):
+
+| Context | Tier | fp16 | q8_0 (2x) | TurboQuant-class (4.6x) |
+|---|---|---|---|---|
+| 8,192 | RTX 4090 | 7 streams / $1.11 per M | 15 / $0.52 | **34 / $0.23** |
+| 100,000 | L40S | 3 / $5.83 | 7 / $2.50 | **16 / $1.09** |
+| 262,144 | RTX 4090 | infeasible | infeasible | **1 stream, feasible** |
+
+Nearly a **5x cost reduction at 8k**, and the model's full native 262k context becomes servable on a 24 GB consumer card.
+
+```
+NFR-CACHE-028 (P1)  kv_dtype_bytes is already a solver input (FR-DEP-054). Extend it to
+                    a fractional bytes-per-value so sub-8-bit KV schemes are expressible
+                    at all — an integer byte count cannot represent 3.5 bits.
+NFR-CACHE-029 (P1)  RUNTIME ASYMMETRY, and it is a real product consequence: TurboQuant
+                    ships in vLLM, not llama.cpp. The MVP's own target is GGUF and
+                    therefore capped at llama.cpp's q8_0 KV (2x). A safetensors/AWQ model
+                    on vLLM can reach ~4.6x and is materially cheaper to serve at long
+                    context. This is the first concrete reason to prefer the vLLM runtime
+                    for a given model, and it should inform the variant recommendation —
+                    not just the format detection.
+NFR-CACHE-030 (P2)  Quantized KV changes output. Any KV compression must be recorded on
+                    the model row and disclosed on the model card, exactly as the
+                    quantization quality label is. Silently trading accuracy for margin
+                    is the platform making a quality decision that belongs to the creator.
+```
 
 This is the layer with real money attached, and the one most easily got wrong.
 
