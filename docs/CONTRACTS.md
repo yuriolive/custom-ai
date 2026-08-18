@@ -13,14 +13,20 @@ stream = client.chat.completions.create(
 )
 ```
 
-> **The platform model id is NOT the Hugging Face repo path.** An earlier revision of
-> this contract wrote `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF`, which cannot
-> resolve: the id is `creator-handle/model-slug`, and both halves are lowercase by
-> schema constraint (`handle ~ '^[a-z0-9][a-z0-9-]{1,38}$'`,
-> `slug ~ '^[a-z0-9][a-z0-9._-]{1,62}$'`). The creator handle is a *platform* identity
-> that need not match the HF account, and the slug is chosen at registration.
-> Whether to also accept the HF path as a case-insensitive alias is an open product
-> question (§8.4 Q14) — today it is a 404.
+> **The platform model id is `creator-handle/model-slug`, not the Hugging Face repo
+> path — but CASE does not matter.** Two earlier revisions of this contract were both
+> wrong and both were repeated to agents, so the measured behaviour is stated here:
+>
+> `resolve.ts` lowercases **both halves** of `model` before lookup, so ids are
+> case-insensitive. `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF` therefore **resolves
+> and streams today (verified, HTTP 200)** — not because HF paths are supported, but
+> because this seed's handle and slug happen to equal that path lowercased. It breaks
+> the moment they diverge, which is the normal case: the handle is a *platform*
+> identity that need not match the HF account, and the slug is chosen at registration.
+>
+> So: **case is forgiving, names are not.** Do not describe the HF path as an alias,
+> and do not describe it as a 404. Whether to add a real HF-path alias is open
+> (§8.4 Q14).
 → tokens stream from a scale-to-zero llama.cpp worker, and exactly one `usage_transactions` row settles with a correct 80/20 split and no negative balance.
 
 Everything not required by that sentence is out of scope for MVP-0.
@@ -145,6 +151,42 @@ All are `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `EXECUTE` revok
 - **I5** concurrent requests on one wallet cannot collectively overdraw
 
 Lock order is always `usage_transactions` → `profiles(payer)` → `profiles(creator)`.
+
+## Frontend / auth contract (FROZEN — auth, console and marketplace build against this)
+
+Supabase Auth via `@supabase/ssr`. Three client factories, one per execution context — mixing them up is the usual source of "session works locally, vanishes in production":
+
+```
+lib/supabase/client.ts   createClient()        browser / "use client"   — createBrowserClient, anon key
+lib/supabase/server.ts   createClient()        RSC + route handlers     — createServerClient, async, cookies()
+lib/supabase/middleware.ts updateSession(req)  middleware only          — refreshes the auth cookie
+```
+
+Route protection:
+
+| Public | Authenticated |
+|---|---|
+| `/`, `/models/**`, `/login`, `/signup`, `/auth/**` | `/console/**`, `/studio/**`, `/playground/**` |
+
+**What the browser may do directly** (RLS enforces all of it — no route handler needed):
+
+| Table | Browser access |
+|---|---|
+| `profiles` | SELECT own; UPDATE only `display_name`, `avatar_url`, `bio` |
+| `api_keys` | SELECT own · UPDATE (rename/revoke) · DELETE own |
+| `usage_transactions` | SELECT own |
+| `wallet_ledger` | SELECT own |
+| `creator_earnings_feed` | SELECT own (view) |
+| `custom_models` | SELECT public+ready, or own in any status |
+
+**What it may NOT**, and therefore needs a server route with the service role:
+
+- **Creating an API key.** `api_keys` has no client INSERT policy, by design — the plaintext must be generated server-side, returned exactly once, and never persisted. Reuse `generateApiKey`/`hashApiKey` from `supabase/functions/gateway/auth.ts`; do not write a second implementation of the format.
+- Anything touching `usage_transactions`, `wallet_ledger`, `creator_earnings` as a write. Those are RPC-only.
+
+`profiles` rows are created automatically by a trigger on `auth.users`, and `handle` is **immutable** by RLS — there is no handle-claim flow to build. Display it; do not offer to edit it.
+
+`SUPABASE_SERVICE_ROLE_KEY` is server-only and must never appear in a `NEXT_PUBLIC_*` variable or a `"use client"` module. `lib/env.ts` imports `server-only` for this reason, and `npm run check:env` fails the build on violations.
 
 ## Definition of done
 

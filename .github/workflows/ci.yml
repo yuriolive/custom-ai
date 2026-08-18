@@ -117,8 +117,19 @@ jobs:
       - name: check:env
         run: npm run check:env
 
+      # Next inlines NEXT_PUBLIC_* at BUILD time, and the auth module throws on
+      # absence — so page-data collection for /auth/callback cannot run without
+      # them. These are deliberately fake placeholders: this job verifies that the
+      # app COMPILES, it does not produce a deployable artifact. Real values come
+      # from the deploy environment, never from here. Anything secret must never
+      # appear in this block (see the fork-PR warning in the header).
       - name: build
         run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-placeholder-not-a-real-key
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_ANON_KEY: ci-build-placeholder-not-a-real-key
 
       # Advisory until the one-time repo-wide `npm run format` lands: adding the
       # formatter and reformatting 20 files in the same change would bury every
