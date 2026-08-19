@@ -89,7 +89,9 @@ export function SignupForm({
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
-          <span className="text-muted text-xs uppercase tracking-wide">or with email</span>
+          <span className="text-muted font-mono text-[0.6875rem] font-medium tracking-[0.08em] uppercase">
+            or with email
+          </span>
           <Separator className="flex-1" />
         </div>
 
@@ -132,16 +134,16 @@ export function SignupForm({
             isDisabled={isPending}
             size="lg"
             type="submit"
-            variant="secondary"
+            variant="primary"
           >
             {isPending ? <Spinner size="sm" /> : null}
             {isPending ? "Creating account…" : "Create account"}
           </Button>
 
-          <Description className="text-center">
+          <Description className="border-border mt-1 border-t pt-4 text-center">
             Already have an account?{" "}
             <NextLink
-              className="text-foreground underline underline-offset-4"
+              className="text-foreground hover:text-accent underline underline-offset-4 transition-colors"
               href={`/login?next=${encodeURIComponent(next)}`}
             >
               Sign in
