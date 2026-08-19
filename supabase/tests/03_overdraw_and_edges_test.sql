@@ -7,7 +7,7 @@
 -- These are SEQUENTIAL. The concurrent versions live in 05_concurrency_test.sql.
 -- ============================================================================
 begin;
-select plan(29);
+select plan(39);
 
 \set creator '00000000-0000-0000-0000-0000000000a1'
 \set payer   '00000000-0000-0000-0000-0000000000a2'
@@ -158,6 +158,50 @@ select throws_ok($$ select public.credit_wallet('00000000-0000-0000-0000-0000000
 select is((public.credit_wallet(:'payer'::uuid, 999999999999::bigint,
              'grant'::public.ledger_kind)->>'code'),
           'max_balance_exceeded', 'credit_wallet enforces max_balance_micro_usd');
+
+-- ── debit_wallet_reversal: refunds and chargebacks (FR-BIL-035) ─────────────
+-- The wallet is at 0 here from the write-off above, so start from a known,
+-- deliberately small balance.
+select public.credit_wallet(:'payer'::uuid, 10000000::bigint, 'topup'::public.ledger_kind,
+                            'evt_rev_seed', 'cs_rev_seed', 'reversal fixture', 'pi_rev_seed');
+
+select throws_ok($$ select public.debit_wallet_reversal(
+                      '00000000-0000-0000-0000-0000000000a2'::uuid, 100::bigint,
+                      'topup'::public.ledger_kind) $$,
+                 '22023', null, 'debit_wallet_reversal refuses a non-reversal kind');
+select throws_ok($$ select public.debit_wallet_reversal(
+                      '00000000-0000-0000-0000-0000000000a2'::uuid, -100::bigint,
+                      'refund'::public.ledger_kind) $$,
+                 '22023', null, 'debit_wallet_reversal wants a positive magnitude');
+
+-- A partial refund debits exactly what was asked for.
+select is((public.debit_wallet_reversal(:'payer'::uuid, 4000000::bigint,
+             'refund'::public.ledger_kind, 'evt_rev_1', 'pi_rev_seed', 'partial refund')
+           ->>'applied_micro_usd')::bigint,
+          4000000::bigint, 'a refund inside the balance applies in full');
+select is((select balance_micro_usd from public.profiles where id = :'payer'::uuid),
+          6000000::bigint, 'the balance reflects the refund');
+
+-- Replay of the same Stripe event is a no-op, not a second debit.
+select is((public.debit_wallet_reversal(:'payer'::uuid, 4000000::bigint,
+             'refund'::public.ledger_kind, 'evt_rev_1', 'pi_rev_seed', 'partial refund')
+           ->>'replayed')::boolean,
+          true, 'a redelivered reversal event is a no-op');
+select is((select balance_micro_usd from public.profiles where id = :'payer'::uuid),
+          6000000::bigint, 'the replayed reversal did not debit twice');
+
+-- A chargeback larger than the balance floors at zero rather than aborting on
+-- the CHECK — an aborted transaction here would make Stripe retry forever.
+select is((public.debit_wallet_reversal(:'payer'::uuid, 999999999999::bigint,
+             'chargeback'::public.ledger_kind, 'evt_rev_2', 'pi_rev_seed', 'dispute')
+           ->>'floored')::boolean,
+          true, 'an oversized chargeback reports that it floored');
+select is((select balance_micro_usd from public.profiles where id = :'payer'::uuid),
+          0::bigint, 'I1: the balance floors at 0, never negative');
+select isnt((select flagged_for_review_at from public.profiles where id = :'payer'::uuid),
+            null, 'a chargeback flags the account for ops review');
+select is((select count(*)::int from public.v_balance_drift), 0,
+          'I4: no drift after refund + floored chargeback');
 
 select * from finish();
 rollback;

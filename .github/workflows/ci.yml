@@ -229,7 +229,7 @@ jobs:
         run: deno fmt --check
 
   pgtap:
-    name: pgtap (129 billing invariants)
+    name: pgtap (141 billing invariants)
     runs-on: ubuntu-latest
     # Generous: the first run on a cold runner pulls supabase/postgres (~1.5 GB),
     # supabase/gotrue and supabase/pg_prove before a single test executes, and
