@@ -632,6 +632,40 @@ function completionTokensFor(opts: MockOptions): number {
   return opts.tokens + frames;
 }
 
+/**
+ * Emit the tool calls as INCREMENTAL fragments (FR-TOOL-004).
+ *
+ * The opening frame of a call carries `id`, `type` and `function.name` with an
+ * EMPTY arguments string; every frame after it carries only a fragment of
+ * `function.arguments`, keyed by the same `index`. Calls are emitted one after
+ * another rather than interleaved, which is what llama.cpp does.
+ *
+ * `emit` takes the DELTA only — the caller owns the chunk envelope, so this
+ * cannot drift from the framing the rest of the stream uses.
+ */
+async function emitToolCallFrames(
+  opts: MockOptions,
+  id: string,
+  signal: AbortSignal,
+  emit: (delta: Record<string, unknown>) => void,
+): Promise<void> {
+  for (let i = 0; i < opts.toolCalls; i++) {
+    if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
+    emit({
+      tool_calls: [{
+        index: i,
+        id: `call_${id.slice(-8)}_${i}`,
+        type: "function",
+        function: { name: toolNameFor(i, opts), arguments: "" },
+      }],
+    });
+    for (const piece of fragment(toolArgsFor(i), opts.toolArgFragments)) {
+      if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
+      emit({ tool_calls: [{ index: i, function: { arguments: piece } }] });
+    }
+  }
+}
+
 async function streamingResponse(res: ServerResponse, ctx: RenderCtx): Promise<void> {
   const { opts, id, created, model, signal } = ctx;
   res.writeHead(200, {
@@ -686,40 +720,9 @@ async function streamingResponse(res: ServerResponse, ctx: RenderCtx): Promise<v
     );
   }
 
-  // ── tool calls, as INCREMENTAL fragments (FR-TOOL-004) ───────────────────
-  // The opening frame of a call carries `id`, `type` and `function.name` with an
-  // EMPTY arguments string; every frame after it carries only a fragment of
-  // `function.arguments`, keyed by the same `index`. Calls are emitted one after
-  // another rather than interleaved, which is what llama.cpp does.
-  for (let i = 0; i < opts.toolCalls; i++) {
-    if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
-    frame(
-      chunk([{
-        index: 0,
-        delta: {
-          tool_calls: [{
-            index: i,
-            id: `call_${id.slice(-8)}_${i}`,
-            type: "function",
-            function: { name: toolNameFor(i, opts), arguments: "" },
-          }],
-        },
-        logprobs: null,
-        finish_reason: null,
-      }]),
-    );
-    for (const piece of fragment(toolArgsFor(i), opts.toolArgFragments)) {
-      if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
-      frame(
-        chunk([{
-          index: 0,
-          delta: { tool_calls: [{ index: i, function: { arguments: piece } }] },
-          logprobs: null,
-          finish_reason: null,
-        }]),
-      );
-    }
-  }
+  await emitToolCallFrames(opts, id, signal, (delta) => {
+    frame(chunk([{ index: 0, delta, logprobs: null, finish_reason: null }]));
+  });
 
   const usage = usageObject(opts, completionTokensFor(opts));
   const placement = placementFor(opts);

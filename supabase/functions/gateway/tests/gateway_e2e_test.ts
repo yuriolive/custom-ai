@@ -317,8 +317,10 @@ const WEATHER_TOOL = {
 const SSE_TOOL_CALL = [
   'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}',
   'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_x","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}',
-  'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"locat"}}]},"finish_reason":null}]}',
-  'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ion\\":\\"Lisbon\\"}"}}]},"finish_reason":null}]}',
+  String
+    .raw`data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"locat"}}]},"finish_reason":null}]}`,
+  String
+    .raw`data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ion\":\"Lisbon\"}"}}]},"finish_reason":null}]}`,
   'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
   'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[],"usage":{"prompt_tokens":63,"completion_tokens":21,"total_tokens":84}}',
   "data: [DONE]",
@@ -343,7 +345,7 @@ test("E2E: tools reach the upstream payload verbatim", async () => {
   await res.text();
 
   assert.equal(h.upstreamCalls.length, 1);
-  const sent = JSON.parse(String(h.upstreamCalls[0].init.body)) as Record<string, unknown>;
+  const sent = JSON.parse(h.upstreamCalls[0].init.body as string) as Record<string, unknown>;
   // Verbatim: the gateway must not reshape a tool definition, because the chat
   // template — not the gateway — is what renders it.
   assert.deepEqual(sent.tools, [WEATHER_TOOL]);

@@ -99,19 +99,28 @@ function templateFromTokenizerConfig(config: unknown): string | null {
   if (typeof config !== "object" || config === null) return null;
   const raw = (config as { chat_template?: unknown }).chat_template;
   if (typeof raw === "string") return raw;
-  if (Array.isArray(raw)) {
-    const parts: string[] = [];
-    for (const entry of raw) {
-      if (typeof entry === "string") parts.push(entry);
-      else if (typeof entry === "object" && entry !== null) {
-        const e = entry as { name?: unknown; template?: unknown };
-        if (typeof e.name === "string") parts.push(e.name);
-        if (typeof e.template === "string") parts.push(e.template);
-      }
-    }
-    return parts.length > 0 ? parts.join("\n") : null;
-  }
+  if (Array.isArray(raw)) return joinNamedTemplates(raw);
   return null;
+}
+
+/**
+ * Fold `[{name, template}, …]` into one string. The NAME is folded in too, not
+ * just the body: an entry named `tool_use` is itself a declaration of tool
+ * support even if its template spells the capability some way we do not match.
+ */
+function joinNamedTemplates(entries: unknown[]): string | null {
+  const parts: string[] = [];
+  for (const entry of entries) {
+    if (typeof entry === "string") {
+      parts.push(entry);
+      continue;
+    }
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as { name?: unknown; template?: unknown };
+    if (typeof e.name === "string") parts.push(e.name);
+    if (typeof e.template === "string") parts.push(e.template);
+  }
+  return parts.length > 0 ? parts.join("\n") : null;
 }
 
 /**
@@ -127,42 +136,23 @@ export async function resolveToolSupport(
   slug: string,
   opts: ToolSupportOptions = {},
 ): Promise<ToolSupportResult> {
-  const revision = opts.revision ?? "main";
-  const endpoint = opts.endpoint ?? HF_ENDPOINT;
-  const files = opts.files;
+  const where = { slug, revision: opts.revision ?? "main", endpoint: opts.endpoint ?? HF_ENDPOINT };
   // With no file list, try both files: a 404 costs one request and is not an error.
-  const has = (path: string) => files === undefined || files.includes(path);
+  const has = (path: string) => opts.files === undefined || opts.files.includes(path);
+  const gguf = opts.ggufFile;
+
+  const sources: Array<() => Promise<ToolSupportResult>> = [];
+  if (has(CHAT_TEMPLATE_FILE)) sources.push(() => fromTemplateFile(where, opts));
+  if (has(TOKENIZER_CONFIG_FILE)) sources.push(() => fromTokenizerConfig(where, opts));
+  if (gguf) sources.push(() => fromGgufHeader(where, gguf, opts));
+
   const errors: string[] = [];
-
-  if (has(CHAT_TEMPLATE_FILE)) {
-    const res = await getText(resolveUrl(slug, revision, CHAT_TEMPLATE_FILE, endpoint), opts);
-    const supported = detectToolSupport(res.body);
-    if (supported !== null) return { supported, source: "chat_template_file" };
-    if (res.error) errors.push(`${CHAT_TEMPLATE_FILE}: ${res.error}`);
-  }
-
-  if (has(TOKENIZER_CONFIG_FILE)) {
-    const res = await getJson<unknown>(
-      resolveUrl(slug, revision, TOKENIZER_CONFIG_FILE, endpoint),
-      opts,
-    );
-    const supported = detectToolSupport(templateFromTokenizerConfig(res.body));
-    if (supported !== null) return { supported, source: "tokenizer_config" };
-    if (res.error) errors.push(`${TOKENIZER_CONFIG_FILE}: ${res.error}`);
-  }
-
-  if (opts.ggufFile) {
-    const read = await readGgufChatTemplate(
-      resolveUrl(slug, revision, opts.ggufFile, endpoint),
-      { fetchImpl: opts.fetchImpl, hfToken: opts.hfToken, signal: opts.signal, maxBytes: opts.maxBytes },
-    );
-    if (read.ok) {
-      const supported = detectToolSupport(read.template);
-      if (supported !== null) return { supported, source: "gguf_header" };
-      errors.push(`${CHAT_TEMPLATE_KEY} was empty`);
-    } else {
-      errors.push(`${opts.ggufFile}: ${read.error}`);
-    }
+  for (const attempt of sources) {
+    const result = await attempt();
+    // A decided answer stops the search: the cheaper source is also the more
+    // specific one, and a repo that ships a template file means it.
+    if (result.supported !== null) return result;
+    if (result.error) errors.push(result.error);
   }
 
   return {
@@ -170,4 +160,57 @@ export async function resolveToolSupport(
     source: null,
     error: errors.length > 0 ? errors.join("; ") : "no chat template found in this repository",
   };
+}
+
+/** Repo slug, revision and endpoint — the three things every source needs. */
+interface RepoRef {
+  slug: string;
+  revision: string;
+  endpoint: string;
+}
+
+/** Undecided, with the reason. Never a rejection: the caller proceeds either way. */
+function unknown(error: string | undefined): ToolSupportResult {
+  return error === undefined
+    ? { supported: null, source: null }
+    : { supported: null, source: null, error };
+}
+
+async function fromTemplateFile(
+  at: RepoRef,
+  opts: ToolSupportOptions,
+): Promise<ToolSupportResult> {
+  const url = resolveUrl(at.slug, at.revision, CHAT_TEMPLATE_FILE, at.endpoint);
+  const res = await getText(url, opts);
+  const supported = detectToolSupport(res.body);
+  if (supported !== null) return { supported, source: "chat_template_file" };
+  return unknown(res.error ? `${CHAT_TEMPLATE_FILE}: ${res.error}` : undefined);
+}
+
+async function fromTokenizerConfig(
+  at: RepoRef,
+  opts: ToolSupportOptions,
+): Promise<ToolSupportResult> {
+  const url = resolveUrl(at.slug, at.revision, TOKENIZER_CONFIG_FILE, at.endpoint);
+  const res = await getJson<unknown>(url, opts);
+  const supported = detectToolSupport(templateFromTokenizerConfig(res.body));
+  if (supported !== null) return { supported, source: "tokenizer_config" };
+  return unknown(res.error ? `${TOKENIZER_CONFIG_FILE}: ${res.error}` : undefined);
+}
+
+async function fromGgufHeader(
+  at: RepoRef,
+  file: string,
+  opts: ToolSupportOptions,
+): Promise<ToolSupportResult> {
+  const read = await readGgufChatTemplate(resolveUrl(at.slug, at.revision, file, at.endpoint), {
+    fetchImpl: opts.fetchImpl,
+    hfToken: opts.hfToken,
+    signal: opts.signal,
+    maxBytes: opts.maxBytes,
+  });
+  if (!read.ok) return unknown(`${file}: ${read.error}`);
+  const supported = detectToolSupport(read.template);
+  if (supported !== null) return { supported, source: "gguf_header" };
+  return unknown(`${CHAT_TEMPLATE_KEY} was empty`);
 }

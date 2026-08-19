@@ -218,77 +218,87 @@ function badTool(message: string, param: string): GatewayError {
  * between clients would otherwise become a false rejection.
  */
 export function validateToolParams(body: ChatBody): void {
-  const hasTools = body.tools !== undefined && body.tools !== null;
-  const hasFunctions = body.functions !== undefined && body.functions !== null;
+  const hasTools = present(body.tools);
+  const hasFunctions = present(body.functions);
 
-  if (hasTools) {
-    if (!Array.isArray(body.tools) || body.tools.length === 0) {
-      throw badTool("The 'tools' parameter must be a non-empty array.", "tools");
+  if (hasTools) validateTools(body.tools);
+  if (hasFunctions) validateFunctions(body.functions);
+  if (present(body.tool_choice)) validateToolChoice(body.tool_choice, hasTools || hasFunctions);
+  if (present(body.function_call)) {
+    validateFunctionCall(body.function_call, hasTools || hasFunctions);
+  }
+}
+
+/** Absent and explicitly null mean the same thing here: the caller wants no tools. */
+function present(value: unknown): boolean {
+  return value !== undefined && value !== null;
+}
+
+function validateTools(tools: unknown): void {
+  if (!Array.isArray(tools) || tools.length === 0) {
+    throw badTool("The 'tools' parameter must be a non-empty array.", "tools");
+  }
+  for (const [i, tool] of tools.entries()) {
+    if (!isRecord(tool) || tool.type !== "function" || !isRecord(tool.function)) {
+      throw badTool(
+        `tools[${i}] must be an object of the form ` +
+          `{ type: "function", function: { name, parameters } }.`,
+        "tools",
+      );
     }
-    for (const [i, tool] of (body.tools as unknown[]).entries()) {
-      if (!isRecord(tool) || tool.type !== "function" || !isRecord(tool.function)) {
-        throw badTool(
-          `tools[${i}] must be an object of the form ` +
-            `{ type: "function", function: { name, parameters } }.`,
-          "tools",
-        );
-      }
-      if (typeof tool.function.name !== "string" || tool.function.name.length === 0) {
-        throw badTool(`tools[${i}].function.name must be a non-empty string.`, "tools");
-      }
+    if (typeof tool.function.name !== "string" || tool.function.name.length === 0) {
+      throw badTool(`tools[${i}].function.name must be a non-empty string.`, "tools");
     }
   }
+}
 
-  if (hasFunctions) {
-    if (!Array.isArray(body.functions) || body.functions.length === 0) {
-      throw badTool("The 'functions' parameter must be a non-empty array.", "functions");
-    }
-    for (const [i, fn] of (body.functions as unknown[]).entries()) {
-      if (!isRecord(fn) || typeof fn.name !== "string" || fn.name.length === 0) {
-        throw badTool(`functions[${i}].name must be a non-empty string.`, "functions");
-      }
+function validateFunctions(functions: unknown): void {
+  if (!Array.isArray(functions) || functions.length === 0) {
+    throw badTool("The 'functions' parameter must be a non-empty array.", "functions");
+  }
+  for (const [i, fn] of functions.entries()) {
+    if (!isRecord(fn) || typeof fn.name !== "string" || fn.name.length === 0) {
+      throw badTool(`functions[${i}].name must be a non-empty string.`, "functions");
     }
   }
+}
 
-  const choice = body.tool_choice;
-  if (choice !== undefined && choice !== null) {
-    const validString = typeof choice === "string" &&
-      (TOOL_CHOICE_MODES as readonly string[]).includes(choice);
-    const validObject = isRecord(choice) && choice.type === "function" &&
-      isRecord(choice.function) && typeof choice.function.name === "string";
-    if (!validString && !validObject) {
-      throw badTool(
-        `The 'tool_choice' parameter must be one of ${TOOL_CHOICE_MODES.join(", ")} ` +
-          `or { type: "function", function: { name } }.`,
-        "tool_choice",
-      );
-    }
-    // `tool_choice: "none"` with no tools is redundant but harmless. Anything
-    // that NAMES or REQUIRES a tool without supplying one cannot be rendered.
-    if (choice !== "none" && !hasTools && !hasFunctions) {
-      throw badTool(
-        "The 'tool_choice' parameter requires a non-empty 'tools' array.",
-        "tool_choice",
-      );
-    }
+function validateToolChoice(choice: unknown, anyToolsSupplied: boolean): void {
+  const validString = typeof choice === "string" &&
+    (TOOL_CHOICE_MODES as readonly string[]).includes(choice);
+  const validObject = isRecord(choice) && choice.type === "function" &&
+    isRecord(choice.function) && typeof choice.function.name === "string";
+  if (!validString && !validObject) {
+    throw badTool(
+      `The 'tool_choice' parameter must be one of ${TOOL_CHOICE_MODES.join(", ")} ` +
+        `or { type: "function", function: { name } }.`,
+      "tool_choice",
+    );
   }
+  // `tool_choice: "none"` with no tools is redundant but harmless. Anything that
+  // NAMES or REQUIRES a tool without supplying one cannot be rendered.
+  if (choice !== "none" && !anyToolsSupplied) {
+    throw badTool(
+      "The 'tool_choice' parameter requires a non-empty 'tools' array.",
+      "tool_choice",
+    );
+  }
+}
 
-  const fnCall = body.function_call;
-  if (fnCall !== undefined && fnCall !== null) {
-    const validString = fnCall === "none" || fnCall === "auto";
-    const validObject = isRecord(fnCall) && typeof fnCall.name === "string";
-    if (!validString && !validObject) {
-      throw badTool(
-        `The 'function_call' parameter must be "none", "auto", or { name }.`,
-        "function_call",
-      );
-    }
-    if (fnCall !== "none" && !hasFunctions && !hasTools) {
-      throw badTool(
-        "The 'function_call' parameter requires a non-empty 'functions' array.",
-        "function_call",
-      );
-    }
+function validateFunctionCall(fnCall: unknown, anyToolsSupplied: boolean): void {
+  const validString = fnCall === "none" || fnCall === "auto";
+  const validObject = isRecord(fnCall) && typeof fnCall.name === "string";
+  if (!validString && !validObject) {
+    throw badTool(
+      `The 'function_call' parameter must be "none", "auto", or { name }.`,
+      "function_call",
+    );
+  }
+  if (fnCall !== "none" && !anyToolsSupplied) {
+    throw badTool(
+      "The 'function_call' parameter requires a non-empty 'functions' array.",
+      "function_call",
+    );
   }
 }
 
@@ -303,8 +313,7 @@ export function validateToolParams(body: ChatBody): void {
  * FR-TOOL-003 carries `null`.
  */
 export function assertToolsSupported(body: ChatBody, resolved: ResolvedRequest): void {
-  const asksForTools = (body.tools !== undefined && body.tools !== null) ||
-    (body.functions !== undefined && body.functions !== null);
+  const asksForTools = present(body.tools) || present(body.functions);
   if (!asksForTools || resolved.supportsTools !== false) return;
   throw new GatewayError(
     "unsupported_parameter",
@@ -834,22 +843,31 @@ function foldToolCallDeltas(
   }
 }
 
-/** Buffers the forced upstream stream and emits one `chat.completion` object. */
-export async function assembleNonStreaming(
-  sse: Response,
-  requestId: string,
-  clientFacingModel: string,
-  failure: { value: GatewayError | null },
-  overheadMs = 0,
-): Promise<Response> {
-  const raw = await sse.text();
+/** Everything one buffered upstream stream says, before it is shaped for a client. */
+interface ScannedStream {
+  content: string;
+  finishReason: string | null;
+  usage: Record<string, unknown> | null;
+  created: number;
+  embeddedError: { code?: string; message?: string } | null;
+  toolCalls: Map<number, PartialToolCall>;
+}
 
-  let content = "";
-  let finishReason: string | null = null;
-  let usage: Record<string, unknown> | null = null;
-  let created = Math.floor(Date.now() / 1000);
-  let embeddedError: { code?: string; message?: string } | null = null;
-  const toolCalls = new Map<number, PartialToolCall>();
+/**
+ * Scan the buffered SSE text into one accumulated turn.
+ *
+ * Malformed frames are SKIPPED rather than fatal: the stream is already paid
+ * for, and one unparseable frame must not lose the usage on the next one.
+ */
+function scanUpstreamStream(raw: string): ScannedStream {
+  const out: ScannedStream = {
+    content: "",
+    finishReason: null,
+    usage: null,
+    created: Math.floor(Date.now() / 1000),
+    embeddedError: null,
+    toolCalls: new Map<number, PartialToolCall>(),
+  };
 
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -863,18 +881,74 @@ export async function assembleNonStreaming(
       continue;
     }
     if (chunk.error) {
-      embeddedError = chunk.error as { code?: string; message?: string };
+      out.embeddedError = chunk.error as { code?: string; message?: string };
       continue;
     }
-    if (typeof chunk.created === "number") created = chunk.created;
-    if (chunk.usage) usage = chunk.usage as Record<string, unknown>;
+    if (typeof chunk.created === "number") out.created = chunk.created;
+    if (chunk.usage) out.usage = chunk.usage as Record<string, unknown>;
     const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
     if (!choice) continue;
     const delta = choice.delta as { content?: unknown; tool_calls?: unknown } | undefined;
-    if (typeof delta?.content === "string") content += delta.content;
-    foldToolCallDeltas(delta?.tool_calls, toolCalls);
-    if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
+    if (typeof delta?.content === "string") out.content += delta.content;
+    foldToolCallDeltas(delta?.tool_calls, out.toolCalls);
+    if (typeof choice.finish_reason === "string") out.finishReason = choice.finish_reason;
   }
+  return out;
+}
+
+/**
+ * Shape the accumulated turn into an OpenAI `message` object.
+ *
+ * `content` is null when tool calls carried the whole turn: that is what OpenAI
+ * sends, and clients branch on it — `content is None` in the Python SDK,
+ * `content === null` in the JS one. An empty string is CONTENT, and a client
+ * that appends it to a transcript records an assistant turn that said nothing.
+ */
+function assistantMessage(
+  content: string,
+  toolCalls: ReturnType<typeof assembleToolCalls>,
+): Record<string, unknown> {
+  if (toolCalls.length === 0) return { role: "assistant", content };
+  return {
+    role: "assistant",
+    content: content.length > 0 ? content : null,
+    tool_calls: toolCalls,
+  };
+}
+
+/**
+ * Finish the per-index accumulator into the wire shape, ordered by index —
+ * which is the order the model called them in and the order a client must
+ * answer them in.
+ */
+function assembleToolCalls(
+  toolCalls: Map<number, PartialToolCall>,
+  requestId: string,
+): Array<{ id: string; type: string; function: { name: string; arguments: string } }> {
+  return [...toolCalls.entries()]
+    .toSorted((a, b) => a[0] - b[0])
+    .map(([index, call]) => ({
+      // A client answers a tool call by echoing its id, so a call with no id is
+      // unanswerable. llama.cpp emits one; synthesize a stable fallback rather
+      // than emit `undefined` and break the round trip.
+      id: call.id || `call_${requestId}_${index}`,
+      type: call.type || "function",
+      function: { name: call.name, arguments: call.args },
+    }));
+}
+
+/** Buffers the forced upstream stream and emits one `chat.completion` object. */
+export async function assembleNonStreaming(
+  sse: Response,
+  requestId: string,
+  clientFacingModel: string,
+  failure: { value: GatewayError | null },
+  overheadMs = 0,
+): Promise<Response> {
+  const { content, finishReason, usage, created, embeddedError, toolCalls } =
+    scanUpstreamStream(
+      await sse.text(),
+    );
 
   if (failure.value) return errorResponse(failure.value, requestId);
   if (embeddedError) {
@@ -887,26 +961,8 @@ export async function assembleNonStreaming(
     );
   }
 
-  // Sorted by the upstream index, which is the order the model called them in
-  // and the order a client must reply to them in.
-  const assembled = [...toolCalls.entries()]
-    .toSorted((a, b) => a[0] - b[0])
-    .map(([index, call]) => ({
-      // A client answers a tool call by echoing its id, so a call with no id is
-      // unanswerable. llama.cpp emits one; synthesize a stable fallback rather
-      // than emit `undefined` and break the round trip.
-      id: call.id || `call_${requestId}_${index}`,
-      type: call.type || "function",
-      function: { name: call.name, arguments: call.args },
-    }));
-
-  const message: Record<string, unknown> = assembled.length > 0
-    // OpenAI sends `content: null` on a tool-only turn, and clients branch on
-    // it — `content is None` in the Python SDK, `content === null` in the JS one.
-    // An empty string is CONTENT, and a client that appends it to a transcript
-    // records an assistant turn that said nothing.
-    ? { role: "assistant", content: content.length > 0 ? content : null, tool_calls: assembled }
-    : { role: "assistant", content };
+  const assembled = assembleToolCalls(toolCalls, requestId);
+  const message = assistantMessage(content, assembled);
 
   const completion = {
     id: `chatcmpl-${requestId}`,

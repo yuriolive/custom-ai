@@ -455,66 +455,129 @@ export async function readGgufArchitecture(
   url: string,
   opts: GgufReadOptions = {},
 ): Promise<GgufArchitectureResult> {
-  const doFetch = opts.fetchImpl ?? fetch;
-  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
-  let want = Math.min(opts.initialBytes ?? DEFAULT_INITIAL_BYTES, maxBytes);
-  let lastError = "GGUF header could not be read";
-  let bytesRead = 0;
-
-  for (;;) {
-    const headers: Record<string, string> = { Range: `bytes=0-${want - 1}` };
-    if (opts.hfToken) headers.Authorization = `Bearer ${opts.hfToken}`;
-
-    let res: Response;
-    try {
-      res = await doFetch(url, { headers, signal: opts.signal, redirect: "follow" });
-    } catch (err) {
-      return { ok: false, bytesRead, error: `GGUF range request failed: ${errText(err)}` };
+  const read = await readHeaderUntil(
+    url,
+    opts,
+    { initialBytes: DEFAULT_INITIAL_BYTES, maxBytes: DEFAULT_MAX_BYTES, growth: 4 },
+    (header) => {
+      const result = architectureFromHeader(header);
+      // The header rides along on success: callers read other keys off it.
+      return result.ok
+        ? { ok: true, value: { architecture: result.architecture, header } }
+        : { ok: false, error: result.error };
+    },
+  );
+  return read.ok
+    ? {
+      ok: true,
+      architecture: read.value.architecture,
+      header: read.value.header,
+      bytesRead: read.bytesRead,
     }
+    : { ok: false, bytesRead: read.bytesRead, error: read.error };
+}
 
-    if (res.status === 200) {
-      // The server ignored Range. Only tolerable if the whole object is small.
-      const len = Number(res.headers.get("content-length") ?? "NaN");
-      if (!Number.isFinite(len) || len > maxBytes) {
-        await res.body?.cancel().catch(() => {});
-        return {
-          ok: false,
-          bytesRead,
-          error:
-            "server ignored the Range request and the object is larger than the " +
-            `${maxBytes}-byte read budget; refusing to download the full weights`,
-        };
-      }
-    } else if (res.status !== 206) {
+// ─── the shared ranged read ─────────────────────────────────────────────────
+
+/** What one window of the header yielded, or why it did not. */
+type HeaderExtract<T> = { ok: true; value: T } | { ok: false; error: string };
+
+interface EscalationPlan {
+  initialBytes: number;
+  maxBytes: number;
+  /** Window multiplier per retry. */
+  growth: number;
+}
+
+/**
+ * One ranged GET of the first `want` bytes.
+ *
+ * A 200 instead of a 206 means the server ignored Range, which is only
+ * survivable if the whole object happens to be inside the budget. Anything
+ * else is reported rather than retried: silently downloading multi-gigabyte
+ * weights to read a header is the one outcome this module exists to prevent.
+ */
+async function fetchHeaderPrefix(
+  url: string,
+  opts: GgufReadOptions,
+  want: number,
+  maxBytes: number,
+): Promise<{ ok: true; buf: Uint8Array } | { ok: false; error: string }> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const headers: Record<string, string> = { Range: `bytes=0-${want - 1}` };
+  if (opts.hfToken) headers.Authorization = `Bearer ${opts.hfToken}`;
+
+  let res: Response;
+  try {
+    res = await doFetch(url, { headers, signal: opts.signal, redirect: "follow" });
+  } catch (err) {
+    return { ok: false, error: `GGUF range request failed: ${errText(err)}` };
+  }
+
+  if (res.status === 200) {
+    const len = Number(res.headers.get("content-length") ?? "NaN");
+    if (!Number.isFinite(len) || len > maxBytes) {
       await res.body?.cancel().catch(() => {});
       return {
         ok: false,
-        bytesRead,
-        error: `GGUF range request returned HTTP ${res.status} ${res.statusText}`.trim(),
+        error: "server ignored the Range request and the object is larger than the " +
+          `${maxBytes}-byte read budget; refusing to download the full weights`,
       };
     }
+  } else if (res.status !== 206) {
+    await res.body?.cancel().catch(() => {});
+    return {
+      ok: false,
+      error: `GGUF range request returned HTTP ${res.status} ${res.statusText}`.trim(),
+    };
+  }
+  return { ok: true, buf: new Uint8Array(await res.arrayBuffer()) };
+}
 
-    const buf = new Uint8Array(await res.arrayBuffer());
-    bytesRead = buf.byteLength;
+/**
+ * Read a growing prefix of the header until `extract` is satisfied.
+ *
+ * The escalation is what makes this shared rather than duplicated: the
+ * architecture keys sit in the first 2 MB and the chat template sits behind the
+ * tokenizer arrays, so the two callers differ only in where they start, how fast
+ * they widen, and what they are looking for. Widening stops the moment the
+ * header is NOT truncated — at that point the whole KV block was read and the
+ * key is genuinely absent, so a bigger window cannot change the answer.
+ */
+async function readHeaderUntil<T>(
+  url: string,
+  opts: GgufReadOptions,
+  plan: EscalationPlan,
+  extract: (header: GgufHeader, bytesRead: number) => HeaderExtract<T>,
+): Promise<
+  { ok: true; value: T; bytesRead: number } | { ok: false; bytesRead: number; error: string }
+> {
+  const maxBytes = opts.maxBytes ?? plan.maxBytes;
+  let want = Math.min(opts.initialBytes ?? plan.initialBytes, maxBytes);
+  let bytesRead = 0;
+
+  for (;;) {
+    const prefix = await fetchHeaderPrefix(url, opts, want, maxBytes);
+    if (!prefix.ok) return { ok: false, bytesRead, error: prefix.error };
+    bytesRead = prefix.buf.byteLength;
 
     let header: GgufHeader;
     try {
-      header = parseGgufHeader(buf);
+      header = parseGgufHeader(prefix.buf);
     } catch (err) {
       return { ok: false, bytesRead, error: `GGUF header parse failed: ${errText(err)}` };
     }
 
-    const result = architectureFromHeader(header);
-    if (result.ok) return { ...result, bytesRead };
-    lastError = result.error;
+    const found = extract(header, bytesRead);
+    if (found.ok) return { ok: true, value: found.value, bytesRead };
 
-    // Truncated and still short of the required keys: widen the window once
-    // more, up to the hard ceiling. Never beyond it.
-    const grew = buf.byteLength >= want;
+    // `grew` guards against a server that returns less than asked: without it a
+    // short response would loop forever asking for a window it never gets.
+    const grew = prefix.buf.byteLength >= want;
     if (!header.truncated || !grew || want >= maxBytes) {
-      return { ok: false, bytesRead, error: lastError };
+      return { ok: false, bytesRead, error: found.error };
     }
-    want = Math.min(want * 4, maxBytes);
+    want = Math.min(want * plan.growth, maxBytes);
   }
 }
 
@@ -554,68 +617,30 @@ export async function readGgufChatTemplate(
   url: string,
   opts: GgufReadOptions = {},
 ): Promise<GgufChatTemplateResult> {
-  const doFetch = opts.fetchImpl ?? fetch;
-  const maxBytes = opts.maxBytes ?? DEFAULT_TEMPLATE_MAX_BYTES;
-  let want = Math.min(opts.initialBytes ?? DEFAULT_TEMPLATE_BYTES, maxBytes);
-  let bytesRead = 0;
-
-  for (;;) {
-    const headers: Record<string, string> = { Range: `bytes=0-${want - 1}` };
-    if (opts.hfToken) headers.Authorization = `Bearer ${opts.hfToken}`;
-
-    let res: Response;
-    try {
-      res = await doFetch(url, { headers, signal: opts.signal, redirect: "follow" });
-    } catch (err) {
-      return { ok: false, bytesRead, error: `GGUF range request failed: ${errText(err)}` };
-    }
-
-    if (res.status === 200) {
-      // Range ignored. Tolerable only if the whole object is inside the budget.
-      const len = Number(res.headers.get("content-length") ?? "NaN");
-      if (!Number.isFinite(len) || len > maxBytes) {
-        await res.body?.cancel().catch(() => {});
-        return {
-          ok: false,
-          bytesRead,
-          error: "server ignored the Range request and the object is larger than the " +
-            `${maxBytes}-byte read budget; refusing to download the full weights`,
-        };
-      }
-    } else if (res.status !== 206) {
-      await res.body?.cancel().catch(() => {});
+  const read = await readHeaderUntil(
+    url,
+    opts,
+    {
+      initialBytes: DEFAULT_TEMPLATE_BYTES,
+      maxBytes: DEFAULT_TEMPLATE_MAX_BYTES,
+      // Doubling, not quadrupling: the first window is already 8 MB, and the
+      // ceiling is 16, so one step is all there is room for.
+      growth: 2,
+    },
+    (header, bytesRead) => {
+      const template = header.kv[CHAT_TEMPLATE_KEY];
+      if (typeof template === "string") return { ok: true, value: template };
+      // "did not fit" and "is not there" are different answers and the caller
+      // treats them differently — one is unknown, the other is a measurement.
       return {
         ok: false,
-        bytesRead,
-        error: `GGUF range request returned HTTP ${res.status} ${res.statusText}`.trim(),
-      };
-    }
-
-    const buf = new Uint8Array(await res.arrayBuffer());
-    bytesRead = buf.byteLength;
-
-    let header: GgufHeader;
-    try {
-      header = parseGgufHeader(buf);
-    } catch (err) {
-      return { ok: false, bytesRead, error: `GGUF header parse failed: ${errText(err)}` };
-    }
-
-    const template = header.kv[CHAT_TEMPLATE_KEY];
-    if (typeof template === "string") return { ok: true, template, bytesRead };
-
-    // Not truncated means the whole KV block was read and the key is absent —
-    // a real answer, and widening the window would not change it.
-    const grew = buf.byteLength >= want;
-    if (!header.truncated || !grew || want >= maxBytes) {
-      return {
-        ok: false,
-        bytesRead,
         error: header.truncated
           ? `${CHAT_TEMPLATE_KEY} was not within the ${bytesRead}-byte header read`
           : `${CHAT_TEMPLATE_KEY} is not present in this file`,
       };
-    }
-    want = Math.min(want * 2, maxBytes);
-  }
+    },
+  );
+  return read.ok
+    ? { ok: true, template: read.value, bytesRead: read.bytesRead }
+    : { ok: false, bytesRead: read.bytesRead, error: read.error };
 }
