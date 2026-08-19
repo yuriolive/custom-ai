@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
+import { JsonLdScript } from "@/components/seo/json-ld-script";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeProvider } from "@/components/theme-provider";
+import { buildOrganization, buildWebSite } from "@/lib/seo/json-ld";
 import { siteUrl } from "@/lib/seo/site-url";
 
 import "./globals.css";
@@ -107,6 +109,15 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     // and client markup differ on this element by design.
     <html className={`${sans.variable} ${mono.variable}`} lang="en" suppressHydrationWarning>
       <body className="bg-background text-foreground font-sans min-h-dvh antialiased">
+        {/* Site-wide structured data. Emitted once, from the root, because
+            `Organization` and `WebSite` describe the site rather than any page —
+            repeating them per route would give a crawler several `@id`s for one
+            entity. The logo points at the Open Graph card because that is the
+            only brand image this deployment actually serves; a dedicated logo
+            file is worth adding, and this line is where it would go. */}
+        <JsonLdScript node={buildOrganization({ name: BRAND, logoPath: "/opengraph-image" })} />
+        <JsonLdScript node={buildWebSite({ name: BRAND })} />
+
         {/* No <HeroUIProvider>. HeroUI v3 has no provider. */}
         <ThemeProvider>
           <SiteNav />

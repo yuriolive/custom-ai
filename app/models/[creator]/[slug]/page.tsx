@@ -12,6 +12,8 @@ import { ModelDetail } from "@/components/marketplace/model-detail";
 import { fetchModelByHandleAndSlug } from "@/components/marketplace/queries";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
 import type { CatalogModel } from "@/components/marketplace/types";
+import { JsonLdScript } from "@/components/seo/json-ld-script";
+import { buildModelApplication, buildModelBreadcrumbs } from "@/lib/seo/json-ld";
 import { pageOpenGraph } from "@/lib/seo/open-graph";
 import { SUPABASE_URL } from "@/lib/supabase/public-config";
 import { createClient } from "@/lib/supabase/server";
@@ -108,5 +110,16 @@ export default async function ModelPage({ params }: { params: Promise<Params> })
   // (CONTRACTS.md §Gateway wire contract).
   if (!model) notFound();
 
-  return <ModelDetail baseUrl={gatewayBaseUrl(SUPABASE_URL)} model={model} />;
+  return (
+    <>
+      {/* Structured data for the one page on this site that describes a
+          purchasable thing. Rendered here rather than in `ModelDetail` because
+          that component is client-side (HeroUI v3), and JSON-LD has to be in the
+          HTML a crawler receives. */}
+      <JsonLdScript node={buildModelApplication(model)} />
+      <JsonLdScript node={buildModelBreadcrumbs(model)} />
+
+      <ModelDetail baseUrl={gatewayBaseUrl(SUPABASE_URL)} model={model} />
+    </>
+  );
 }
