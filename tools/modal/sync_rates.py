@@ -45,7 +45,7 @@ MICRO = Decimal(1_000_000)
 # as prices — it must never reach it as a filename, and a generated migration must not be
 # able to land outside supabase/migrations.
 _ALLOWED_WRITE_DIRS = (HERE, MIGRATIONS)
-_SAFE_NAME = re.compile(r"\A[A-Za-z0-9_]+\.(py|sql)\Z")
+_SAFE_NAME = re.compile(r"\A\w+\.(py|sql)\Z")
 
 
 def _write_checked(name: str, directory: Path, text: str) -> Path:
