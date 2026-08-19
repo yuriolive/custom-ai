@@ -400,14 +400,14 @@ def select_tier(shape: ModelShape, allowed_ids: list[str] | None = None) -> Plac
 # HYBRID attention/SSM: only 65//4 = 16 of the 65 blocks keep a KV cache, so KV is ~4x
 # smaller than an all-layers calculation gives. head_dim is the declared key_length 256,
 # NOT hidden_size/head_count (= 213.33) — using the latter under-counts KV by 17%.
-MVP_TARGET_SHAPE = dict(
-    weights_bytes=16_810_714_528,
-    context_length=8192,
-    n_layers=65,
-    n_kv_heads=4,
-    head_dim=256,
-    full_attention_interval=4,
-    ssm_state_size=128,
-    ssm_inner_size=6144,
-    target_tokens_per_second=30,
-)
+MVP_TARGET_SHAPE = {
+    "weights_bytes": 16_810_714_528,
+    "context_length": 8192,
+    "n_layers": 65,
+    "n_kv_heads": 4,
+    "head_dim": 256,
+    "full_attention_interval": 4,
+    "ssm_state_size": 128,
+    "ssm_inner_size": 6144,
+    "target_tokens_per_second": 30,
+}

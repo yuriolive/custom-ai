@@ -124,81 +124,92 @@ class SseAnalyzer:
 
     def _handle_frame(self, frame: str, at: float) -> None:
         for line in frame.replace("\r\n", "\n").split("\n"):
-            if not line.strip():
-                continue
-            # ": keepalive" — an SSE comment. The gateway emits these during upstream
-            # silence; a worker generally does not. Counted, never billed.
-            if line.startswith(":"):
-                self.r.keepalives += 1
-                continue
-            if not line.startswith("data:"):
-                continue
+            self._handle_line(line, at)
 
-            payload = line[5:].strip()
-            if payload == "[DONE]":
-                self.r.saw_done = True
-                self._done_at = at
-                continue
+    def _handle_line(self, line: str, at: float) -> None:
+        if not line.strip():
+            return
+        # ": keepalive" — an SSE comment. The gateway emits these during upstream
+        # silence; a worker generally does not. Counted, never billed.
+        if line.startswith(":"):
+            self.r.keepalives += 1
+            return
+        if not line.startswith("data:"):
+            return
 
-            try:
-                obj = json.loads(payload)
-            except json.JSONDecodeError:
-                # A truncated frame is a real failure mode, not a parsing inconvenience.
-                # A stream that silently loses frames also silently loses usage.
-                self.r.malformed_frames += 1
-                continue
+        payload = line[5:].strip()
+        if payload == "[DONE]":
+            self.r.saw_done = True
+            self._done_at = at
+            return
 
-            self.r.frames += 1
-            if obj.get("model") and self.r.model is None:
-                self.r.model = obj["model"]
+        try:
+            obj = json.loads(payload)
+        except json.JSONDecodeError:
+            # A truncated frame is a real failure mode, not a parsing inconvenience.
+            # A stream that silently loses frames also silently loses usage.
+            self.r.malformed_frames += 1
+            return
 
-            choices = obj.get("choices")
-            choice = choices[0] if isinstance(choices, list) and choices else None
-            delta = (choice or {}).get("delta") or {}
-            # A reasoning model emits its chain-of-thought as `reasoning_content` and
-            # only the final answer as `content`. BOTH are generated tokens: both cost GPU
-            # time, both are counted by the worker's own `usage.completion_tokens`, and
-            # both must therefore be billed. Counting only `content` under-counts a
-            # reasoning model's output by the entire length of its thinking phase — on the
-            # MVP target's first test that was 24 of 27 tokens, i.e. an 89% under-count.
-            # It also mis-measures TTFT, since the user sees activity at the first
-            # reasoning token, not at the first answer token.
-            content = delta.get("content")
-            reasoning = delta.get("reasoning_content")
-            produced = False
-            if isinstance(content, str) and content:
-                self.r.content_tokens += 1
-                self.r.text += content
-                produced = True
-            if isinstance(reasoning, str) and reasoning:
-                self.r.reasoning_tokens += 1
-                self.r.reasoning_text += reasoning
-                produced = True
-            if produced:
-                self.r.completion_tokens_observed += 1
-                if self._first_token_at is None:
-                    self._first_token_at = at
-                self._last_token_at = at
-            if choice and choice.get("finish_reason") and self.r.finish_reason is None:
-                self.r.finish_reason = choice["finish_reason"]
+        self._handle_chunk(obj, payload, at)
 
-            if obj.get("system_fingerprint") and self.r.system_fingerprint is None:
-                self.r.system_fingerprint = obj["system_fingerprint"]
-            # llama.cpp attaches a non-standard `timings` block alongside usage, carrying
-            # its own server-side predicted_per_second. That is ground truth for decode
-            # throughput, free of client-side network jitter — worth capturing to
-            # calibrate the solver's MFU constant against reality.
-            if isinstance(obj.get("timings"), dict):
-                self.r.server_timings = obj["timings"]
+    def _handle_chunk(self, obj: dict, payload: str, at: float) -> None:
+        self.r.frames += 1
+        if obj.get("model") and self.r.model is None:
+            self.r.model = obj["model"]
 
-            usage = obj.get("usage")
-            if isinstance(usage, dict):
-                self.r.usage = usage
-                self.r.raw_usage_frame = payload
-                # Placement matters to the gateway's usage tee: a trailing chunk with
-                # choices:[] is the vLLM layout; usage on the finish chunk is llama.cpp's.
-                has_choices = isinstance(choices, list) and len(choices) > 0
-                self.r.usage_placement = "final" if has_choices else "separate"
+        choices = obj.get("choices")
+        choice = choices[0] if isinstance(choices, list) and choices else None
+        self._record_delta((choice or {}).get("delta") or {}, at)
+
+        if choice and choice.get("finish_reason") and self.r.finish_reason is None:
+            self.r.finish_reason = choice["finish_reason"]
+
+        if obj.get("system_fingerprint") and self.r.system_fingerprint is None:
+            self.r.system_fingerprint = obj["system_fingerprint"]
+        # llama.cpp attaches a non-standard `timings` block alongside usage, carrying
+        # its own server-side predicted_per_second. That is ground truth for decode
+        # throughput, free of client-side network jitter — worth capturing to
+        # calibrate the solver's MFU constant against reality.
+        if isinstance(obj.get("timings"), dict):
+            self.r.server_timings = obj["timings"]
+
+        usage = obj.get("usage")
+        if isinstance(usage, dict):
+            self.r.usage = usage
+            self.r.raw_usage_frame = payload
+            # Placement matters to the gateway's usage tee: a trailing chunk with
+            # choices:[] is the vLLM layout; usage on the finish chunk is llama.cpp's.
+            has_choices = isinstance(choices, list) and len(choices) > 0
+            self.r.usage_placement = "final" if has_choices else "separate"
+
+    def _record_delta(self, delta: dict, at: float) -> None:
+        """
+        A reasoning model emits its chain-of-thought as `reasoning_content` and only the
+        final answer as `content`. BOTH are generated tokens: both cost GPU time, both are
+        counted by the worker's own `usage.completion_tokens`, and both must therefore be
+        billed. Counting only `content` under-counts a reasoning model's output by the
+        entire length of its thinking phase — on the MVP target's first test that was 24 of
+        27 tokens, i.e. an 89% under-count. It also mis-measures TTFT, since the user sees
+        activity at the first reasoning token, not at the first answer token.
+        """
+        content = delta.get("content")
+        reasoning = delta.get("reasoning_content")
+        produced = False
+        if isinstance(content, str) and content:
+            self.r.content_tokens += 1
+            self.r.text += content
+            produced = True
+        if isinstance(reasoning, str) and reasoning:
+            self.r.reasoning_tokens += 1
+            self.r.reasoning_text += reasoning
+            produced = True
+        if not produced:
+            return
+        self.r.completion_tokens_observed += 1
+        if self._first_token_at is None:
+            self._first_token_at = at
+        self._last_token_at = at
 
     def finish(self, at: float | None = None) -> StreamResult:
         at = self._now() if at is None else at
@@ -207,6 +218,11 @@ class SseAnalyzer:
         self._buf = ""
         end = self._done_at if self._done_at is not None else at
 
+        self._finalize_usage()
+        self._finalize_timings(end)
+        return self.r
+
+    def _finalize_usage(self) -> None:
         r = self.r
         u = r.usage
         cached = None
@@ -217,17 +233,28 @@ class SseAnalyzer:
 
         r.usage_emitted = u is not None
         r.cached_tokens_reported = cached is not None
-        # The three cases the gateway's billing path must distinguish.
-        r.usage_shape = "none" if u is None else ("full" if cached is not None else "basic")
         r.cached_tokens = cached
+        # The three cases the gateway's billing path must distinguish: no usage at all
+        # (estimate, and flag it), usage without cached_tokens, and the full object.
+        if u is None:
+            r.usage_shape = "none"
+        elif cached is not None:
+            r.usage_shape = "full"
+        else:
+            r.usage_shape = "basic"
+
         if isinstance(u, dict):
-            r.prompt_tokens = (
-                u.get("prompt_tokens") if isinstance(u.get("prompt_tokens"), int) else None
-            )
+            pt = u.get("prompt_tokens")
+            r.prompt_tokens = pt if isinstance(pt, int) else None
             ct = u.get("completion_tokens")
             r.completion_tokens_reported = ct if isinstance(ct, int) else None
 
-        ms = lambda a, b: round((a - b) * 1000, 1)  # noqa: E731
+    def _finalize_timings(self, end: float) -> None:
+        r = self.r
+
+        def ms(a: float, b: float) -> float:
+            return round((a - b) * 1000, 1)
+
         r.ttft_ms = ms(self._first_token_at, self.t0) if self._first_token_at is not None else None
         r.last_token_ms = (
             ms(self._last_token_at, self.t0) if self._last_token_at is not None else None
@@ -247,7 +274,6 @@ class SseAnalyzer:
             r.end_to_end_tokens_per_second = round(
                 r.completion_tokens_observed / (r.total_ms / 1000), 2
             )
-        return r
 
 
 def analyze_sse_text(text: str) -> StreamResult:
@@ -346,7 +372,9 @@ def run_once(
             detail = e.read().decode("utf-8", "replace")[:500]
         rec.error = {"code": f"http_{e.code}", "message": detail}
         rec.stream = analyzer.finish().to_dict()
-    except Exception as e:  # noqa: BLE001 — a transport failure is data, not a crash
+    # A transport failure is data, not a crash: a run that died mid-stream is a result
+    # this tool has to report, not an exception to propagate.
+    except Exception as e:  # noqa: BLE001
         rec.error = {"code": type(e).__name__, "message": str(e)[:500]}
         rec.stream = analyzer.finish().to_dict()
 
@@ -705,6 +733,51 @@ def build_url(base: str, params: dict | None) -> str:
     return url
 
 
+def check_base_url(base: str) -> str | None:
+    """
+    Returns an error message, or None if the URL is usable. urllib will happily open a
+    file:// or a bare hostname, so an unchecked --url turns a typo into a request against
+    something that is not an inference endpoint at all.
+    """
+    parsed = urllib.parse.urlparse(base)
+    if parsed.scheme not in ("http", "https"):
+        return f"--url must be http:// or https://, got {parsed.scheme or 'no scheme'!r}"
+    if not parsed.netloc:
+        return "--url has no host"
+    return None
+
+
+def _resolve_url(args) -> str:
+    """Either the explicit --path override, or the base plus Modal's pool parameters."""
+    if args.path:
+        return args.url.rstrip("/") + args.path
+    params = {}
+    if args.model_repo:
+        params["model_repo"] = args.model_repo
+    if args.model_file:
+        params["model_file"] = args.model_file
+    if args.ctx_size is not None:
+        params["ctx_size"] = args.ctx_size
+    if args.parallel is not None:
+        params["parallel"] = args.parallel
+    return build_url(args.url, params)
+
+
+def _proxy_auth_headers() -> dict[str, str] | None:
+    """
+    Modal proxy auth takes the workspace PROXY token pair (wk-… / ws-…), which is a
+    different credential class from the API token (ak-… / as-…) used to deploy. The
+    header-pair form below is the primary one; Modal also accepts the single header
+    `Authorization: Bearer wk-….ws-…` for OpenAI-SDK compatibility (verified live on
+    1.5.4). Plain `Bearer <secret>` is NOT a thing — that is the shape this comment used
+    to warn about. Returns None when the environment is missing either half.
+    """
+    key, secret = os.environ.get("MODAL_KEY"), os.environ.get("MODAL_SECRET")
+    if not key or not secret:
+        return None
+    return {"Modal-Key": key, "Modal-Secret": secret}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Measure Modal cold start and the llama.cpp usage-emission fact.",
@@ -736,37 +809,21 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
 
-    if args.path:
-        url = args.url.rstrip("/") + args.path
-    else:
-        params = {}
-        if args.model_repo:
-            params["model_repo"] = args.model_repo
-        if args.model_file:
-            params["model_file"] = args.model_file
-        if args.ctx_size is not None:
-            params["ctx_size"] = args.ctx_size
-        if args.parallel is not None:
-            params["parallel"] = args.parallel
-        url = build_url(args.url, params)
+    bad_url = check_base_url(args.url)
+    if bad_url:
+        print(f"[error] {bad_url}", file=sys.stderr)
+        return 2
+    url = _resolve_url(args)
 
     headers = {}
     if args.proxy_auth:
-        # Modal proxy auth takes the workspace PROXY token pair (wk-… / ws-…), which is a
-        # different credential class from the API token (ak-… / as-…) used to deploy.
-        # The header-pair form below is the primary one; Modal also accepts the single
-        # header `Authorization: Bearer wk-….ws-…` for OpenAI-SDK compatibility (verified
-        # live on 1.5.4). Plain `Bearer <secret>` is NOT a thing — that is the shape this
-        # comment used to warn about.
-        key, secret = os.environ.get("MODAL_KEY"), os.environ.get("MODAL_SECRET")
-        if not key or not secret:
+        headers = _proxy_auth_headers() or {}
+        if not headers:
             print(
                 "[error] --proxy-auth needs MODAL_KEY and MODAL_SECRET in the environment",
                 file=sys.stderr,
             )
             return 2
-        headers["Modal-Key"] = key
-        headers["Modal-Secret"] = secret
 
     report = measure(
         url,
