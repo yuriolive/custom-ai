@@ -325,3 +325,29 @@
     transition: none;
   }
 }
+
+/* -----------------------------------------------------------------------------
+   Table container radius (DESIGN.md §1.5).
+
+   HeroUI's `.table-root--primary` is a `--surface-secondary` tray with 4px of
+   side/bottom padding, holding the table body as a card inside it. The two
+   corners are derived from DIFFERENT places:
+
+     tray  border-radius: min(32px, calc(var(--radius) * 2.5))  -> 20px
+     body  border-radius: min(32px, var(--radius-2xl))          -> 12px
+
+   `--radius-2xl` is pinned to 0.75rem at the top of this file, so the body lands
+   on our scale. The tray does not — it multiplies `--radius` and bypasses the
+   theming seam entirely, which is why it is corrected here as a rule rather than
+   as a token.
+
+   A 20px outer corner around a 12px inner corner separated by 4px cannot nest:
+   concentric radii have to differ by exactly the gap between them, so the tray
+   needs 12 + 4 = 16px. At 20px the tray's curve runs wide of the body's and the
+   two edges visibly disagree at every corner.
+   -------------------------------------------------------------------------- */
+@layer components {
+  .table-root--primary {
+    border-radius: calc(var(--radius-2xl) + 0.25rem);
+  }
+}

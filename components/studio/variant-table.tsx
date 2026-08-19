@@ -28,6 +28,8 @@ import type { Selection } from "react-aria-components";
 import { formatGiB, formatPricePerMtoken, qualityNote } from "@/lib/studio/format";
 import type { Placement, StudioVariant, VariantPlacement } from "@/lib/studio/types";
 
+import { LabelHint } from "./primitives";
+
 /**
  * Hardware appears in this column and inside the Deployment Plan, and nowhere
  * else in the product (docs/DESIGN.md §4 item 8). It is a read-only RESULT of
@@ -40,6 +42,20 @@ function gpuCell(placement: Placement): string {
 
 function speedCell(placement: Placement): string {
   return placement.feasible ? `${placement.predictedTokensPerSecond}` : "—";
+}
+
+/**
+ * Concurrent streams — the term that actually drives the cost floor.
+ *
+ * cost_floor = (usd_per_hour / 3600) x (1e6 / (tok_s x streams x utilisation)),
+ * so the floor is INVERSELY proportional to this column. Two rows on the same
+ * card whose costs differ 2x usually differ here and nowhere else: streams is a
+ * `floor()` of a KV-cache budget, so it moves in whole-number cliffs and a
+ * gigabyte of extra weights can halve it. Without this column the cost column
+ * reads as arbitrary, which is the defect this fixes.
+ */
+function streamsCell(placement: Placement): string {
+  return placement.feasible ? placement.maxConcurrentStreams.toLocaleString("en-US") : "—";
 }
 
 /**
@@ -119,6 +135,16 @@ export function VariantTable({
               {/* The one hardware column in the product, and it is an output. */}
               <Table.Column className="hidden sm:table-cell">Runs on</Table.Column>
               <Table.Column className="text-end">tok/s</Table.Column>
+              <Table.Column className="text-end">
+                <span className="inline-flex items-center gap-1">
+                  Streams
+                  <LabelHint>
+                    How many requests this variant can serve at once at the context window you asked
+                    for. The cost floor is inversely proportional to it — twice the streams is half
+                    the cost per token.
+                  </LabelHint>
+                </span>
+              </Table.Column>
               <Table.Column className="hidden text-end md:table-cell">Max context</Table.Column>
               <Table.Column className="text-end">Cost floor / 1M</Table.Column>
             </Table.Header>
@@ -162,6 +188,9 @@ export function VariantTable({
                     </Table.Cell>
                     <Table.Cell className="text-end tabular-nums">
                       {placement ? speedCell(placement) : "—"}
+                    </Table.Cell>
+                    <Table.Cell className="text-end tabular-nums">
+                      {placement ? streamsCell(placement) : "—"}
                     </Table.Cell>
                     <Table.Cell className="hidden text-end tabular-nums md:table-cell">
                       {maxContextCell(entry)}

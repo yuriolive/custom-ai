@@ -25,7 +25,13 @@ import "server-only";
 import { probeRepo, type HfProbeResult, type ModelVariant } from "@nexus/hf-probe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { ProbeFailure, ProbeResponse, StudioArchitecture, StudioVariant } from "../types";
+import type {
+  ProbeFailure,
+  ProbeResponse,
+  RefsResponse,
+  StudioArchitecture,
+  StudioVariant,
+} from "../types";
 import { fetchCardDescription } from "./model-card";
 
 /**
@@ -306,4 +312,109 @@ export async function probeForStudio(
     recommendedVariantId: recommend(variants),
     suggestedDescription,
   };
+}
+
+/** `[{ name, ref, targetCommit }, …]` -> the names, discarding anything else. */
+function refNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      typeof (entry as { name?: unknown }).name === "string"
+        ? (entry as { name: string }).name
+        : null,
+    )
+    .filter((n): n is string => n !== null && n.length > 0);
+}
+
+/**
+ * Branches and tags for a repository — the Revision ComboBox's option list.
+ *
+ * Server-side for reason (1) at the top of this file and no other: the Hub
+ * sends no CORS headers, so a browser cannot read `/api/models/{slug}/refs` at
+ * all. The token handling is the same as the probe's — bearer in transit,
+ * never stored, never echoed, and every message that leaves goes through
+ * `redact`.
+ *
+ * NEVER THROWS. Refs are an affordance, not a requirement: a creator who can
+ * type a commit SHA must not be stopped because the Hub rate-limited a
+ * convenience call. Every failure path returns `ok: false` and the form falls
+ * back to free text.
+ */
+export async function fetchRepoRefs(
+  slug: string,
+  opts: { hfToken?: string; signal?: AbortSignal } = {},
+): Promise<RefsResponse> {
+  const trimmed = slug.trim();
+  if (!HF_SLUG_RE.test(trimmed)) {
+    return { ok: false, code: "invalid_slug", message: "Enter a repository as owner/name." };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`https://huggingface.co/api/models/${trimmed}/refs`, {
+      headers: opts.hfToken ? { authorization: `Bearer ${opts.hfToken}` } : {},
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    });
+  } catch (cause) {
+    return {
+      ok: false,
+      code: "upstream_error",
+      message: redact(cause instanceof Error ? cause.message : "Could not reach Hugging Face."),
+    };
+  }
+
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    // The Hub answers 404 for a private repo as well as a missing one, and 401
+    // /403 for a token that does not carry access. All three mean the same
+    // thing here — no list to offer — and none of them is an error the creator
+    // has to read, because the probe below reports the real diagnosis.
+    if (response.status === 401 || response.status === 403) {
+      return {
+        ok: false,
+        code: "requires_auth",
+        message: "Branches could not be listed without a token that has access.",
+      };
+    }
+    if (response.status === 404) {
+      return { ok: false, code: "not_found", message: "No branches were found for that name." };
+    }
+    return {
+      ok: false,
+      code: "upstream_error",
+      message: `Hugging Face answered ${response.status} when listing branches.`,
+    };
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return { ok: false, code: "upstream_error", message: "Hugging Face returned no ref list." };
+  }
+
+  const body = (typeof payload === "object" && payload !== null ? payload : {}) as Record<
+    string,
+    unknown
+  >;
+  const branches = [...new Set(refNames(body.branches))];
+  const tags = [...new Set(refNames(body.tags))];
+
+  if (branches.length === 0 && tags.length === 0) {
+    return { ok: false, code: "not_found", message: "That repository lists no branches or tags." };
+  }
+
+  // THE HUB DOES NOT REPORT A DEFAULT BRANCH on this endpoint, so this is a
+  // choice and is documented as one: prefer `main`, then `master`, then the
+  // first branch the Hub listed. It is strictly better than the old behaviour,
+  // which assumed `main` unconditionally and probed a ref that did not exist.
+  const defaultBranch =
+    branches.find((b) => b === "main") ??
+    branches.find((b) => b === "master") ??
+    branches[0] ??
+    "main";
+
+  return { ok: true, branches, tags, defaultBranch };
 }

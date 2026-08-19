@@ -188,7 +188,7 @@ export function MyModelsTable({
       ) : null}
 
       {models.length === 0 ? (
-        <div className="border-default flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-14 text-center">
+        <div className="border-border flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-14 text-center">
           <p className="text-base font-medium">No models yet</p>
           <p className="text-muted max-w-md text-sm">
             Point Studio at a Hugging Face repository and it will work out what hardware serves it,

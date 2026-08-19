@@ -211,12 +211,12 @@ export function UsagePanel({
                 <Table.Header>
                   <Table.Column isRowHeader>Time (UTC)</Table.Column>
                   <Table.Column>Model</Table.Column>
-                  <Table.Column>Tokens in</Table.Column>
-                  <Table.Column>Tokens out</Table.Column>
-                  <Table.Column>Cached</Table.Column>
-                  <Table.Column>Cost</Table.Column>
+                  <Table.Column className="text-end whitespace-nowrap">Tokens in</Table.Column>
+                  <Table.Column className="text-end whitespace-nowrap">Tokens out</Table.Column>
+                  <Table.Column className="text-end">Cached</Table.Column>
+                  <Table.Column className="text-end">Cost</Table.Column>
                   <Table.Column>Status</Table.Column>
-                  <Table.Column>TTFT</Table.Column>
+                  <Table.Column className="text-end">TTFT</Table.Column>
                   <Table.Column>Start</Table.Column>
                 </Table.Header>
                 <Table.Body>

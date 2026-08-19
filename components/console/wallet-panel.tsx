@@ -204,8 +204,8 @@ export function WalletPanel({
                 <Alert.Title>Payment taken, credit not landed yet</Alert.Title>
                 <Alert.Description>
                   This is normally seconds. The credit is applied when Stripe&rsquo;s confirmation
-                  reaches us, so refreshing in a minute should show it. If it is still missing in
-                  an hour, contact support with the date and amount — nothing is lost.
+                  reaches us, so refreshing in a minute should show it. If it is still missing in an
+                  hour, contact support with the date and amount — nothing is lost.
                 </Alert.Description>
               </Alert.Content>
             </Alert>
@@ -227,8 +227,8 @@ export function WalletPanel({
             </Button>
             <p className="text-muted max-w-prose text-xs">
               Paid through Stripe Checkout — card details never reach this site. Credit is applied
-              from Stripe&rsquo;s signed confirmation, not from returning to this page, so a
-              closed tab never loses a payment.
+              from Stripe&rsquo;s signed confirmation, not from returning to this page, so a closed
+              tab never loses a payment.
             </p>
           </div>
         </Card.Footer>
@@ -248,11 +248,16 @@ export function WalletPanel({
           <Table>
             <Table.ScrollContainer>
               <Table.Content aria-label="Wallet ledger">
+                {/* A numeric column's HEADER has to carry `text-end` too. The
+                    cells below already did; the headers did not, so every money
+                    column had a start-aligned label sitting over end-aligned
+                    figures. `whitespace-nowrap` stops "Balance after" wrapping
+                    to two lines and dragging the header row's height with it. */}
                 <Table.Header>
                   <Table.Column isRowHeader>Time (UTC)</Table.Column>
                   <Table.Column>Kind</Table.Column>
-                  <Table.Column>Amount</Table.Column>
-                  <Table.Column>Balance after</Table.Column>
+                  <Table.Column className="text-end">Amount</Table.Column>
+                  <Table.Column className="text-end whitespace-nowrap">Balance after</Table.Column>
                   <Table.Column>Memo</Table.Column>
                 </Table.Header>
                 <Table.Body>
@@ -262,7 +267,11 @@ export function WalletPanel({
                         {formatDateTime(row.created_at)}
                       </Table.Cell>
                       <Table.Cell>
+                        {/* `whitespace-nowrap`: the label "Top-up" breaks at its
+                            hyphen, and a two-line chip sets the height of the
+                            whole row. */}
                         <Chip
+                          className="whitespace-nowrap"
                           color={row.amount_micro_usd > 0 ? "success" : "default"}
                           variant="soft"
                         >
@@ -277,7 +286,19 @@ export function WalletPanel({
                       <Table.Cell className="text-end tabular-nums">
                         {formatBalanceMicroUsd(row.balance_after_micro_usd)}
                       </Table.Cell>
-                      <Table.Cell className="text-muted">{row.memo ?? "—"}</Table.Cell>
+                      {/* A Stripe memo carries a 60-character `cs_test_…`
+                          session id. Unconstrained it takes the width every
+                          other column needs, which is what squeezed the money
+                          columns and wrapped their headers. Truncated with the
+                          full value in `title`, so nothing is lost. */}
+                      <Table.Cell className="text-muted">
+                        <span
+                          className="block max-w-[22ch] truncate lg:max-w-[36ch]"
+                          title={row.memo ?? undefined}
+                        >
+                          {row.memo ?? "—"}
+                        </span>
+                      </Table.Cell>
                     </Table.Row>
                   ))}
                 </Table.Body>

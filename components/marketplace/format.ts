@@ -171,3 +171,16 @@ export function formatLatency(ms: number | null): string {
   if (ms < 1_000) return `${Math.round(ms)} ms`;
   return `${Math.round(ms / 100) / 10} s`;
 }
+
+/**
+ * Measured throughput as a bare figure, for the card's headline pair where the
+ * unit is carried by a separate `TOK/S` label. Null renders as an em dash,
+ * never as "0".
+ *
+ * This is `measuredTokensPerSecond` and nothing else (FR-DEP-052/FR-MKT-002) —
+ * there is no predicted figure in `CatalogModel` and there must never be one.
+ */
+export function formatSpeedValue(tokensPerSecond: number | null): string {
+  if (tokensPerSecond == null) return "—";
+  return String(Math.round(tokensPerSecond));
+}

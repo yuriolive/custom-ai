@@ -36,7 +36,7 @@ export function SummaryLayout({
       {/* `top-20` clears the 56px nav plus a gap. `self-start` is what makes
           sticky work inside a grid — without it the item stretches to the row
           height and has nothing to stick within. */}
-      <aside className="border-default bg-surface flex flex-col gap-4 rounded-lg border p-5 lg:sticky lg:top-20 lg:self-start">
+      <aside className="border-border bg-surface flex flex-col gap-4 rounded-lg border p-5 lg:sticky lg:top-20 lg:self-start">
         {summary}
       </aside>
     </div>

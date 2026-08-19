@@ -22,8 +22,15 @@ function GitHubMark() {
 }
 
 /**
- * Primary sign-in path. The audience is HF-adjacent developers, so GitHub is
- * the first thing on the page and email is the fallback below it.
+ * The first sign-in path offered. The audience is HF-adjacent developers, so
+ * GitHub leads and email is the fallback below it.
+ *
+ * FIRST IN ORDER IS NOT THE SAME AS FIRST IN WEIGHT, and this button carries
+ * `variant="secondary"` on purpose (DESIGN.md §3.7). The accent is spent once
+ * per page and it is spent on the email submit, so a page offering two ways in
+ * has exactly one filled control rather than two competing for the eye. This
+ * was inverted in the code for a while — GitHub filled, submit outlined — which
+ * left the email form looking disabled next to it.
  *
  * Its own form and its own `useActionState`, so its pending state is
  * independent of the email form's.
@@ -48,7 +55,13 @@ export function GitHubButton({
 
       <form action={formAction}>
         <input name="next" type="hidden" value={next} />
-        <Button className="w-full" isDisabled={isPending} size="lg" type="submit" variant="primary">
+        <Button
+          className="w-full"
+          isDisabled={isPending}
+          size="lg"
+          type="submit"
+          variant="secondary"
+        >
           {isPending ? <Spinner size="sm" /> : <GitHubMark />}
           {isPending ? "Redirecting to GitHub…" : label}
         </Button>

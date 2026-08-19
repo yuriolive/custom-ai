@@ -10,6 +10,11 @@ function textOf(message: PlaygroundUIMessage): string {
     .join("");
 }
 
+/**
+ * The transcript. The empty case is owned by `chat.tsx` (the seed prompts have
+ * to write into the composer, which lives there), so this component only ever
+ * renders a non-empty list.
+ */
 export function MessageList({
   messages,
   isStreaming,
@@ -17,14 +22,6 @@ export function MessageList({
   messages: PlaygroundUIMessage[];
   isStreaming: boolean;
 }) {
-  if (messages.length === 0) {
-    return (
-      <div className="text-muted border-border rounded-xl border border-dashed p-10 text-center text-sm">
-        Send a message to wake the worker.
-      </div>
-    );
-  }
-
   const lastIndex = messages.length - 1;
 
   return (

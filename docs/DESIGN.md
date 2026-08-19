@@ -667,10 +667,23 @@ The most important surface in the product. Target treatment:
   focus adds the 2px accent ring at 2px offset. `Label` in the `label` role.
 - Order stays GitHub-first: `GitHubButton` as `variant="secondary"` full-width, then a
   `Separator` with an `or` label, then email/password with the submit as
-  `variant="primary"` — the one accent element on the page.
+  `variant="primary"` — the one accent element on the page. **First in order is not the
+  same as first in weight.** The code shipped this inverted for a while (GitHub filled,
+  submit outlined), which left the email form looking disabled beside it; corrected.
 - `FieldError` and `AuthAlert` in `--danger`. Error text at `micro`, never truncated.
-- Do not put a marketing hero, gradient, or illustration beside the form. A sign-in page
-  for a developer product is a form on a ground.
+- ~~Do not put a marketing hero, gradient, or illustration beside the form. A sign-in page
+  for a developer product is a form on a ground.~~ **REVERSED by the owner, 2026-08-18,
+  during the redesign in `docs/UI-REDESIGN-PLAN.md` §7.** `/login` and `/signup` are now a
+  two-panel page: form left, and from `lg:` up a `--surface` panel right carrying the
+  wordmark, one value sentence and four proof figures. Below `lg:` the panel is not
+  rendered and the layout is the single centred column this rule originally described.
+
+  The original rule is left visible rather than deleted because its reasoning was not
+  wrong, only outvoted: a proof panel is a claim surface, and every figure on it has to be
+  true and has to stay true. The four in use are restatements of copy already on
+  `home-intro.tsx`, not new claims, and that constraint is the condition of the reversal.
+  **The ban on hero art, gradients and illustration stands** — the panel is text and
+  hairlines. What changed is "nothing beside the form", not "anything beside the form".
 
 ### 3.8 Empty states (`catalog-grid.tsx`, `primitives.tsx`)
 
@@ -808,7 +821,7 @@ only exists on hover is unreachable by keyboard and invisible on touch.
 | HF token | `TextField` › `Label` › `InputGroup` › `InputGroup.Input` + `InputGroup.Suffix` › reveal `ToggleButton` | Placeholder `hf_...`. Masked. **Conditional — see below.** |
 | Context window, minimum speed | `Slider` ×2 | Outputs in `font-mono tabular-nums`. Context capped at `max_position_embeddings` (FR-STU-004c). |
 | Prices | `NumberField` ×2 | step 0.01, min 0, `tabular-nums`. |
-| Visibility | `Switch` › `Switch.Control` › `Switch.Thumb`, `Switch.Content` › `Label` + `Description` | |
+| Visibility | `Switch` › **`Switch.Content` › (`Switch.Control` › `Switch.Thumb`) + `Label`**, with `Description` as a SIBLING of `Switch.Content` | `Switch.Content` is React Aria's `SwitchButton` — it renders the hidden `<input>` and owns the press target, so the track and thumb go **inside** it. Nesting them outside paints correctly (the root carries `data-selected`, so the thumb still slides) but makes the track dead to a click, which reads as a switch stuck on. `Description` inside `Switch.Content` puts a `<p>` in a `<label>`, so clicking the prose toggles the model's visibility. *(This row was wrong in the first revision of this document and shipped that way; corrected against `@heroui/styles`' own source note.)* |
 
 **Our HF token field is conditional, and theirs is not — keep ours.** Theirs is always
 visible on the HF Hub tab. Ours appears only when the repo probe reports private or gated

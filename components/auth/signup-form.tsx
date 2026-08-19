@@ -45,14 +45,16 @@ export function SignupForm({
 
   if (state.status === "check-email") {
     return (
-      <Card className="w-full">
-        <Card.Header>
-          <Card.Title>Confirm your email</Card.Title>
+      <Card className="w-full gap-6 p-8">
+        <Card.Header className="gap-1.5">
+          <Card.Title className="text-xl leading-tight font-semibold tracking-[-0.02em]">
+            Confirm your email
+          </Card.Title>
           <Card.Description>
             We sent a confirmation link to {state.email}. Open it to finish creating your account.
           </Card.Description>
         </Card.Header>
-        <Card.Content className="flex flex-col gap-4">
+        <Card.Content className="flex flex-col gap-4 p-0">
           {isLocalSupabase ? (
             <AuthAlert
               description={`Local Supabase does not send real email. The message is sitting in Inbucket at ${inbucketUrl} — open it there and click the confirmation link.`}
@@ -76,20 +78,24 @@ export function SignupForm({
   }
 
   return (
-    <Card className="w-full">
-      <Card.Header>
-        <Card.Title>Create an account</Card.Title>
+    <Card className="w-full gap-6 p-8">
+      <Card.Header className="gap-1.5">
+        <Card.Title className="text-xl leading-tight font-semibold tracking-[-0.02em]">
+          Create an account
+        </Card.Title>
         <Card.Description>
           Publish models, mint API keys and earn 80% of what your models bill.
         </Card.Description>
       </Card.Header>
 
-      <Card.Content className="flex flex-col gap-5">
+      <Card.Content className="flex flex-col gap-5 p-0">
         <GitHubButton label="Sign up with GitHub" next={next} />
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
-          <span className="text-muted text-xs uppercase tracking-wide">or with email</span>
+          <span className="text-muted font-mono text-[0.6875rem] font-medium tracking-[0.08em] uppercase">
+            or with email
+          </span>
           <Separator className="flex-1" />
         </div>
 
@@ -132,16 +138,16 @@ export function SignupForm({
             isDisabled={isPending}
             size="lg"
             type="submit"
-            variant="secondary"
+            variant="primary"
           >
             {isPending ? <Spinner size="sm" /> : null}
             {isPending ? "Creating account…" : "Create account"}
           </Button>
 
-          <Description className="text-center">
+          <Description className="border-border mt-1 border-t pt-4 text-center">
             Already have an account?{" "}
             <NextLink
-              className="text-foreground underline underline-offset-4"
+              className="text-foreground hover:text-accent underline underline-offset-4 transition-colors"
               href={`/login?next=${encodeURIComponent(next)}`}
             >
               Sign in

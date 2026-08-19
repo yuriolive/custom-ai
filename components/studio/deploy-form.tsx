@@ -28,12 +28,14 @@
 import {
   Alert,
   Button,
+  ComboBox,
   Description,
   FieldError,
   Form,
   Input,
   InputGroup,
   Label,
+  ListBox,
   NumberField,
   Slider,
   Switch,
@@ -50,6 +52,7 @@ import {
   formatExactTokens,
   formatGiB,
   formatPricePerMtoken,
+  microToDollarsPerMtoken,
   microUsdEcho,
   PRICE_FORMAT_OPTIONS,
 } from "@/lib/studio/format";
@@ -60,6 +63,7 @@ import type {
   ProbeFailure,
   ProbeResponse,
   ProbeSuccess,
+  RefsResponse,
   VariantPlacement,
 } from "@/lib/studio/types";
 import { createClient } from "@/lib/supabase/client";
@@ -92,6 +96,18 @@ export function DeployForm() {
   // ── Source ───────────────────────────────────────────────────────────────
   const [repoSlug, setRepoSlug] = useState("");
   const [revision, setRevision] = useState("main");
+  /**
+   * Branches and tags for the current repo, once listed. Empty is the normal
+   * pre-blur state AND the failure state — both fall back to a free-text field,
+   * because a repository that will not list its refs must still be deployable.
+   */
+  const [refs, setRefs] = useState<{ branches: string[]; tags: string[] } | null>(null);
+  /**
+   * True once the creator has typed into Revision themselves. After that the
+   * repository's default branch never overwrites their value — pinning a commit
+   * SHA is the whole reason this field allows a custom value.
+   */
+  const [revisionTouched, setRevisionTouched] = useState(false);
   const [hfToken, setHfToken] = useState("");
   const [revealToken, setRevealToken] = useState(false);
 
@@ -113,6 +129,8 @@ export function DeployForm() {
   // ── Distribution ─────────────────────────────────────────────────────────
   const [pricePrompt, setPricePrompt] = useState(0.5);
   const [priceCompletion, setPriceCompletion] = useState(1.5);
+  /** Set the first time a price is edited. Nothing auto-fills a price after. */
+  const [pricesTouched, setPricesTouched] = useState(false);
   const [isPublic, setPublic] = useState(true);
 
   // ── Solver output ────────────────────────────────────────────────────────
@@ -214,6 +232,57 @@ export function DeployForm() {
     [displayName],
   );
 
+  // ── Refs, then probe (docs/UI-REDESIGN-PLAN.md §7.1) ─────────────────────
+  //
+  // ORDER IS THE POINT. The Revision field used to free-text to the literal
+  // string "main", so a repository whose default branch is `master` — or
+  // anything else — was probed at a ref that does not exist, and failed
+  // quietly. So: list the refs FIRST, preselect the repository's real default
+  // branch, and only then run the weight probe against the revision that was
+  // actually chosen.
+  //
+  // Refs are an affordance and never a gate. Any failure leaves `refs` null,
+  // the field degrades to the free-text box it has always been, and the probe
+  // runs exactly as it did before.
+  const refsSeq = useRef(0);
+
+  const loadRefsThenProbe = useCallback(
+    async (slug: string, rev: string, token: string) => {
+      const trimmed = slug.trim();
+      if (trimmed.length === 0) return;
+
+      const seq = ++refsSeq.current;
+      let effectiveRevision = rev;
+
+      try {
+        const response = await fetch("/api/studio/refs", {
+          body: JSON.stringify({ repoSlug: trimmed, ...(token ? { hfToken: token } : {}) }),
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          method: "POST",
+        });
+        const body = (await response.json()) as RefsResponse;
+        if (seq !== refsSeq.current) return;
+
+        if (body.ok) {
+          setRefs({ branches: body.branches, tags: body.tags });
+          if (!revisionTouched) {
+            effectiveRevision = body.defaultBranch;
+            setRevision(body.defaultBranch);
+          }
+        } else {
+          setRefs(null);
+        }
+      } catch {
+        if (seq !== refsSeq.current) return;
+        setRefs(null);
+      }
+
+      await runProbe(trimmed, effectiveRevision, token);
+    },
+    [revisionTouched, runProbe],
+  );
+
   // ── Solve (FR-STU-004b: live, on every input change) ─────────────────────
   //
   // Debounced, because a Slider fires continuously while dragged and each
@@ -302,6 +371,25 @@ export function DeployForm() {
   // deliberately, and blocking would be the platform overruling a business
   // decision that is theirs.
   const belowFloor = costFloor !== null && (promptMicro < costFloor || completionMicro < costFloor);
+
+  /**
+   * A private model's default price is the COST FLOOR, not 0.5/1.5 (§7.1).
+   *
+   * Private does not mean unbilled: `resolve.ts` 404s a non-owner and lets the
+   * owner straight through, after which authorize/deduct run exactly as they do
+   * for a public model. So a private price is what the creator's own calls cost
+   * the creator, and with no market to reason about, the only defensible
+   * default is break-even.
+   *
+   * Guarded by `pricesTouched`: a number the creator typed is never overwritten,
+   * which is also why this cannot be written as a plain derived value.
+   */
+  useEffect(() => {
+    if (isPublic || pricesTouched || costFloor === null) return;
+    const floorDollars = microToDollarsPerMtoken(costFloor);
+    setPricePrompt(floorDollars);
+    setPriceCompletion(floorDollars);
+  }, [costFloor, isPublic, pricesTouched]);
 
   // ── Submit gate ──────────────────────────────────────────────────────────
   // Submit is blocked ONLY when no variant is feasible (FR-STU-004d).
@@ -406,7 +494,7 @@ export function DeployForm() {
   if (phase !== "editing") {
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
-        <div className="border-default bg-surface flex flex-col gap-5 rounded-lg border p-5">
+        <div className="border-border bg-surface flex flex-col gap-5 rounded-lg border p-5">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold tracking-tight">
               {deployStatus === "ready" ? `${displayName} is live` : `Deploying ${displayName}`}
@@ -484,7 +572,7 @@ export function DeployForm() {
             <TextField
               className="sm:col-span-2"
               isRequired
-              onBlur={() => void runProbe(repoSlug, revision, hfToken)}
+              onBlur={() => void loadRefsThenProbe(repoSlug, revision, hfToken)}
               onChange={setRepoSlug}
               value={repoSlug}
             >
@@ -504,11 +592,14 @@ export function DeployForm() {
               <FieldError />
             </TextField>
 
-            <TextField onChange={setRevision} value={revision}>
-              <Label>Revision</Label>
-              <Input className="font-mono" placeholder="main" />
-              <Description>Branch, tag or commit.</Description>
-            </TextField>
+            <RevisionField
+              onChange={(next) => {
+                setRevision(next);
+                setRevisionTouched(true);
+              }}
+              refs={refs}
+              value={revision}
+            />
           </div>
 
           {/* FR-STU-002: an inline Alert, never a Toast. A Toast for a form
@@ -731,6 +822,21 @@ export function DeployForm() {
 
         {/* ── Pricing (FR-STU-005) ───────────────────────────────────────── */}
         <section className="flex flex-col gap-5">
+          {/* THE PRICE IS REQUIRED IN BOTH STATES and the framing is what
+              changes, not the requirement (§7.1). A private model is unlisted
+              and access-controlled, never free — the gateway meters and bills it
+              identically. What differs is who pays: for a private model that is
+              the creator, so the copy stops describing a market and starts
+              describing their own bill. */}
+          <div className="flex flex-col gap-1">
+            <h2 className="text-base font-semibold tracking-tight">Pricing</h2>
+            <p className="text-muted text-sm">
+              {isPublic
+                ? "What a caller pays per 1M tokens. The platform keeps its fee, and the cost floor is what the hardware costs us to run."
+                : "Private models are still metered and still billed. This is what your own calls cost you — the platform keeps its fee, and the cost floor is what the hardware costs us. These default to break-even until you change them."}
+            </p>
+          </div>
+
           <div className="grid gap-5 sm:grid-cols-2">
             {/* `formatOptions` is load-bearing, not cosmetic — see
                 PRICE_FORMAT_OPTIONS. The echo below it states the exact integer
@@ -739,7 +845,10 @@ export function DeployForm() {
             <NumberField
               formatOptions={PRICE_FORMAT_OPTIONS}
               minValue={0}
-              onChange={setPricePrompt}
+              onChange={(next) => {
+                setPricePrompt(next);
+                setPricesTouched(true);
+              }}
               step={0.01}
               value={pricePrompt}
             >
@@ -756,7 +865,10 @@ export function DeployForm() {
             <NumberField
               formatOptions={PRICE_FORMAT_OPTIONS}
               minValue={0}
-              onChange={setPriceCompletion}
+              onChange={(next) => {
+                setPriceCompletion(next);
+                setPricesTouched(true);
+              }}
               step={0.01}
               value={priceCompletion}
             >
@@ -785,17 +897,30 @@ export function DeployForm() {
             </Alert>
           ) : null}
 
+          {/* COMPOSITION IS LOAD-BEARING, and the obvious reading of it is wrong.
+              `Switch.Content` is not a content slot — it is React Aria's
+              `SwitchButton`, the element that renders the hidden <input> and owns
+              every press target. The track and thumb must live INSIDE it, or the
+              toggle paints correctly (the root carries `data-selected`, so the
+              thumb still slides) while only the label text responds to a click.
+              That is the exact failure this had: a switch that looked stuck.
+
+              `Description` stays a SIBLING of `Switch.Content`, per the note in
+              `@heroui/styles`' own source. Inside, it is a <p> nested in a
+              <label>, so clicking three lines of explanatory prose silently flips
+              the model's visibility. */}
           <Switch isSelected={isPublic} onChange={setPublic}>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
             <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
               <Label>Public</Label>
-              <Description>
-                Listed in the marketplace catalog and callable by any developer with a funded
-                wallet. Private models are callable only with your own API keys.
-              </Description>
             </Switch.Content>
+            <Description>
+              Listed in the marketplace catalog and callable by any developer with a funded wallet.
+              Private models are callable only with your own API keys — they are still metered and
+              still billed at the prices below.
+            </Description>
           </Switch>
         </section>
 
@@ -805,5 +930,76 @@ export function DeployForm() {
         </button>
       </Form>
     </SummaryLayout>
+  );
+}
+
+/**
+ * The Revision field — a ComboBox with `allowsCustomValue`, never a Select.
+ *
+ * Branches and tags are enumerable; a COMMIT SHA IS NOT, and pinning one is the
+ * whole point of a revision field for anyone who cares about reproducibility. A
+ * closed `Select` would remove that capability, so the field stays a text input
+ * that happens to know the answers (docs/UI-REDESIGN-PLAN.md §7.1).
+ *
+ * With no refs listed — not fetched yet, rate-limited, private without a token,
+ * or a repo that simply has none — this is the plain `TextField` it has always
+ * been. The dropdown is an addition, not a dependency.
+ */
+function RevisionField({
+  onChange,
+  refs,
+  value,
+}: Readonly<{
+  onChange: (value: string) => void;
+  refs: { branches: string[]; tags: string[] } | null;
+  value: string;
+}>) {
+  const options = useMemo(() => {
+    if (!refs) return [];
+    return [
+      ...refs.branches.map((name) => ({ kind: "branch" as const, name })),
+      ...refs.tags.map((name) => ({ kind: "tag" as const, name })),
+    ];
+  }, [refs]);
+
+  if (options.length === 0) {
+    return (
+      <TextField onChange={onChange} value={value}>
+        <Label>Revision</Label>
+        <Input className="font-mono" placeholder="main" />
+        <Description>Branch, tag or commit.</Description>
+      </TextField>
+    );
+  }
+
+  return (
+    <ComboBox allowsCustomValue inputValue={value} menuTrigger="focus" onInputChange={onChange}>
+      <Label>Revision</Label>
+      <ComboBox.InputGroup>
+        <Input className="font-mono" placeholder="main" />
+        <ComboBox.Trigger />
+      </ComboBox.InputGroup>
+      <ComboBox.Popover>
+        <ListBox
+          renderEmptyState={() => (
+            <p className="text-muted p-2 text-xs">
+              No branch or tag matches. It will be used as-is — a commit SHA is valid here.
+            </p>
+          )}
+        >
+          {options.map((option) => (
+            <ListBox.Item
+              id={option.name}
+              key={`${option.kind}:${option.name}`}
+              textValue={option.name}
+            >
+              <span className="font-mono">{option.name}</span>
+              {option.kind === "tag" ? <span className="text-muted ml-2 text-xs">tag</span> : null}
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </ComboBox.Popover>
+      <Description>Branch, tag or commit SHA. A SHA can be typed in full.</Description>
+    </ComboBox>
   );
 }

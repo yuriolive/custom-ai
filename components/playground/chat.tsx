@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { Alert, Button, Card, Label, Slider, TextArea } from "@heroui/react";
+import { Alert, Button, Card, EmptyState, Label, Slider, TextArea } from "@heroui/react";
 import { DefaultChatTransport } from "ai";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
@@ -13,6 +13,55 @@ import type { PlaygroundUIMessage } from "@/lib/types";
 const MAX_COMPOSER_ROWS = 8;
 const LINE_HEIGHT_PX = 24;
 const COMPOSER_PADDING_PX = 18;
+
+/**
+ * Seed prompts fill the composer; they never send. The first request of a
+ * session takes about a minute and a half, and spending that on a misclick is
+ * hostile — the caller reads what was written and presses Send themselves.
+ */
+const SEED_PROMPTS = [
+  "Explain the difference between temperature and top-p, with one example of when each matters.",
+  "Write a Python function that retries an HTTP request with exponential backoff and jitter.",
+  "Rewrite this release note so a non-engineer understands it: fixed a race in the upload queue.",
+] as const;
+
+function TranscriptEmptyState({ onSeed }: { onSeed: (prompt: string) => void }) {
+  return (
+    <EmptyState className="py-12">
+      <Card className="mx-auto max-w-lg">
+        <Card.Header className="text-center">
+          <Card.Title>Send a prompt, read the reply as it streams</Card.Title>
+          <Card.Description>
+            This is a scratchpad for the model: type a message, tune the parameters beside it, and
+            the reply arrives token by token with its own token count and timing. The first request
+            of a session takes about {publicEnv.coldStartEstimateSeconds}s while the worker starts.
+          </Card.Description>
+        </Card.Header>
+
+        <Card.Content className="flex flex-col gap-2">
+          <p className="text-muted text-xs font-medium uppercase tracking-wide">Start with one</p>
+          {SEED_PROMPTS.map((prompt) => (
+            <Button
+              key={prompt}
+              className="h-auto w-full justify-start whitespace-normal py-2 text-left text-sm"
+              size="sm"
+              variant="secondary"
+              onPress={() => onSeed(prompt)}
+            >
+              {prompt}
+            </Button>
+          ))}
+        </Card.Content>
+
+        <Card.Footer>
+          <span className="text-muted text-xs leading-5">
+            Pressing one fills the composer. Nothing is sent until you press Send.
+          </span>
+        </Card.Footer>
+      </Card>
+    </EmptyState>
+  );
+}
 
 export function Chat({ model }: { model: string }) {
   const [input, setInput] = useState("");
@@ -46,6 +95,16 @@ export function Chat({ model }: { model: string }) {
     el.style.height = `${Math.min(el.scrollHeight, max)}px`;
     el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
   }, [input]);
+
+  // A seed prompt writes into the composer and hands the caret over. It never
+  // sends: a ~100s first request triggered by a misclick is hostile.
+  const seedComposer = useCallback((prompt: string) => {
+    setInput(prompt);
+    const el = composerRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(prompt.length, prompt.length);
+  }, []);
 
   const submit = useCallback(() => {
     const text = input.trim();
@@ -82,7 +141,11 @@ export function Chat({ model }: { model: string }) {
           </Alert>
         ) : null}
 
-        <MessageList isStreaming={isStreaming} messages={messages} />
+        {messages.length === 0 ? (
+          <TranscriptEmptyState onSeed={seedComposer} />
+        ) : (
+          <MessageList isStreaming={isStreaming} messages={messages} />
+        )}
 
         <form
           className="flex items-end gap-2"
@@ -152,7 +215,7 @@ export function Chat({ model }: { model: string }) {
               onChange={(value) => setTemperature(value as number)}
             >
               <Label>Temperature</Label>
-              <Slider.Output />
+              <Slider.Output className="font-mono text-xs tabular-nums" />
               <Slider.Track>
                 <Slider.Fill />
                 <Slider.Thumb />
@@ -168,7 +231,7 @@ export function Chat({ model }: { model: string }) {
               onChange={(value) => setMaxTokens(value as number)}
             >
               <Label>Max tokens</Label>
-              <Slider.Output />
+              <Slider.Output className="font-mono text-xs tabular-nums" />
               <Slider.Track>
                 <Slider.Fill />
                 <Slider.Thumb />
@@ -189,12 +252,18 @@ export function Chat({ model }: { model: string }) {
               />
             </div>
           </Card.Content>
-        </Card>
 
-        <p className="text-muted text-xs leading-5">
-          Cold start is roughly {publicEnv.coldStartEstimateSeconds}s on the first request.
-          Subsequent requests hit a warm worker.
-        </p>
+          {/* The cold-start cost belongs to the parameters it qualifies, not to
+              the page margin. It stays stated plainly: the first token really
+              can take this long, and that is the tradeoff being made. */}
+          <Card.Footer>
+            <p className="text-muted text-xs leading-5">
+              Cold start is roughly{" "}
+              <span className="tabular-nums">{publicEnv.coldStartEstimateSeconds}s</span> on the
+              first request. Subsequent requests hit a warm worker.
+            </p>
+          </Card.Footer>
+        </Card>
       </aside>
     </div>
   );

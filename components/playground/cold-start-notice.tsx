@@ -31,7 +31,7 @@ export function ColdStartNotice({ startedAt }: { startedAt: number }) {
     <Alert status="warning">
       <Alert.Indicator />
       <Alert.Content className="w-full">
-        <Alert.Title>Waking the GPU worker</Alert.Title>
+        <Alert.Title>Waking the worker</Alert.Title>
         <Alert.Description>
           <span className="block">
             This model scales to zero when idle, so the first request of a session has to start a
@@ -49,7 +49,7 @@ export function ColdStartNotice({ startedAt }: { startedAt: number }) {
         {/* Sibling of Description, not a child: Alert.Description renders a
             <p>, and a ProgressBar is a <div>. */}
         <ProgressBar
-          aria-label="Waking the GPU worker"
+          aria-label="Waking the worker"
           className="mt-3 w-full"
           color="warning"
           isIndeterminate
