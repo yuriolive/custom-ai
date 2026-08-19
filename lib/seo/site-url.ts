@@ -3,22 +3,26 @@
  * `metadataBase`, `sitemap.xml`, `robots.txt`, canonical URLs, OG image URLs and
  * JSON-LD `@id`s.
  *
- * WHY THIS IS DERIVED AND NOT AN ENV VAR. `docs/CONTRACTS.md §Environment` is a
- * frozen list and does not contain a site-URL variable. Adding one is a contract
- * change, and it is not needed: the platform deploys on Vercel (`vercel.json`),
- * which injects the origin already. So this reads Vercel's own variables rather
- * than introducing a `NEXT_PUBLIC_SITE_URL` the contract has not agreed to. If a
- * non-Vercel deployment target ever appears, THAT is the moment to amend the
- * contract — not now, silently.
+ * THE PRECEDENCE MATCHES `lib/billing/server-env.ts`'s `siteUrl`, DELIBERATELY.
+ * That getter builds Stripe Checkout's success and cancel URLs from the same
+ * notion of "where this site lives", and two answers to that question is a real
+ * bug, not a stylistic one: on a custom domain, Stripe would return a paying
+ * developer to `example.com` while every canonical tag pointed at
+ * `project.vercel.app`, splitting the site in two for both the user and the
+ * crawler. The two implementations are kept separate only because the billing
+ * one sits on a money path and is not worth churning for a metadata change;
+ * they must not be allowed to drift.
  *
- * The precedence is deliberate:
- *
+ *   SITE_URL — declared in `.env.example` under "server-only, non-secret",
+ *     already read by the billing helper. Set it for a custom domain. Note it
+ *     is NOT in the `docs/CONTRACTS.md §Environment` list, which predates it;
+ *     that list and `.env.example` disagree here and the contract is the one
+ *     that should be amended.
  *   VERCEL_PROJECT_PRODUCTION_URL — the stable production domain, identical on
- *     every deployment of the project. This is the only value a canonical URL
- *     may be built from.
+ *     every deployment of the project. Safe for a canonical URL.
  *   VERCEL_URL — the per-deployment hostname, different for every preview build.
  *     Correct for a preview to link to itself; catastrophic as a canonical,
- *     which is why it never wins over the line above.
+ *     which is why it never wins over the two lines above.
  *   http://localhost:3000 — dev.
  *
  * SERVER-ONLY IN PRACTICE. Neither Vercel variable is `NEXT_PUBLIC_`-prefixed,
@@ -44,7 +48,10 @@ function withScheme(host: string): string {
 /** The absolute origin, with no trailing slash. */
 export function siteOrigin(): string {
   const host =
-    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim() || "";
+    process.env.SITE_URL?.trim() ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
+    process.env.VERCEL_URL?.trim() ||
+    "";
 
   const origin = host ? withScheme(host) : DEV_ORIGIN;
   return origin.replace(/\/+$/, "");
