@@ -21,6 +21,7 @@ type FooterLink = Readonly<{ href: Route; label: string }>;
 
 const PRODUCT: readonly FooterLink[] = [
   { href: "/models", label: "Model catalog" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/playground", label: "Playground" },
   { href: "/studio/new", label: "Deploy a model" },
 ] as const;

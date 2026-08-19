@@ -26,5 +26,6 @@ export type MarketingLink = Readonly<{ href: Route; label: string }>;
 
 export const MARKETING_LINKS: readonly MarketingLink[] = [
   { href: "/models", label: "Models" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/playground", label: "Playground" },
 ] as const;
