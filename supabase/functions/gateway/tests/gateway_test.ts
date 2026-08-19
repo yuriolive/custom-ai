@@ -730,7 +730,12 @@ test("the non-streaming assembler rebuilds tool_calls from split fragments", asy
     chunkLine([{
       index: 0,
       delta: {
-        tool_calls: [{ index: 0, id: "call_a", type: "function", function: { name: "get_weather", arguments: "" } }],
+        tool_calls: [{
+          index: 0,
+          id: "call_a",
+          type: "function",
+          function: { name: "get_weather", arguments: "" },
+        }],
       },
       finish_reason: null,
     }]),
@@ -742,7 +747,12 @@ test("the non-streaming assembler rebuilds tool_calls from split fragments", asy
     chunkLine([{
       index: 0,
       delta: {
-        tool_calls: [{ index: 1, id: "call_b", type: "function", function: { name: "get_time", arguments: "" } }],
+        tool_calls: [{
+          index: 1,
+          id: "call_b",
+          type: "function",
+          function: { name: "get_time", arguments: "" },
+        }],
       },
       finish_reason: null,
     }]),
@@ -768,7 +778,9 @@ test("the non-streaming assembler rebuilds tool_calls from split fragments", asy
       finish_reason: string;
       message: {
         content: string | null;
-        tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+        tool_calls?: Array<
+          { id: string; type: string; function: { name: string; arguments: string } }
+        >;
       };
     }>;
   };
@@ -817,22 +829,44 @@ test("fragments with no index append to the open call, not to a new one", async 
   const sse = sseResponse([
     chunkLine([{
       index: 0,
-      delta: { tool_calls: [{ id: "call_a", type: "function", function: { name: "f", arguments: "" } }] },
+      delta: {
+        tool_calls: [{
+          id: "call_a",
+          type: "function",
+          function: { name: "f", arguments: "" },
+        }],
+      },
       finish_reason: null,
     }]),
-    chunkLine([{ index: 0, delta: { tool_calls: [{ function: { arguments: '{"a"' } }] }, finish_reason: null }]),
-    chunkLine([{ index: 0, delta: { tool_calls: [{ function: { arguments: ":1}" } }] }, finish_reason: null }]),
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ function: { arguments: '{"a"' } }] },
+      finish_reason: null,
+    }]),
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ function: { arguments: ":1}" } }] },
+      finish_reason: null,
+    }]),
     // A different id, still with no index: that IS a second call.
     chunkLine([{
       index: 0,
-      delta: { tool_calls: [{ id: "call_b", type: "function", function: { name: "g", arguments: "{}" } }] },
+      delta: {
+        tool_calls: [{
+          id: "call_b",
+          type: "function",
+          function: { name: "g", arguments: "{}" },
+        }],
+      },
       finish_reason: "tool_calls",
     }]),
   ]);
   const res = await assembleNonStreaming(sse, "req-4", "owner/model", { value: null });
   const body = await res.json() as {
     choices: Array<{
-      message: { tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> };
+      message: {
+        tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+      };
     }>;
   };
   const calls = body.choices[0].message.tool_calls ?? [];
@@ -850,7 +884,9 @@ test("a text-only response keeps content as a string and never grows tool_calls"
   ]);
   const res = await assembleNonStreaming(sse, "req-3", "owner/model", { value: null });
   const body = await res.json() as {
-    choices: Array<{ finish_reason: string; message: { content: unknown; tool_calls?: unknown } }>;
+    choices: Array<
+      { finish_reason: string; message: { content: unknown; tool_calls?: unknown } }
+    >;
   };
   assert.equal(body.choices[0].message.content, "Hi there");
   assert.equal(body.choices[0].message.tool_calls, undefined);

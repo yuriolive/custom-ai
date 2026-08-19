@@ -185,12 +185,19 @@ test("a tool-only stream never estimates zero completion tokens", () => {
   acc.ingest(JSON.stringify({
     choices: [{
       delta: {
-        tool_calls: [{ index: 0, id: "c", type: "function", function: { name: "get_weather", arguments: "" } }],
+        tool_calls: [{
+          index: 0,
+          id: "c",
+          type: "function",
+          function: { name: "get_weather", arguments: "" },
+        }],
       },
     }],
   }));
   acc.ingest(JSON.stringify({
-    choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"location":"Lisbon"}' } }] } }],
+    choices: [{
+      delta: { tool_calls: [{ index: 0, function: { arguments: '{"location":"Lisbon"}' } }] },
+    }],
   }));
   acc.ingest(JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] }));
 
