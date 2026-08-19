@@ -44,7 +44,7 @@ export type UpstreamConfig = {
  */
 function stripTrailingSlashes(value: string): string {
   let end = value.length;
-  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  while (end > 0 && value.codePointAt(end - 1) === 47) end -= 1;
   return value.slice(0, end);
 }
 
@@ -126,6 +126,22 @@ export type SmokeResult =
 /** FR-DEP-052 requires the measurement to span at least 64 generated tokens. */
 const SMOKE_MIN_TOKENS = 64;
 const SMOKE_MAX_TOKENS = 96;
+
+/**
+ * What actually went wrong, in the upstream's own words where there are any.
+ *
+ * A timeout and a refused connection have different remedies, and the abort
+ * case has to be distinguished FIRST: an AbortError's own message is
+ * "This operation was aborted", which tells the creator nothing about the
+ * cold-start budget that actually elapsed.
+ */
+function smokeFailureMessage(aborted: boolean, cause: unknown, timeoutMs: number): string {
+  if (aborted) {
+    return `The worker produced no complete response within ${Math.round(timeoutMs / 1000)}s.`;
+  }
+  if (cause instanceof Error) return cause.message;
+  return "The smoke test could not reach the worker.";
+}
 
 function upstreamUrl(config: UpstreamConfig, ref: string): string {
   if (config.provider === "modal") {
@@ -263,11 +279,7 @@ export async function smokeTest(
     const aborted = cause instanceof Error && cause.name === "AbortError";
     return {
       ok: false,
-      message: aborted
-        ? `The worker produced no complete response within ${Math.round(opts.timeoutMs / 1000)}s.`
-        : cause instanceof Error
-          ? cause.message
-          : "The smoke test could not reach the worker.",
+      message: smokeFailureMessage(aborted, cause, opts.timeoutMs),
       hint: aborted
         ? "This is usually a cold start that exceeded the model's budget, or a pool that is not serving. " +
           "Check that the upstream worker is deployed and that UPSTREAM_BASE_URL points at it."

@@ -17,6 +17,23 @@ import "server-only";
 
 const CARD_MAX_CHARS = 600;
 
+/**
+ * Hard cap on the text handed to `stripInline`.
+ *
+ * Its markdown patterns are super-linear: `\[([^\]]*)\]\([^)]*\)` and
+ * `<[^>]*>` both rescan from every candidate start position, so a paragraph of
+ * `[[[[[[[…` costs O(n^2). Rewriting them to be provably linear means writing a
+ * markdown tokenizer, which is far more machinery than a form hint deserves.
+ *
+ * Bounding the input kills the concern arithmetically instead: the result is
+ * truncated to CARD_MAX_CHARS anyway, so anything past this prefix could never
+ * have been shown. At 4,000 characters the pathological case is ~16M character
+ * comparisons — microseconds — and the README behind it is fetched from a
+ * repository the creator names, which is exactly the input that must not be
+ * able to occupy a route worker.
+ */
+const STRIP_INPUT_MAX_CHARS = 4_000;
+
 /** Fenced blocks, badges, images, tables and HTML: never a description. */
 function isProse(line: string): boolean {
   const t = line.trim();
@@ -29,7 +46,8 @@ function isProse(line: string): boolean {
 }
 
 /** Inline markdown -> plain text. Links keep their label, not their URL. */
-function stripInline(text: string): string {
+function stripInline(rawText: string): string {
+  const text = rawText.slice(0, STRIP_INPUT_MAX_CHARS);
   return text
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")

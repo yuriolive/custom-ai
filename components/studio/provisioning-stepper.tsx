@@ -75,6 +75,24 @@ function stageIndex(status: ModelStatus | null): number {
   return index === -1 ? 0 : index;
 }
 
+/**
+ * Which stage the stepper is pointing at.
+ *
+ * On failure that is the stage that BROKE: the server's own report when it sent
+ * one, and otherwise the last stage Realtime was seen in — a fallback, because
+ * two status writes milliseconds apart can leave the client having rendered
+ * only the first.
+ */
+function currentStageIndex(
+  failed: boolean,
+  reportedStage: number,
+  lastActiveStage: number,
+  status: ModelStatus | null,
+): number {
+  if (!failed) return stageIndex(status);
+  return reportedStage >= 0 ? reportedStage : lastActiveStage;
+}
+
 export function ProvisioningStepper({
   error,
   failedStage,
@@ -148,11 +166,7 @@ export function ProvisioningStepper({
   const reportedStage = failedStage ? STAGES.findIndex((s) => s.key === failedStage) : -1;
   // On failure, `current` is the stage that broke; everything before it did
   // complete and is shown as such.
-  const current = failed
-    ? reportedStage >= 0
-      ? reportedStage
-      : lastActiveStage
-    : stageIndex(status);
+  const current = currentStageIndex(failed, reportedStage, lastActiveStage, status);
   const done = status === "ready";
 
   return (

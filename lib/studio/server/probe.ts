@@ -118,6 +118,19 @@ function recommend(variants: StudioVariant[]): string | null {
 }
 
 /**
+ * Family ordering: the base family (null) first, then the rest alphabetically.
+ *
+ * Base leads because it is the family whose architecture was actually read
+ * (see `resolveArchitecture` in the probe), so it is the only one whose
+ * geometry is known to match the variants offered under it.
+ */
+function compareFamilies(a: string | null, b: string | null): number {
+  if (a === null) return -1;
+  if (b === null) return 1;
+  return a.localeCompare(b);
+}
+
+/**
  * Per-sequence SSM state, from `public.calc_ssm_state_bytes()`.
  *
  * The formula is NOT restated here. It lives in migration 20260817001700
@@ -267,7 +280,7 @@ export async function probeForStudio(
 
   // Base family first — it is the one whose geometry was read.
   const families = [...new Set(variants.filter((v) => v.deployable).map((v) => v.family))].toSorted(
-    (a, b) => (a === null ? -1 : b === null ? 1 : a.localeCompare(b)),
+    compareFamilies,
   );
 
   return {
