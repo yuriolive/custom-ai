@@ -343,3 +343,79 @@ export async function fetchModelByHandleAndSlug(
   if (error || !data) return null;
   return toCatalogModel(data as unknown as CatalogRow);
 }
+
+/**
+ * Hard ceiling on the number of model URLs `app/sitemap.ts` will emit.
+ *
+ * The sitemap format caps a single file at 50,000 URLs / 50 MB uncompressed. At
+ * today's catalog size that is not close, so no sitemap-index machinery exists
+ * here. If the catalog ever approaches this number the honest fix is a real
+ * index — `generateSitemaps()` sharding the models into 50k chunks — not a
+ * bigger limit: past 50,000 the file is rejected wholesale, not truncated, and
+ * the platform would silently lose every model URL at once. Rows come back
+ * newest-updated-first so that if this ceiling is ever hit, what survives is the
+ * half a crawler most wants.
+ */
+export const SITEMAP_MODEL_LIMIT = 20_000;
+
+/** One row of the sitemap projection. */
+export type SitemapModel = {
+  creatorHandle: string;
+  slug: string;
+  /** `custom_models.updated_at`, ISO-8601, maintained by a trigger. */
+  updatedAt: string;
+};
+
+/**
+ * Every publicly listable model, as `{creator handle, slug, updated_at}`.
+ *
+ * The `visibility`/`status`/`deleted_at` predicates carry more weight here than
+ * anywhere else in this file. Leaning on `custom_models_select_public` alone
+ * would make this function's output depend on WHICH CLIENT the caller passed:
+ * Postgres ORs the second select policy, `custom_models_select_own`, in for an
+ * authenticated owner, so a cookie-bound client would publish that creator's
+ * drafts and failed deployments — private model ids, in a file whose entire
+ * purpose is to be fetched by strangers. `app/sitemap.ts` passes a session-free
+ * client as well, so this is belt and braces on the one query whose result is
+ * served verbatim to the public; neither layer is load-bearing alone.
+ *
+ * A narrow projection, not `CATALOG_COLUMNS`: a sitemap needs the addressable
+ * identity and a timestamp, and nothing else should be shipped 20,000 times.
+ *
+ * Returns `[]` rather than throwing — see the failure-mode note in `sitemap.ts`.
+ */
+export async function fetchSitemapModels(
+  supabase: SupabaseClient,
+  limit: number = SITEMAP_MODEL_LIMIT,
+): Promise<SitemapModel[]> {
+  const { data, error } = await supabase
+    .from("custom_models")
+    .select("slug, updated_at, creator_public!inner(handle)")
+    .eq("visibility", "public")
+    .eq("status", "ready")
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !data) {
+    console.error("sitemap model query failed", { message: error?.message });
+    return [];
+  }
+
+  const rows = data as unknown as {
+    slug: string;
+    updated_at: string;
+    creator_public: { handle: string } | { handle: string }[] | null;
+  }[];
+
+  const models: SitemapModel[] = [];
+  for (const row of rows) {
+    const handle = firstEmbedded(row.creator_public)?.handle;
+    // No handle means no addressable `creator/slug` id — the same reason the
+    // catalog drops the row rather than linking to a URL that would 404.
+    if (!handle) continue;
+    models.push({ creatorHandle: handle, slug: row.slug, updatedAt: row.updated_at });
+  }
+
+  return models;
+}
