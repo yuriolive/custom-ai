@@ -21,8 +21,8 @@ export function StudioNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Studio sections" className="border-default -mx-1 border-b">
-      <ul className="flex gap-1 overflow-x-auto px-1">
+    <nav aria-label="Studio sections" className="border-border -mx-1 border-b">
+      <ul className="flex gap-1 overflow-x-auto overflow-y-hidden px-1">
         {ITEMS.map((item) => {
           const active =
             item.href === "/studio" ? pathname === "/studio" : pathname.startsWith(item.href);
