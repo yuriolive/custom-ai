@@ -35,7 +35,7 @@ import { fetchMyModels } from "@/lib/studio/queries";
 import type { MyModelRow } from "@/lib/studio/types";
 import { createClient } from "@/lib/supabase/client";
 
-import { DeleteModelDialog, EditPricingDialog } from "./model-dialogs";
+import { DeleteModelDialog, EditPricingDialog, UseModelDialog } from "./model-dialogs";
 import { ModelStatusChip, StudioHeader } from "./primitives";
 
 type Pending = "pricing" | "visibility" | "delete" | "reload" | null;
@@ -45,9 +45,15 @@ function message(error: unknown): string {
 }
 
 export function MyModelsTable({
+  baseUrl,
+  creatorHandle,
   initialModels,
   userId,
 }: Readonly<{
+  /** Gateway root including the trailing `/v1`. Passed to the snippets. */
+  baseUrl: string;
+  /** The platform half of the model id. Null when the profile has no handle. */
+  creatorHandle: string | null;
   initialModels: MyModelRow[];
   userId: string;
 }>) {
@@ -61,6 +67,7 @@ export function MyModelsTable({
 
   const [pricingTarget, setPricingTarget] = useState<MyModelRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MyModelRow | null>(null);
+  const [useTarget, setUseTarget] = useState<MyModelRow | null>(null);
 
   const reload = useCallback(async () => {
     setPageError(null);
@@ -174,7 +181,7 @@ export function MyModelsTable({
             Deploy a model
           </Button>
         }
-        description="Models you have published. Pricing and visibility take effect immediately; requests already in flight bill at the price they started with."
+        description="Prices are per 1M tokens and take effect immediately."
         title="My models"
       />
 
@@ -209,6 +216,7 @@ export function MyModelsTable({
                 <Table.Column>Status</Table.Column>
                 <Table.Column className="hidden text-end sm:table-cell">Speed</Table.Column>
                 <Table.Column className="hidden text-end md:table-cell">Context</Table.Column>
+                <Table.Column className="hidden text-end md:table-cell">Price / 1M</Table.Column>
                 <Table.Column className="hidden text-end lg:table-cell">Requests</Table.Column>
                 <Table.Column className="hidden text-end lg:table-cell">Tokens 30d</Table.Column>
                 <Table.Column className="text-end">Earned 30d</Table.Column>
@@ -228,8 +236,8 @@ export function MyModelsTable({
                         </span>
                         {/* FR-STU-008: a failed model carries its remediation
                             hint on the row, not behind a click. */}
-                        {model.remediationHint ? (
-                          <span className="text-muted max-w-md text-xs">
+                        {model.remediationHint && model.status !== "ready" ? (
+                          <span className="text-muted line-clamp-2 max-w-md text-xs">
                             {model.remediationHint}
                           </span>
                         ) : null}
@@ -248,6 +256,9 @@ export function MyModelsTable({
                     <Table.Cell className="hidden text-end tabular-nums md:table-cell">
                       {formatContext(model.contextLength)}
                     </Table.Cell>
+                    <Table.Cell className="hidden text-end tabular-nums md:table-cell">
+                      {formatPricePerMtoken(model.priceCompletionMicro)}
+                    </Table.Cell>
                     <Table.Cell className="hidden text-end tabular-nums lg:table-cell">
                       {formatTokens(model.totalRequests)}
                     </Table.Cell>
@@ -258,19 +269,24 @@ export function MyModelsTable({
                       {formatMicroUsd(model.earnings30dMicro)}
                     </Table.Cell>
                     <Table.Cell>
-                      <RowActions
-                        isBusy={pending !== null}
-                        model={model}
-                        onDelete={() => {
-                          setDialogError(null);
-                          setDeleteTarget(model);
-                        }}
-                        onEditPricing={() => {
-                          setDialogError(null);
-                          setPricingTarget(model);
-                        }}
-                        onToggleVisibility={() => void toggleVisibility(model)}
-                      />
+                      <div className="flex items-center justify-end gap-1">
+                        <Button onPress={() => setUseTarget(model)} size="sm" variant="secondary">
+                          Use
+                        </Button>
+                        <RowActions
+                          isBusy={pending !== null}
+                          model={model}
+                          onDelete={() => {
+                            setDialogError(null);
+                            setDeleteTarget(model);
+                          }}
+                          onEditPricing={() => {
+                            setDialogError(null);
+                            setPricingTarget(model);
+                          }}
+                          onToggleVisibility={() => void toggleVisibility(model)}
+                        />
+                      </div>
                     </Table.Cell>
                   </Table.Row>
                 ))}
@@ -280,22 +296,19 @@ export function MyModelsTable({
         </Table>
       )}
 
-      <p className="text-muted text-xs">
-        Prices are per 1,000,000 tokens.{" "}
-        {models.length > 0
-          ? `Currently ${models
-              .filter((m) => m.status === "ready")
-              .map((m) => `${m.slug} at ${formatPricePerMtoken(m.priceCompletionMicro)}`)
-              .join(", ")}.`
-          : ""}
-      </p>
-
       <EditPricingDialog
         error={dialogError}
         isPending={pending === "pricing"}
         onClose={() => setPricingTarget(null)}
         onSubmit={(p, c) => void savePricing(p, c)}
         target={pricingTarget}
+      />
+
+      <UseModelDialog
+        baseUrl={baseUrl}
+        modelId={creatorHandle && useTarget ? `${creatorHandle}/${useTarget.slug}` : null}
+        onClose={() => setUseTarget(null)}
+        target={useTarget}
       />
 
       <DeleteModelDialog

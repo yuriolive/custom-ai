@@ -21,7 +21,10 @@ import {
   NumberField,
   TextField,
 } from "@heroui/react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+
+import { SnippetTabs } from "@/components/marketplace/snippet-tabs";
 
 import {
   formatPricePerMtoken,
@@ -261,5 +264,94 @@ export function DeleteModelDialog({
         </AlertDialog.Container>
       </AlertDialog.Backdrop>
     </AlertDialog>
+  );
+}
+
+// ─── Use this model (FR-MKT-008, reused for the creator's own models) ────────
+
+/**
+ * How a creator actually calls their own model.
+ *
+ * The same `SnippetTabs` the public model card uses, so there is exactly one
+ * implementation of the three strings that decide whether a first call runs:
+ * the platform model id (`handle/slug`, never the HF repo path), the gateway
+ * base URL derived from this deployment, and the cold-start timeout.
+ *
+ * The key link is in the dialog rather than the snippet: the snippet's
+ * `sk-plat-…` placeholder is the one value it cannot fill in, so the page that
+ * mints it has to be one click away.
+ */
+export function UseModelDialog({
+  baseUrl,
+  modelId,
+  onClose,
+  target,
+}: Readonly<{
+  baseUrl: string;
+  /** `creator-handle/model-slug`. Null when the handle could not be read. */
+  modelId: string | null;
+  onClose: () => void;
+  target: MyModelRow | null;
+}>) {
+  if (!target) return null;
+
+  return (
+    <Modal
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Modal.Backdrop>
+        <Modal.Container size="lg">
+          <Modal.Dialog>
+            <Modal.CloseTrigger />
+            <Modal.Header>
+              <Modal.Heading>Call {target.displayName}</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body>
+              <div className="flex flex-col gap-4">
+                {target.status === "ready" ? null : (
+                  <Alert status="warning">
+                    <Alert.Content>
+                      <Alert.Title>Not serving yet</Alert.Title>
+                      <Alert.Description>
+                        This model answers requests once its status is Ready.
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                )}
+
+                {modelId ? (
+                  <SnippetTabs baseUrl={baseUrl} modelId={modelId} />
+                ) : (
+                  <Alert status="danger">
+                    <Alert.Content>
+                      <Alert.Title>No creator handle</Alert.Title>
+                      <Alert.Description>
+                        The model id is <code>handle/{target.slug}</code>, and this account has no
+                        handle set yet.
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                )}
+
+                <p className="text-muted text-sm">
+                  The snippets need a key.{" "}
+                  <Link className="text-accent font-medium hover:underline" href="/console/keys">
+                    Create an API key →
+                  </Link>
+                </p>
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button onPress={onClose} variant="ghost">
+                Close
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
   );
 }
