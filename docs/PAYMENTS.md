@@ -116,7 +116,82 @@ argument (it usually is not for a developer tool priced in USD). Choose **Helio*
 if the audience is Solana-native — its UX is the best of the three, but it
 concentrates you on a chain whose USDC liquidity story is different from Base's.
 
-### 3.1 What integrating one costs
+### 3.1 Also evaluated: BitPay, MoonPay, Transak, Crossmint
+
+These four come up in every "accept crypto" search, and only one of them is the
+same *kind* of thing as the processors above. Sorting them by primitive is what
+makes the answer obvious.
+
+| | Primitive | What the payer ends up with | Fit here |
+|---|---|---|---|
+| **BitPay** | Merchant processor (same category as §3) | Nothing — we get paid | Works, priced badly for us |
+| **MoonPay** | Fiat **on-ramp** | Crypto in *their* wallet | Wrong primitive as a rail |
+| **Transak** | Fiat **on-ramp** | Crypto in *their* wallet | Wrong primitive as a rail |
+| **Crossmint** | Crypto-commerce checkout + embedded wallets | An on-chain asset | Built for a delivery we don't make |
+
+**BitPay** — a real alternative to Coinbase Commerce: native USDC on Ethereum,
+Polygon, Arbitrum, Optimism, Base, plus Bitcoin Lightning, fiat settlement in
+USD/EUR/GBP/CAD/AUD, mature invoice API. It loses on price. Published tiers are
+2% + $0.25 under $500k/month, 1.5% + $0.25 to $1M, 1% + $0.25 above — and that
+fixed $0.25 is what kills it, because our floor top-up is $5. Take it only if a
+customer specifically demands BTC/Lightning.
+
+**MoonPay and Transak are on-ramps, not payment rails.** They sell crypto to the
+user and deliver it to a wallet address. You *can* point that address at our
+treasury and treat it as "card → USDC to us", and both support a destination
+address plus webhooks, but as a top-up rail it is worse than what we already
+have on three counts:
+
+- **Price.** 3.5–5.5% on card, above Stripe's 2.9% + $0.30 for anything over
+  ~$12. Transak's SEPA bank transfer at ~0.99% is the one genuinely cheap lane,
+  and it is EU-only and slow.
+- **Friction.** Full KYC on the *payer*, for a $5 wallet top-up, in a product
+  whose entire pitch is "paste a key and curl the endpoint". Stripe Checkout
+  asks for a card number.
+- **Amount fidelity.** What lands is quoted-minus-fees-minus-gas, so the credit
+  becomes a range instead of a number. Our ledger is exact integer micro-USD;
+  every rail that delivers "about $20" pushes rounding policy into billing.
+
+Where they *do* earn a place: **inside** the self-custody rail of §4, as the
+"I have no USDC" path — the deposit-intent page can link a MoonPay/Transak
+widget with `walletAddress` set to the intent's treasury address and the intent
+amount pre-filled. That is a conversion aid layered on a working rail, not a
+rail. Build it after §4 exists, never before.
+
+**Crossmint** is checkout plus embedded wallets for crypto-native commerce:
+guest checkout, wallets created on the fly, card/Apple Pay/Google Pay alongside
+many tokens, headless API or embedded widget. Genuinely good at what it is for —
+and what it is for is delivering an on-chain asset to a buyer. We deliver a row
+in `profiles`. Paying crypto-infrastructure pricing to do that is paying for
+machinery we then have to keep switched off, and its fiat leg routes through
+MoonPay/Banxa anyway, stacking their processor fee plus a ~1–1.5% FX spread on
+top. Revisit only if creator earnings ever become an on-chain token.
+
+All-in cost on a **$20** top-up, ranked (directional — verify against current
+pricing pages before committing):
+
+| Rail | Cost on $20 | Effective |
+|---|---|---|
+| Transak, SEPA | ~$0.20 | ~1% (EU only) |
+| Coinbase Commerce, USDC | ~$0.20 | ~1% |
+| NOWPayments, USDC | ~$0.10 | ~0.5% |
+| BitPay, USDC | ~$0.65 | 3.25% |
+| MoonPay / Transak, card | $0.70–1.10 | 3.5–5.5% |
+| **Stripe, card (shipped)** | **$0.88** | **4.4%** |
+| Crossmint, card | ~$0.90–1.20 | 4.5–6% |
+
+Nothing here displaces the §2.1 recommendation. Stripe stays the fiat rail
+because it is the cheapest card option and already built; Coinbase Commerce
+stays the crypto pick.
+
+**Brazil note.** If the Stripe account settles in BRL, the interesting lever is
+not any of these four — it is **Pix**, which Stripe supports directly at rates
+far below card, and which every Brazilian developer already has. That is a
+one-parameter change to the Checkout Session, and it is worth measuring before
+any crypto rail: a cheaper fiat rail for the actual audience beats a cheaper
+crypto rail for a hypothetical one.
+
+### 3.2 What integrating one costs
 
 Roughly a day, because the wallet half is already built:
 
