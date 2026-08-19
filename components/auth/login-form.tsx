@@ -39,15 +39,23 @@ export function LoginForm({
   const invalidField = state.status === "error" ? state.field : undefined;
 
   return (
-    <Card className="w-full">
-      <Card.Header>
-        <Card.Title>Sign in</Card.Title>
-        <Card.Description>
-          Deploy models, mint API keys and watch your usage settle.
+    <Card className="w-full gap-6 p-8">
+      {/* HeroUI ships `.card__title` at `text-sm font-medium` and
+          `.card__description` at `text-sm` — the SAME SIZE, separated only by
+          weight and colour. That is right for a dashboard tile, where the title
+          is a label on a widget, and wrong here, where it is the page's heading.
+          Left alone it renders "Sign in" and its subtitle as one grey block with
+          no hierarchy. The overrides below make it a real heading. */}
+      <Card.Header className="gap-1.5">
+        <Card.Title className="text-xl leading-tight font-semibold tracking-[-0.02em]">
+          Sign in
+        </Card.Title>
+        <Card.Description className="text-sm">
+          Deploy models, mint keys, watch usage settle.
         </Card.Description>
       </Card.Header>
 
-      <Card.Content className="flex flex-col gap-5">
+      <Card.Content className="flex flex-col gap-5 p-0">
         {initialError && !error ? (
           <AuthAlert
             description={initialError}

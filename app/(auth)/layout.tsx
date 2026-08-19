@@ -21,10 +21,10 @@ import { Wordmark } from "@/components/wordmark";
  */
 export default function AuthLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="grid min-h-dvh w-full lg:grid-cols-2">
-      <div className="flex w-full items-start justify-center px-4 py-6 sm:items-center sm:py-12">
-        <div className="flex w-full max-w-[26rem] flex-col gap-6">
-          <Wordmark className="text-lg" />
+    <div className="grid min-h-dvh w-full lg:grid-cols-[1fr_minmax(0,26rem)] xl:grid-cols-2">
+      <div className="flex w-full items-center justify-center px-4 py-10 sm:py-12">
+        <div className="flex w-full max-w-[24rem] flex-col gap-7">
+          <Wordmark />
           {children}
         </div>
       </div>
@@ -39,40 +39,42 @@ export default function AuthLayout({ children }: Readonly<{ children: React.Reac
  * Right column: a field of `--surface` separated from the form by a hairline,
  * never a shadow (DESIGN §elevation). Text only — no illustration, no gradient.
  *
- * Every figure below is already stated on the marketplace home page
- * (`components/marketplace/home-intro.tsx`); nothing here is a new claim.
+ * IT IS DELIBERATELY QUIETER THAN THE FORM. The first version set these figures
+ * at `text-xl font-semibold` while HeroUI's `.card__title` rendered "Sign in" at
+ * `text-sm` — so the marketing out-shouted the only thing the page is for, and
+ * the eye landed on "80%" instead of on the email field. A panel beside a form
+ * is context, not the headline: the figures sit at `text-base`, the heading of
+ * the form sits at `text-xl`, and that ordering is the point.
+ *
+ * Three figures, not four. Every one restates copy that already exists on
+ * `components/marketplace/home-intro.tsx`; nothing here is a new claim.
  */
 function ProofPanel() {
   return (
-    <aside className="border-border bg-surface hidden flex-col justify-center gap-10 border-l p-12 lg:flex">
-      <div className="flex max-w-md flex-col gap-4">
-        <Wordmark className="text-xl" />
-        <p className="text-muted text-base leading-[1.65]">
-          Open models nobody else hosts, behind one endpoint you already know how to call — you pay
-          per token, and most of what you pay goes to the person who published the model.
+    <aside className="border-border bg-surface hidden flex-col justify-center gap-8 border-l px-10 py-12 lg:flex xl:px-14">
+      <div className="flex max-w-sm flex-col gap-3">
+        <Wordmark />
+        <p className="text-muted text-[0.9375rem] leading-[1.6]">
+          Open models nobody else hosts, behind one endpoint you already know how to call. You pay
+          per token, and most of what you pay goes to whoever published the model.
         </p>
       </div>
 
-      <dl className="flex max-w-md flex-col gap-6">
+      <dl className="flex max-w-sm flex-col gap-5">
         <Figure
           figure="80%"
           label="To the creator"
           note="of what a model bills goes to whoever deployed it."
         />
         <Figure
-          figure="2 lines"
+          figure="Two lines"
           label="To switch"
-          note="the base URL and the model id in your existing OpenAI client — the endpoint is OpenAI-compatible."
-        />
-        <Figure
-          figure="Per token"
-          label="How billing works"
-          note="no hourly bill and no minimum; you are charged for the tokens you actually use."
+          note="the base URL and the model id in the OpenAI client you already have."
         />
         <Figure
           figure="Prepaid"
           label="Your balance"
-          note="keys draw down a balance you funded, so a runaway loop cannot invoice you."
+          note="keys draw down funds you added, so a runaway loop cannot invoice you."
         />
       </dl>
     </aside>
@@ -81,13 +83,13 @@ function ProofPanel() {
 
 function Figure({ label, figure, note }: { label: string; figure: string; note: string }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-0.5">
       <dt className="text-muted font-mono text-[0.6875rem] font-medium tracking-[0.08em] uppercase">
         {label}
       </dt>
-      <dd className="flex flex-col gap-1">
-        <span className="text-xl font-semibold tracking-[-0.02em] tabular-nums">{figure}</span>
-        <span className="text-muted text-sm leading-[1.55]">{note}</span>
+      <dd className="flex flex-col gap-0.5">
+        <span className="text-base font-semibold tracking-[-0.01em] tabular-nums">{figure}</span>
+        <span className="text-muted text-sm leading-[1.5]">{note}</span>
       </dd>
     </div>
   );
