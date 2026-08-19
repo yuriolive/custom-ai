@@ -1,0 +1,50 @@
+name: PR Agent
+
+# ---------------------------------------------------------------------------
+# AI PR review via PR-Agent (https://github.com/The-PR-Agent/pr-agent),
+# running Gemini 3.7 Flash through an AI Studio API key.
+#
+# SECURITY — this workflow holds a real secret (GOOGLE_AI_STUDIO__GEMINI_API_KEY),
+# so it must never execute code that comes from the pull request head. It does
+# not: the only step is the pinned PR-Agent action, which reads the diff through
+# the GitHub API and never checks out or runs repo code.
+#
+# For extra safety it is also gated on same-repo PRs — a fork PR gets no review
+# rather than a chance to reach the key. Drop the `if:` only if you are willing
+# to review forks with the key present.
+# ---------------------------------------------------------------------------
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pr_agent:
+    # Skip fork PRs (see security note above). Comment-triggered runs only fire
+    # on actual pull requests, never on plain issues.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null)
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR Agent
+        uses: the-pr-agent/pr-agent@v0.42.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_AI_STUDIO__GEMINI_API_KEY: ${{ secrets.GOOGLE_AI_STUDIO_GEMINI_API_KEY }}
+          CONFIG__MODEL: gemini/gemini-3.7-flash
+          CONFIG__FALLBACK_MODELS: '["gemini/gemini-3.1-flash"]'
+          CONFIG__GIT_PROVIDER: github
+          CONFIG__PUBLISH_OUTPUT_PROGRESS: false
+          GITHUB_ACTION_CONFIG__AUTO_REVIEW: true
+          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: true
+          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: true
