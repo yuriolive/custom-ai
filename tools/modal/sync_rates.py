@@ -40,6 +40,28 @@ MIGRATIONS = REPO_ROOT / "supabase" / "migrations"
 
 MICRO = Decimal(1_000_000)
 
+# This script only ever writes two things, and both are named here rather than assembled
+# from anything that arrived at runtime. `modal billing rates` output reaches this process
+# as prices — it must never reach it as a filename, and a generated migration must not be
+# able to land outside supabase/migrations.
+_ALLOWED_WRITE_DIRS = (HERE, MIGRATIONS)
+_SAFE_NAME = re.compile(r"\A[A-Za-z0-9_]+\.(py|sql)\Z")
+
+
+def _write_checked(name: str, directory: Path, text: str) -> Path:
+    """
+    Write `text` to `directory/name`, refusing anything that is not a plain filename in
+    one of the two directories this script owns.
+    """
+    if directory not in _ALLOWED_WRITE_DIRS:
+        raise SyncError(f"refusing to write outside this script's own directories: {directory}")
+    if not _SAFE_NAME.fullmatch(name):
+        raise SyncError(f"refusing to write a path-shaped filename: {name!r}")
+    path = directory / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 # `modal billing rates --json` key -> our tier id. Modal's own suffixes are the authority
 # for the naming (`gpu_hour_cost_a100_80gb`), so this map is the one place where their
 # spelling and ours are allowed to differ.
@@ -178,7 +200,7 @@ def rewrite_tiers_py(rows: list[tuple[str, int, int, int, int]]) -> None:
         )
         if n != 1:
             raise SyncError(f"could not locate the price lines for tier {tier_id!r} in tiers.py")
-    TIERS_PY.write_text(text, encoding="utf-8")
+    _write_checked(TIERS_PY.name, HERE, text)
 
 
 MIGRATION_HEADER = """-- ============================================================================
@@ -196,14 +218,13 @@ MIGRATION_HEADER = """-- =======================================================
 
 def emit_migration(rows: list[tuple[str, int, int, int, int]]) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    path = MIGRATIONS / f"{stamp}_gpu_tier_rates.sql"
+    name = f"{stamp}_gpu_tier_rates.sql"
     updates = "\n".join(
         f"update public.gpu_tiers set usd_per_hour_micro = {new} "
         f"where id = '{tier_id}';  -- was {old}"
         for tier_id, old, new, _, _ in rows
     )
-    path.write_text(MIGRATION_HEADER.format(name=path.name) + updates + "\n", encoding="utf-8")
-    return path
+    return _write_checked(name, MIGRATIONS, MIGRATION_HEADER.format(name=name) + updates + "\n")
 
 
 def main() -> int:
