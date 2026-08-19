@@ -2,7 +2,7 @@ import { Chat } from "@/components/playground/chat";
 import { publicEnv } from "@/lib/public-env";
 
 export const metadata = {
-  title: "Playground — Nexus Inference",
+  title: "Playground",
 };
 
 /**

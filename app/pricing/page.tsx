@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MarketingContainer, Section } from "@/components/marketing/section";
+import { pageOpenGraph } from "@/lib/seo/open-graph";
 
 /**
  * `/pricing` — the page whose absence is loudest.
@@ -16,8 +17,14 @@ import { MarketingContainer, Section } from "@/components/marketing/section";
  * table on this page would be a second source of truth that goes stale the first
  * time a creator edits their model. The prices live in the catalog; this page
  * explains the RULES, which are the same for every model and change only when
- * the billing contract does. That also lets the route prerender — no database,
- * no `force-dynamic`, no cookie.
+ * the billing contract does.
+ *
+ * So the page itself needs nothing per-request — no database read, no cookie,
+ * no `force-dynamic`. It is still listed as server-rendered on demand in the
+ * build output, and that is not this file's doing: `SiteNav` in the root layout
+ * is an async Server Component that reads the session, which opts every route in
+ * the app out of static generation. Worth knowing before someone adds a fetch
+ * here believing the route was already dynamic for a reason.
  *
  * Server Component with no `@heroui/react` import, so it stays server-rendered
  * and indexable (FR-MKT-006), same discipline as the landing sections.
@@ -32,7 +39,7 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: "/pricing" },
-  openGraph: { title: TITLE, description: DESCRIPTION, type: "website" },
+  openGraph: pageOpenGraph({ title: TITLE, description: DESCRIPTION, path: "/pricing" }),
 };
 
 /** A term and its explanation. The page is mostly this shape. */

@@ -12,6 +12,7 @@ import { ModelDetail } from "@/components/marketplace/model-detail";
 import { fetchModelByHandleAndSlug } from "@/components/marketplace/queries";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
 import type { CatalogModel } from "@/components/marketplace/types";
+import { pageOpenGraph } from "@/lib/seo/open-graph";
 import { SUPABASE_URL } from "@/lib/supabase/public-config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -88,12 +89,12 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     title,
     description,
     alternates: { canonical: `/models/${model.creatorHandle}/${model.slug}` },
-    openGraph: {
+    openGraph: pageOpenGraph({
       title,
       description,
       type: "article",
-      url: `/models/${model.creatorHandle}/${model.slug}`,
-    },
+      path: `/models/${model.creatorHandle}/${model.slug}`,
+    }),
     twitter: { card: "summary", title, description },
   };
 }

@@ -4,7 +4,7 @@ import { SignupForm } from "@/components/auth/signup-form";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
 
 export const metadata: Metadata = {
-  title: "Create an account · Nexus Inference",
+  title: "Create an account",
   description: "Create an account to publish models and earn on inference.",
 };
 

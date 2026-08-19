@@ -25,6 +25,7 @@ import {
 } from "@/components/marketplace/search-params";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
 import type { CatalogQuery } from "@/components/marketplace/types";
+import { pageOpenGraph } from "@/lib/seo/open-graph";
 import { SUPABASE_URL } from "@/lib/supabase/public-config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -42,7 +43,19 @@ import { createClient } from "@/lib/supabase/server";
  * when there is no session, and RLS answers with public+ready rows only.
  */
 
-const TITLE = "Serverless inference marketplace — open models, per-token pricing";
+/**
+ * THE BRAND IS SPELLED OUT HERE, and leads. The root layout's
+ * `%s | Nexus Inference` template does not reach this page: Next applies a
+ * template only to a DEEPER segment, and the root layout and the root page are
+ * the same segment. Without the name written in, `/` would be the one page on
+ * the site carrying no brand in its title — exactly backwards, since it is the
+ * page most likely to be searched for by name.
+ *
+ * Kept under ~60 characters so neither half is truncated in a result. Appending
+ * the brand to the previous descriptive title would have run to 83 and cut the
+ * name off, which is the failure this line exists to avoid.
+ */
+const TITLE = "Nexus Inference — open-model inference, priced per token";
 const DESCRIPTION =
   "Call open Hugging Face models — quantized, uncensored, fine-tuned — through one " +
   "OpenAI-compatible endpoint. Per-token pricing, no hourly GPU bill. Models scale to " +
@@ -66,11 +79,7 @@ export async function generateMetadata({
     // which are the URLs actually worth ranking.
     alternates: { canonical: "/" },
     robots: filtered ? { index: false, follow: true } : undefined,
-    openGraph: {
-      title: TITLE,
-      description: DESCRIPTION,
-      type: "website",
-    },
+    openGraph: pageOpenGraph({ title: TITLE, description: DESCRIPTION, path: "/" }),
   };
 }
 
