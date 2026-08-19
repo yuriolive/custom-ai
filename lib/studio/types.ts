@@ -229,3 +229,31 @@ export type MyModelRow = {
 export const DEPLOY_STEPS = ["validating", "provisioning", "smoke_testing", "ready"] as const;
 
 export type DeployStep = (typeof DEPLOY_STEPS)[number];
+
+// ─── Refs (FR-STU-002's companion — the Revision ComboBox's options) ─────────
+
+/**
+ * The branches and tags of a Hugging Face repository.
+ *
+ * Exists because the Revision field used to free-text to the literal string
+ * `"main"`, so a repository whose default branch is anything else probed a ref
+ * that does not exist — and failed quietly, which is this codebase's recurring
+ * failure mode rather than a new one.
+ *
+ * `defaultBranch` is a CHOICE, not a field the Hub reports: see `fetchRepoRefs`
+ * in `lib/studio/server/probe.ts` for how it is picked. `ok: false` is a
+ * non-event — the ComboBox keeps `allowsCustomValue` and the form behaves
+ * exactly as it did before.
+ */
+export type RefsResponse =
+  | {
+      ok: true;
+      branches: string[];
+      tags: string[];
+      defaultBranch: string;
+    }
+  | {
+      ok: false;
+      code: "invalid_slug" | "not_found" | "requires_auth" | "upstream_error";
+      message: string;
+    };
