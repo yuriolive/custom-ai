@@ -1,3 +1,4 @@
+import type { Route } from "next";
 import Link from "next/link";
 
 /**
@@ -16,7 +17,7 @@ import Link from "next/link";
 export function Wordmark({
   className,
   href = "/",
-}: Readonly<{ className?: string; href?: string }>) {
+}: Readonly<{ className?: string; href?: Route }>) {
   return (
     <Link
       aria-label="Nexus Inference — home"

@@ -1,3 +1,4 @@
+import type { Route } from "next";
 import Link from "next/link";
 
 import { Wordmark } from "@/components/wordmark";
@@ -16,7 +17,7 @@ import { MarketingContainer } from "./section";
  * Server Component, plain markup, no `@heroui/react` (PRD §4.1.0).
  */
 
-type FooterLink = Readonly<{ href: string; label: string }>;
+type FooterLink = Readonly<{ href: Route; label: string }>;
 
 const PRODUCT: readonly FooterLink[] = [
   { href: "/models", label: "Model catalog" },

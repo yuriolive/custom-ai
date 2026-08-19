@@ -690,6 +690,16 @@ separate page-scoped panel, not the navigation.
 
 `DESIGN.md` §5's checklist applies unchanged and is not restated. On top of it:
 
+- **`npm run build`, not just `npm run check`.** `typedRoutes: true` is set in
+  `next.config.ts`, so `<Link href>` accepts only a route the app actually has — and the
+  route manifest that encodes "actually has" is generated *during* `next build`. A
+  `href: string` in a link-list type therefore passes `tsc --noEmit`, passes both linters,
+  and fails CI. This cost a red build on the first push of this work, twice, in
+  `marketing-footer.tsx` and `wordmark.tsx`. Type link hrefs as `Route`
+  (`import type { Route } from "next"`) — `user-menu.tsx` and `(auth)/actions.ts` already
+  do. The property is worth the friction: a nav pointing at a page nobody built fails the
+  build instead of shipping a 404.
+
 - **No route renders two navs at one breakpoint.** Check 375 / 768 / 1024 / 1440.
 - **No horizontal document overflow at 375px** — the check that caught a 37px overflow in
   `site-nav.tsx` and will catch a 240px sidebar rendered too early.
