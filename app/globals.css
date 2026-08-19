@@ -279,3 +279,49 @@
     opacity: 0.6;
   }
 }
+
+/* -----------------------------------------------------------------------------
+   The conditional field arrival (docs/DESIGN.md §3.11).
+
+   Creator Studio's Hugging Face token field appears only when the repo probe
+   reports the repository private or gated (FR-STU-003). A field that
+   materialises mid-form shoves everything below it down by ~76px, which reads
+   as a bug rather than as a response to what was typed — so it gets a designed
+   arrival instead.
+
+   `grid-template-rows: 0fr -> 1fr` is a height transition that needs no
+   measured pixel value, which is why it is used here rather than max-height
+   (which has to guess, and jerks when it guesses high). The child must be
+   `min-height: 0` and `overflow: hidden` or it refuses to compress below its
+   content height.
+
+   THIS IS THE ONE DOCUMENTED EXCEPTION to "no layout animation" in §1.5, and
+   it is inert under `prefers-reduced-motion`, where the field simply appears.
+   Do not reach for this class for anything else.
+   -------------------------------------------------------------------------- */
+@layer components {
+  .field-reveal {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows var(--motion-base, 180ms) var(--motion-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+      opacity var(--motion-base, 180ms) var(--motion-ease, cubic-bezier(0.4, 0, 0.2, 1));
+  }
+
+  .field-reveal > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .field-reveal[data-revealed="true"] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field-reveal {
+    transition: none;
+  }
+}

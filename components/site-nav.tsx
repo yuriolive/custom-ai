@@ -7,8 +7,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { getSessionProfile } from "@/lib/supabase/server";
 
 /**
- * Minimal root nav. MVP-0 ships exactly two destinations; the marketplace,
- * Creator Studio and Console are deliberately out of scope.
+ * Minimal root nav. Creator Studio is linked only for signed-in visitors: it is
+ * a protected route, so a link shown to everyone would be a link to a redirect.
  *
  * Async Server Component: it reads the session here and passes a plain handle
  * string to the client controls (§4.1.0 — HeroUI is client-only).
@@ -30,6 +30,15 @@ export async function SiteNav() {
         >
           Playground
         </Link>
+
+        {profile ? (
+          <Link
+            className="text-muted hover:text-foreground hidden text-sm transition-colors sm:inline"
+            href="/studio"
+          >
+            Studio
+          </Link>
+        ) : null}
 
         {/* min-w-0 lets this cluster shrink; without it the handle's intrinsic
             width forced a 37px document overflow at 375px. */}
