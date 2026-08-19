@@ -178,13 +178,15 @@ jobs:
         working-directory: tools/modal
         run: uv run --locked python -m unittest test_measure test_tier_drift -v
 
+      # --no-build: install ruff from its published wheel only. A source
+      # distribution would run its build backend, i.e. arbitrary code, in the job.
       - name: ruff check
         working-directory: tools/modal
-        run: uv run --locked --group dev ruff check .
+        run: uv run --locked --no-build --group dev ruff check .
 
       - name: ruff format --check
         working-directory: tools/modal
-        run: uv run --locked --group dev ruff format --check .
+        run: uv run --locked --no-build --group dev ruff format --check .
 
   deno:
     name: deno (edge function gateway)
