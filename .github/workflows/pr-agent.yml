@@ -42,7 +42,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_AI_STUDIO__GEMINI_API_KEY: ${{ secrets.GOOGLE_AI_STUDIO_GEMINI_API_KEY }}
           CONFIG__MODEL: gemini/gemini-3.7-flash
-          CONFIG__FALLBACK_MODELS: '["gemini/gemini-3.1-flash"]'
+          # No fallback: gemini-3.7-flash only. (gemini/gemini-3.1-flash 404s
+          # on the AI Studio API, so it was never a usable fallback.)
+          CONFIG__FALLBACK_MODELS: '[]'
+          # PR-Agent ships a hardcoded MAX_TOKENS table and has no entry for
+          # 3.7 Flash yet; without this it refuses the model before ever
+          # calling the API. 1M = the model's context window.
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: 1048576
           CONFIG__GIT_PROVIDER: github
           CONFIG__PUBLISH_OUTPUT_PROGRESS: false
           GITHUB_ACTION_CONFIG__AUTO_REVIEW: true
