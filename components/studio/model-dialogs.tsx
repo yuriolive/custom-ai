@@ -303,8 +303,15 @@ export function UseModelDialog({
       }}
     >
       <Modal.Backdrop>
+        {/* HeroUI's largest bounded size is `lg` = `max-w-lg` (512px). The
+            widest snippet line measures 796px of 13px mono, so at 512px every
+            snippet arrives pre-scrolled — the one thing a copy-paste block must
+            not do. `max-w-4xl` (896px) leaves 848px of content inside the
+            dialog's 24px padding, which clears it. The override needs no `!`:
+            HeroUI's component CSS sits in `layer(components)` and Tailwind
+            utilities in the later `utilities` layer, so the utility wins. */}
         <Modal.Container size="lg">
-          <Modal.Dialog>
+          <Modal.Dialog className="max-w-4xl">
             <Modal.CloseTrigger />
             <Modal.Header>
               <Modal.Heading>Call {target.displayName}</Modal.Heading>
