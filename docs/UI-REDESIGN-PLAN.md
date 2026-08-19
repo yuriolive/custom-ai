@@ -490,40 +490,27 @@ to put it today. Three additions from the live audit (§1.1), in priority order:
 3. **A real empty state** (L4) with 2–3 seed prompts that fill the composer on press, and
    the cold-start line folded into the card that owns it (L3).
 
-**Auth (`/login`, `/signup`) — a two-panel page** (L7). The form card is correct and its
-internals stay: GitHub first at `variant="primary"`, the `or with email` separator, email
-+ password at `variant="secondary"`. That hierarchy is deliberate and it is right. What
-changes is everything around it:
+**Auth (`/login`, `/signup`) — a single centred card.** The form card's internals are
+correct and stay: GitHub first at `variant="secondary"`, the `or with email` separator,
+email + password with the submit at `variant="primary"` — one accent element on the page.
+What changed around it:
 
-- `grid lg:grid-cols-2 min-h-dvh`. Form left in a `max-w-[26rem]` column; right panel is a
-  `bg-surface` field carrying the wordmark, one sentence of value proposition, and the
-  same proof figures as landing section 2. Below `lg:` the right panel drops entirely and
-  the form centres — which is today's layout, so mobile does not regress.
 - The wordmark goes **on the page**, above the card, linking home. A sign-in box with no
-  branding is the thing that reads as unfinished.
-- Delete `min-h-[calc(100dvh-8rem)]`. It encodes the nav height as a constant, and phase A
-  changes that height. `min-h-dvh` on the grid, with the nav inside it, needs no constant.
-- `(auth)` keeps its own layout and does **not** join `(app)` — it is unauthenticated by
-  definition and gets neither the sidebar nor the marketing pill.
+  branding is what reads as unfinished.
+- The card gets a real heading. HeroUI's `.card__title` and `.card__description` are both
+  `text-sm`, which is right for a dashboard tile and wrong for a page heading — left alone
+  they render the title and its subtitle as one grey block.
+- `min-h-[calc(100dvh-8rem)]` is gone. It encoded the nav height as a constant, and the
+  nav belongs to an ancestor.
 
-**Creator Studio: built, and it followed §3.11.** `c70e1e1` shipped the deploy form, the
-sticky Deployment Plan panel, the variant consequence table, the provisioning stepper, the
-My Models table and the `.field-reveal` conditional-field animation — including the one
-documented layout-animation exception, inert under `prefers-reduced-motion`. Nothing in
-this plan asks for it to be redesigned.
-
-**One defect found and fixed: the visibility Switch was inert.** `Switch.Content` is not a
-content slot — it is React Aria's `SwitchButton`, the element that renders the hidden
-`<input>` and owns every press target (`@heroui/styles` says so in its own source
-comment). The form nested `Switch.Control`/`Switch.Thumb` *outside* it, so the thumb still
-slid — the root carries `data-selected`, and the CSS keys off `.switch[data-selected]` —
-while the track itself was dead to a click. Only the word "Public" toggled anything, which
-is why it read as stuck. `Description` was also inside `Switch.Content`, i.e. a `<p>`
-inside a `<label>`, so clicking three lines of explanatory prose silently flipped the
-model's visibility.
-
-**`DESIGN.md` §3.11's field table specified this composition and specified it wrong**; the
-implementer followed the spec faithfully. Both are corrected.
+**A two-panel version was specified here, built, and removed.** The plan called for a
+`--surface` proof panel beside the form; it shipped to a preview and the owner deleted it
+on sight. `DESIGN.md` §3.7 had forbidden exactly that and was overruled to allow it, and
+is now reinstated with the reasoning recorded. Three things went wrong that a plan could
+not see: the root layout renders a nav above these routes, so a full-height panel started
+below it and read as a floating slab; the panel's content is centred and short, so its top
+third was a large blank field; and it competed for attention on a page with one job. This
+is the clearest case in this document of a decision that needed a browser, not an argument.
 
 ### 7.1 Creator Studio — three open questions
 

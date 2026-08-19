@@ -671,19 +671,17 @@ The most important surface in the product. Target treatment:
   same as first in weight.** The code shipped this inverted for a while (GitHub filled,
   submit outlined), which left the email form looking disabled beside it; corrected.
 - `FieldError` and `AuthAlert` in `--danger`. Error text at `micro`, never truncated.
-- ~~Do not put a marketing hero, gradient, or illustration beside the form. A sign-in page
-  for a developer product is a form on a ground.~~ **REVERSED by the owner, 2026-08-18,
-  during the redesign in `docs/UI-REDESIGN-PLAN.md` §7.** `/login` and `/signup` are now a
-  two-panel page: form left, and from `lg:` up a `--surface` panel right carrying the
-  wordmark, one value sentence and four proof figures. Below `lg:` the panel is not
-  rendered and the layout is the single centred column this rule originally described.
+- **Do not put a marketing hero, gradient, illustration, or proof panel beside the
+  form. A sign-in page for a developer product is a form on a ground.**
 
-  The original rule is left visible rather than deleted because its reasoning was not
-  wrong, only outvoted: a proof panel is a claim surface, and every figure on it has to be
-  true and has to stay true. The four in use are restatements of copy already on
-  `home-intro.tsx`, not new claims, and that constraint is the condition of the reversal.
-  **The ban on hero art, gradients and illustration stands** — the panel is text and
-  hairlines. What changed is "nothing beside the form", not "anything beside the form".
+  This rule was reversed during the 2026-08-18 redesign, a two-panel layout shipped to
+  a preview, and the owner removed it on sight. Reinstated — and the failure is worth
+  keeping, because the panel read fine in a plan and badly on a screen. The root layout
+  renders a nav above the auth pages, so a full-height panel could not reach the top of
+  the viewport and became a floating slab; its content is centred and short, so the top
+  third was a large blank field of `--surface`; and it competed for attention on a page
+  with exactly one job. Second time argued, second time it lost. The wordmark above the
+  card is the one thing worth keeping from that attempt.
 
 ### 3.8 Empty states (`catalog-grid.tsx`, `primitives.tsx`)
 
