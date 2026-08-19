@@ -5,10 +5,12 @@ with no token and no spend.
 
 ```
 tiers.py          GPU catalog + capacity solver (pure arithmetic, no I/O, no modal import)
+sync_rates.py     refresh prices from `modal billing rates --json` (LOCAL: needs a token)
 app.py            the deployed Modal app: one parameterized llama.cpp class per GPU tier
 deploy.py         spec -> deployment config resolver, --dry-run, URL lookup
 measure.py        cold/warm measurement + the SSE usage analyzer
 test_measure.py   41 offline tests (unittest); end-to-end ones drive tools/mock-upstream
+test_tier_drift.py  CI-enforced: tiers.py vs the gpu_tiers state the migrations leave
 reports/          measurement JSON output (gitignored)
 ```
 
@@ -184,6 +186,45 @@ Decode throughput is `(n-1) / (last_token − first_token)` — it excludes TTFT
 | `head_dim` | It is the declared `key_length` (256), **not** `hidden_size / head_count` (213.33). |
 | `A10G` | Not a valid Modal GPU string. It is `A10`. |
 | `requires_proxy_auth` | Goes on `@modal.web_server`, **not** `@app.cls` — `App.cls` has no such kwarg. It defaults to `False`, so an endpoint is PUBLIC unless you say otherwise, and nothing warns you. |
+
+## There are two tier catalogs, and only one of them bills anyone
+
+| | Read by | Authority for |
+|---|---|---|
+| `tools/modal/tiers.py` | `deploy.py`, `measure.py`, the tests | what the Python tooling provisions |
+| `public.gpu_tiers` (SQL) | `public.resolve_placement()` at **request time** | the tier a model actually lands on, and `cost_floor_micro_per_mtoken` |
+
+The SQL table is the one that costs money. `resolve_placement()` walks it
+`order by usd_per_hour_micro asc` and derives the cost floor from the row it picks, so a
+price that is too low there means the platform sells GPU time under cost — which is
+exactly what happened: the table shipped with RunPod hardware and RunPod prices (`l40s`
+$0.86 vs Modal's $1.95, `h100` $2.99 vs $3.95) and an `rtx4090` tier Modal does not rent
+at all. Migration `20260819000100_gpu_tiers_modal_catalog.sql` brought it onto Modal's
+catalog.
+
+Keeping them together:
+
+```bash
+# Are the committed prices still Modal's published ones? LOCAL ONLY — needs a Modal token.
+cd tools/modal && python sync_rates.py --check
+
+# Same, but rewrite tiers.py and emit a migration with the UPDATEs, for review.
+cd tools/modal && python sync_rates.py
+
+# Do the two committed catalogs agree? Offline, no credential — this one runs in CI.
+cd tools/modal && python -m unittest test_tier_drift -v
+```
+
+The drift check is **enforced**: it runs in the `python` job of `.github/workflows/ci.yml`
+and fails the build on any mismatch of id, VRAM, bandwidth, price, provider GPU string, or
+a solver constant the two sides share. It reads the migrations directly, so it needs no
+Postgres and no network. Set equality on `solver_config` is deliberately *not* required —
+`prefix_cache_reserve`, `volume_threshold_bytes` and `download_bytes_per_s` are SQL-path
+constants with no Python counterpart — but every shared key must match.
+
+A retired tier is `is_enabled = false`, never deleted: `custom_models.gpu_tier_id` is an
+FK onto the table and `gpu_usd_per_hour_micro_snapshot` exists so settled cost math stays
+reproducible (FR-DEP-051).
 
 ## The tier list is not a ladder
 
