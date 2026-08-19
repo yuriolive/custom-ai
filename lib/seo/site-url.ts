@@ -44,9 +44,7 @@ function withScheme(host: string): string {
 /** The absolute origin, with no trailing slash. */
 export function siteOrigin(): string {
   const host =
-    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
-    process.env.VERCEL_URL?.trim() ||
-    "";
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim() || "";
 
   const origin = host ? withScheme(host) : DEV_ORIGIN;
   return origin.replace(/\/+$/, "");
