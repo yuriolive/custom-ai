@@ -20,16 +20,18 @@ export function CostFooter({ metrics }: { metrics: TurnMetrics | undefined }) {
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      <Chip variant="soft">prompt {formatTokens(metrics.promptTokens)}</Chip>
+      <Chip className="tabular-nums" variant="soft">
+        prompt {formatTokens(metrics.promptTokens)}
+      </Chip>
 
-      <Chip variant="soft">
+      <Chip className="tabular-nums" variant="soft">
         completion {formatTokens(metrics.completionTokens)}
         {estimated ? "*" : ""}
       </Chip>
 
       <Chip
+        className="tabular-nums"
         color={metrics.costMicroUsd == null ? "default" : "accent"}
-
         title={
           metrics.costMicroUsd == null
             ? "Cost lands when the gateway settles the transaction"
@@ -41,15 +43,17 @@ export function CostFooter({ metrics }: { metrics: TurnMetrics | undefined }) {
       </Chip>
 
       <Chip
+        className="tabular-nums"
         color={metrics.coldStart ? "warning" : "default"}
-
         title="Time to first token"
         variant="soft"
       >
         TTFT {formatMs(metrics.ttftMs)}
       </Chip>
 
-      <Chip variant="soft">{formatRate(metrics.tokensPerSecond)}</Chip>
+      <Chip className="tabular-nums" variant="soft">
+        {formatRate(metrics.tokensPerSecond)}
+      </Chip>
 
       {metrics.coldStart ? (
         <Chip color="warning" variant="soft">
