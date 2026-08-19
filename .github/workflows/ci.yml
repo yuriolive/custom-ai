@@ -165,9 +165,16 @@ jobs:
       # test_measure.py imports only measure.py and tiers.py, both stdlib-only.
       # `modal` is needed solely by app.py, which the tests never import — so
       # --no-project runs the full suite with nothing installed at all.
+      #
+      # test_tier_drift.py is listed EXPLICITLY, not discovered: it reads
+      # supabase/migrations and fails if gpu_tiers (the catalog that runs at request
+      # time) and tiers.py disagree on hardware or price. It is also stdlib-only —
+      # no database, no network, no Modal credential. The credentialed direction
+      # (are the committed prices still Modal's published ones?) is
+      # tools/modal/sync_rates.py --check, which is local-only by design.
       - name: test
         working-directory: tools/modal
-        run: uv run --no-project python -m unittest test_measure -v
+        run: uv run --no-project python -m unittest test_measure test_tier_drift -v
 
       - name: ruff check
         working-directory: tools/modal
