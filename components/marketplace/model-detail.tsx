@@ -3,6 +3,8 @@
 import { Card, Chip, Table } from "@heroui/react";
 import Link from "next/link";
 
+import { formatCreditValue } from "@/lib/format";
+
 import {
   formatCompact,
   formatContext,
@@ -129,6 +131,13 @@ export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: 
             </Table.Content>
           </Table.ScrollContainer>
         </Table>
+        {/* The same value line the catalog card carries, from the same helper.
+            A per-token price is not a number anyone holds in their head; what a
+            fixed top-up buys is. Floored, so it never promises tokens a balance
+            cannot pay for. */}
+        <p className="text-sm tabular-nums">
+          {formatCreditValue(model.pricePromptMicroPerMtoken, model.priceCompletionMicroPerMtoken)}
+        </p>
         <p className="text-muted text-xs">
           Billed on tokens actually processed, rounded up, with a one-microdollar minimum per
           request. Reasoning models bill their chain-of-thought as output tokens, because that is
