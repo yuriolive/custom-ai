@@ -43,7 +43,10 @@ export async function SiteNav() {
         {/* min-w-0 lets this cluster shrink; without it the handle's intrinsic
             width forced a 37px document overflow at 375px. */}
         <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
-          <BalanceChip />
+          <BalanceChip
+            initialBalanceMicroUsd={profile?.balanceMicroUsd ?? null}
+            userId={profile?.id ?? null}
+          />
           <ThemeToggle />
           {profile ? <UserMenu handle={profile.handle} /> : <SignInLink />}
         </div>
