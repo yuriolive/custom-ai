@@ -26,6 +26,7 @@ from measure import (
     SseAnalyzer,
     analyze_sse_text,
     build_url,
+    check_base_url,
     percentile,
     run_once,
     summarize,
@@ -586,6 +587,14 @@ class TestAgainstMockUpstream(unittest.TestCase):
     def test_build_url_shape(self):
         u = build_url("http://x/base/", {"model_repo": "a/b", "ctx_size": 8192})
         self.assertEqual(u, "http://x/base/v1/chat/completions?model_repo=a%2Fb&ctx_size=8192")
+
+    def test_base_url_must_be_http(self):
+        # urllib opens file:// and bare hostnames without complaint, so a typo'd --url
+        # would otherwise be measured as if it were an inference endpoint.
+        self.assertIsNone(check_base_url("https://ws--app-serve.modal.run"))
+        self.assertIsNotNone(check_base_url("file:///etc/passwd"))
+        self.assertIsNotNone(check_base_url("localhost:8000"))
+        self.assertIsNotNone(check_base_url("http://"))
 
 
 if __name__ == "__main__":

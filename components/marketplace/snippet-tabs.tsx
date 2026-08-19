@@ -2,6 +2,8 @@
 
 import { Tabs } from "@heroui/react";
 
+import { LabelHint } from "@/components/label-hint";
+
 import { CodeBlock } from "./code-block";
 import { SNIPPET_LANGUAGES, SNIPPET_TIMEOUT_SECONDS, snippetFor } from "./snippets";
 
@@ -18,9 +20,15 @@ import { SNIPPET_LANGUAGES, SNIPPET_TIMEOUT_SECONDS, snippetFor } from "./snippe
  *    `gatewayBaseUrl`, so a local build never hands out a production endpoint;
  *  - the timeout, which must survive a cold start.
  *
- * The cold-start note under the tabs is deliberately above the fold rather than
- * buried in the snippet comments. A developer whose first call takes 100 seconds
- * without warning concludes the product is broken and leaves.
+ * The three values are listed under the tabs as VALUES, with the caveat behind
+ * an ⓘ tooltip. The caveats are each a paragraph and all three inline turned the
+ * block into more text than the snippet it explains — in the Studio dialog they
+ * pushed the snippet itself off the first screen. What stays visible is what a
+ * developer scans for: the id, the URL, and the fact that the first call is slow.
+ *
+ * The cold-start warning specifically is a visible value, not a tooltip. A
+ * developer whose first call takes 100 seconds without warning concludes the
+ * product is broken and leaves — that has to be readable without hovering.
  */
 export function SnippetTabs({
   modelId,
@@ -63,25 +71,36 @@ export function SnippetTabs({
         ))}
       </Tabs>
 
-      <dl className="text-muted mt-3 grid gap-x-3 gap-y-1 text-xs sm:grid-cols-[auto_1fr]">
+      <dl className="text-muted mt-3 grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1.5 text-xs">
         <dt className="font-medium">Model id</dt>
-        <dd>
-          <code className="text-foreground">{modelId}</code> — the platform id. It is a{" "}
-          <em>platform</em> identity, not the Hugging Face repo path this model was built from: the
-          creator handle need not match the HF account, and the slug is chosen at registration. Case
-          does not matter (the gateway lowercases what you send), but the two names do — send a repo
-          path that differs from the id above and you get 404 <code>model_not_found</code>.
+        <dd className="flex min-w-0 items-start gap-1.5">
+          {/* `break-all`, not `truncate`: an id or a URL that is cut off is a
+              first call that does not run, and both are long enough to wrap in
+              a dialog. */}
+          <code className="text-foreground break-all">{modelId}</code>
+          <LabelHint subject="the model id">
+            The platform id — <code>creator-handle/model-slug</code>, not the Hugging Face repo
+            path this model was built from. The handle need not match the HF account and the slug
+            is chosen at registration. Case does not matter (the gateway lowercases it); the names
+            do — a repo path that differs from this id returns 404 <code>model_not_found</code>.
+          </LabelHint>
         </dd>
         <dt className="font-medium">Base URL</dt>
-        <dd>
-          <code className="text-foreground">{baseUrl}</code> — the trailing <code>/v1</code> is part
-          of it; SDKs append <code>/chat/completions</code>.
+        <dd className="flex min-w-0 items-start gap-1.5">
+          <code className="text-foreground break-all">{baseUrl}</code>
+          <LabelHint subject="the base URL">
+            The trailing <code>/v1</code> is part of it; SDKs append <code>/chat/completions</code>.
+          </LabelHint>
         </dd>
         <dt className="font-medium">Timeout</dt>
-        <dd>
-          {SNIPPET_TIMEOUT_SECONDS}s, and it matters. This model scales to zero, so a first request
-          to an idle worker can take up to two minutes while a GPU starts and weights load. Later
-          calls answer in well under a second.
+        <dd className="flex min-w-0 items-start gap-1.5">
+          <span className="text-foreground">
+            {SNIPPET_TIMEOUT_SECONDS}s — a first call can take up to 2 min
+          </span>
+          <LabelHint subject="the timeout">
+            This model scales to zero, so a first request to an idle worker waits while a GPU
+            starts and the weights load. Later calls answer in well under a second.
+          </LabelHint>
         </dd>
       </dl>
     </div>

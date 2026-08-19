@@ -43,8 +43,13 @@ class GpuTier:
     modal_gpu_string: str  # the exact value passed to @app.cls(gpu=...)
     vram_bytes: int
     memory_bandwidth_bytes_s: int
-    usd_per_hour_micro: int  # integer micro-USD/hour, from Modal's per-second rate
-    usd_per_second_micro: int
+    # Both derive from ONE published number, Modal's hourly rate: the hourly value is
+    # that rate in micro-USD exactly, the per-second value is it divided by 3600 and
+    # rounded. Deriving the hour from the rounded second (as two entries here once did)
+    # invents up to $0.0004/hr that Modal never charged. tools/modal/sync_rates.py is
+    # the only thing that should edit these two fields.
+    usd_per_hour_micro: int  # integer micro-USD/hour, exactly Modal's published rate
+    usd_per_second_micro: int  # round(usd_per_hour_micro / 3600)
     sort_order: int = 0
     is_enabled: bool = True
 
@@ -62,7 +67,7 @@ GPU_TIERS: tuple[GpuTier, ...] = (
         modal_gpu_string="T4",
         vram_bytes=16 * GIB,
         memory_bandwidth_bytes_s=320_000_000_000,
-        usd_per_hour_micro=590_400,
+        usd_per_hour_micro=590_000,
         usd_per_second_micro=164,
         sort_order=10,
     ),
@@ -138,7 +143,7 @@ GPU_TIERS: tuple[GpuTier, ...] = (
         modal_gpu_string="H200",
         vram_bytes=141 * GIB,
         memory_bandwidth_bytes_s=4_800_000_000_000,
-        usd_per_hour_micro=4_539_600,
+        usd_per_hour_micro=4_540_000,
         usd_per_second_micro=1261,
         sort_order=80,
     ),
@@ -395,14 +400,14 @@ def select_tier(shape: ModelShape, allowed_ids: list[str] | None = None) -> Plac
 # HYBRID attention/SSM: only 65//4 = 16 of the 65 blocks keep a KV cache, so KV is ~4x
 # smaller than an all-layers calculation gives. head_dim is the declared key_length 256,
 # NOT hidden_size/head_count (= 213.33) — using the latter under-counts KV by 17%.
-MVP_TARGET_SHAPE = dict(
-    weights_bytes=16_810_714_528,
-    context_length=8192,
-    n_layers=65,
-    n_kv_heads=4,
-    head_dim=256,
-    full_attention_interval=4,
-    ssm_state_size=128,
-    ssm_inner_size=6144,
-    target_tokens_per_second=30,
-)
+MVP_TARGET_SHAPE = {
+    "weights_bytes": 16_810_714_528,
+    "context_length": 8192,
+    "n_layers": 65,
+    "n_kv_heads": 4,
+    "head_dim": 256,
+    "full_attention_interval": 4,
+    "ssm_state_size": 128,
+    "ssm_inner_size": 6144,
+    "target_tokens_per_second": 30,
+}
