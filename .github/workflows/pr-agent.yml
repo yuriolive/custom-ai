@@ -1,0 +1,61 @@
+name: PR Agent
+
+# ---------------------------------------------------------------------------
+# AI PR review via PR-Agent (https://github.com/The-PR-Agent/pr-agent),
+# running Gemini 3.7 Flash through an AI Studio API key.
+#
+# SECURITY — this workflow holds a real secret (GOOGLE_AI_STUDIO__GEMINI_API_KEY),
+# so it must never execute code that comes from the pull request head. It does
+# not: the only step is the pinned PR-Agent action, which reads the diff through
+# the GitHub API and never checks out or runs repo code.
+#
+# For extra safety it is also gated on same-repo PRs — a fork PR gets no review
+# rather than a chance to reach the key. Drop the `if:` only if you are willing
+# to review forks with the key present.
+# ---------------------------------------------------------------------------
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pr_agent:
+    # Skip fork PRs (see security note above). Comment-triggered runs fire only
+    # on actual pull requests (never plain issues), only for `/…` commands, and
+    # only from repo members — otherwise any drive-by commenter on any PR could
+    # spend the API key's quota at will.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR Agent
+        uses: the-pr-agent/pr-agent@f6af7d77554ff8d26adffded077e6461329e92fa # v0.42.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_AI_STUDIO__GEMINI_API_KEY: ${{ secrets.GOOGLE_AI_STUDIO_GEMINI_API_KEY }}
+          CONFIG__MODEL: gemini/gemini-3.7-flash
+          # gemini/gemini-3.1-flash 404s on the AI Studio API; 3.6 Flash is
+          # the previous generation and is served there.
+          CONFIG__FALLBACK_MODELS: '["gemini/gemini-3.6-flash"]'
+          # PR-Agent ships a hardcoded MAX_TOKENS table and has no entry for
+          # 3.7 Flash yet; without this it refuses the model before ever
+          # calling the API. 1M = the model's context window.
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: 1048576
+          CONFIG__GIT_PROVIDER: github
+          CONFIG__PUBLISH_OUTPUT_PROGRESS: false
+          GITHUB_ACTION_CONFIG__AUTO_REVIEW: true
+          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: true
+          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: true
