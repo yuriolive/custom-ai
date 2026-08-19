@@ -60,6 +60,12 @@ export type SessionProfile = {
   handle: string;
   displayName: string | null;
   avatarUrl: string | null;
+  /**
+   * Spendable wallet, micro-USD. Null only in the brief window where the
+   * signup trigger has not committed a profile row yet — the nav renders no
+   * balance chip at all in that case rather than a $0.00 that is not true.
+   */
+  balanceMicroUsd: number | null;
 };
 
 /**
@@ -80,7 +86,7 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
 
   const { data } = await supabase
     .from("profiles")
-    .select("id, handle, display_name, avatar_url")
+    .select("id, handle, display_name, avatar_url, balance_micro_usd")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -90,6 +96,7 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
       handle: user.email?.split("@")[0] ?? "account",
       displayName: null,
       avatarUrl: null,
+      balanceMicroUsd: null,
     };
   }
 
@@ -98,5 +105,6 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
     handle: data.handle as string,
     displayName: (data.display_name as string | null) ?? null,
     avatarUrl: (data.avatar_url as string | null) ?? null,
+    balanceMicroUsd: (data.balance_micro_usd as number | null) ?? null,
   };
 }

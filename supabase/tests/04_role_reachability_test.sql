@@ -3,7 +3,7 @@
 -- Probed as the REAL roles (SET ROLE), not by reading the grant catalog.
 -- ============================================================================
 begin;
-select plan(25);
+select plan(27);
 
 \set payer   '00000000-0000-0000-0000-0000000000a2'
 \set creator '00000000-0000-0000-0000-0000000000a1'
@@ -17,10 +17,18 @@ select ok(not has_function_privilege('anon', 'public.authorize_request(uuid,uuid
           'anon cannot execute authorize_request');
 select ok(not has_function_privilege('authenticated', 'public.authorize_request(uuid,uuid,uuid,uuid,integer,integer,boolean)', 'EXECUTE'),
           'authenticated cannot execute authorize_request');
-select ok(not has_function_privilege('authenticated', 'public.credit_wallet(uuid,bigint,public.ledger_kind,text,text,text)', 'EXECUTE'),
+-- Seven arguments since 20260818000300: the trailing one is the Stripe payment
+-- intent, without which a refund cannot be traced back to the user it debits.
+select ok(not has_function_privilege('authenticated', 'public.credit_wallet(uuid,bigint,public.ledger_kind,text,text,text,text)', 'EXECUTE'),
           'authenticated cannot execute credit_wallet');
-select ok(not has_function_privilege('anon', 'public.credit_wallet(uuid,bigint,public.ledger_kind,text,text,text)', 'EXECUTE'),
+select ok(not has_function_privilege('anon', 'public.credit_wallet(uuid,bigint,public.ledger_kind,text,text,text,text)', 'EXECUTE'),
           'anon cannot execute credit_wallet');
+-- The reversal RPC debits a wallet and flags an account. Same blast radius as
+-- credit_wallet, so it gets the same two probes.
+select ok(not has_function_privilege('authenticated', 'public.debit_wallet_reversal(uuid,bigint,public.ledger_kind,text,text,text)', 'EXECUTE'),
+          'authenticated cannot execute debit_wallet_reversal');
+select ok(not has_function_privilege('anon', 'public.debit_wallet_reversal(uuid,bigint,public.ledger_kind,text,text,text)', 'EXECUTE'),
+          'anon cannot execute debit_wallet_reversal');
 select ok(not has_function_privilege('authenticated', 'public.void_reservation(uuid,text,text)', 'EXECUTE'),
           'authenticated cannot execute void_reservation');
 select ok(not has_function_privilege('authenticated', 'public.expire_stale_holds()', 'EXECUTE'),
