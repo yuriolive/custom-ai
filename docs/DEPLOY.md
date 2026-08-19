@@ -131,6 +131,47 @@ Then redeploy the web app so the build picks it up.
 
 ---
 
+## 5. Stripe — wallet top-up
+
+Order matters: the signing secret does not exist until the endpoint does.
+
+```
+vercel env add STRIPE_SECRET_KEY production
+vercel env add SITE_URL production
+```
+
+Then, in the Stripe dashboard (live mode), add a webhook endpoint at
+`https://<your-domain>/api/stripe/webhook` subscribed to exactly four events:
+
+```
+checkout.session.completed
+checkout.session.async_payment_succeeded
+charge.refunded
+charge.dispute.created
+```
+
+Copy that endpoint's signing secret (`whsec_...`) and:
+
+```
+vercel env add STRIPE_WEBHOOK_SECRET production
+```
+
+Redeploy. `STRIPE_WEBHOOK_SECRET` is **per endpoint** — the test-mode secret from
+`stripe listen` will not verify live traffic, and a wrong secret shows up as
+every event 400ing, never as a wrong credit.
+
+Locally:
+
+```
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
+and put the secret it prints in `.env.local`. Verify with
+`stripe trigger checkout.session.completed --add "checkout_session:metadata[user_id]=<uuid>"`,
+then check `select count(*) from v_balance_drift` is 0.
+
+---
+
 ## Preview/Development credential sync — accepted risk, and its real boundary
 
 Preview and Development sync is **ON**, a deliberate MVP decision to move faster. What
@@ -242,7 +283,7 @@ After the first deploy, confirm `select count(*) from api_keys` returns 0.
 | Gap | Consequence |
 |---|---|
 | **No Creator Studio** | Models can only be added by SQL, so the marketplace ships with no supply side. Biggest functional gap. |
-| **No Stripe** | Wallets can only be funded by SQL `credit_wallet` calls. |
+| **Stripe needs operator setup** | Code is shipped, but until `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `SITE_URL` are set in Vercel and the `/api/stripe/webhook` endpoint is registered in the Stripe dashboard, Add funds fails and wallets can only be funded by SQL `credit_wallet` calls. |
 | **GitHub OAuth unconfigured** | The sign-in button fails with `provider is not enabled`. Email/password works. |
 | **Warm TTFT ~926 ms** vs the 400 ms SLO | Measured miss, unresolved. |
 | **MFU is a guessed 0.75** (measured ~0.79) | Decides A10 vs L40S and $0.85/hr. |

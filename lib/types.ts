@@ -50,8 +50,3 @@ export type PlaygroundRequestBody = {
   systemPrompt?: string;
 };
 
-/** Placeholder wallet shape; replaced by Supabase Realtime in FR-PLAY-006. */
-export type WalletBalance = {
-  balanceMicroUsd: number;
-  isPlaceholder: boolean;
-};

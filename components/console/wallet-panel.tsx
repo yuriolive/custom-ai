@@ -9,15 +9,19 @@
  * procedural. This page is therefore read-only by construction, and reads go
  * straight from the browser under RLS.
  *
- * FR-CON-005/006/007 specify a "Add funds" button and a Stripe Checkout
- * redirect. Stripe is out by decision for this build, so the place a top-up
- * control would live carries a disabled control that says exactly that. A button
- * that looks live and does nothing is worse than no button: it costs the
- * developer a click, then their trust in every other control on the page.
+ * FR-CON-005/006/007: balance, "Add funds" → Stripe Checkout, and return
+ * handling. The return handling is the subtle part. `?topup=success` proves
+ * only that Stripe redirected the browser here — it is not payment proof and is
+ * never treated as one (FR-BIL-032). The credit lands when the signed webhook
+ * reaches `/api/stripe/webhook`, which can be a moment after the redirect, so
+ * this page polls its own balance for a short window and reports honestly if
+ * the credit has not landed by the end of it.
  */
 
 import { Alert, Button, Card, Chip, Table } from "@heroui/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { TopUpDialog } from "./top-up-dialog";
 
 import {
   formatDateTime,
@@ -56,6 +60,86 @@ export function WalletPanel({
   const [isAppending, setAppending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [balance, setBalance] = useState(balanceMicroUsd);
+  const [isDialogOpen, setDialogOpen] = useState(false);
+  /** null = no return in progress. Drives the banner under the balance. */
+  const [returnState, setReturnState] = useState<
+    "waiting" | "credited" | "cancelled" | "slow" | null
+  >(null);
+
+  /**
+   * Post-Checkout return (FR-CON-007).
+   *
+   * `window.location.search`, not `useSearchParams`: this component is the only
+   * consumer, and the hook forces a Suspense boundary on the whole subtree for
+   * a value read exactly once, on mount.
+   *
+   * The poll is bounded at ~30 s. Stripe's webhook is normally faster than the
+   * redirect, but a retry can take longer, and a spinner that never resolves is
+   * a worse answer than "it hasn't landed yet, here's what that means".
+   */
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("topup");
+    if (!param) return;
+
+    // Drop the parameter immediately: a refresh must not replay the banner, and
+    // the session id in the URL has no business surviving in browser history.
+    window.history.replaceState(null, "", window.location.pathname);
+
+    if (param !== "success") {
+      setReturnState("cancelled");
+      return;
+    }
+
+    setReturnState("waiting");
+    // A mutable object rather than a plain `let`: the cleanup below flips it
+    // from outside the async function, and a captured primitive reads as a
+    // loop-invariant to both a human and the linter.
+    const poll = { cancelled: false };
+    const startedAt = Date.now();
+
+    async function pollUntilCredited() {
+      while (!poll.cancelled && Date.now() - startedAt < 30_000) {
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        if (poll.cancelled) return;
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("balance_micro_usd")
+          .eq("id", user.id)
+          .single();
+
+        // Compared against the SERVER-RENDERED balance, not the current state:
+        // any change at all means the webhook has been through, and a
+        // concurrent usage debit is as good a signal as the credit itself.
+        if (profile && profile.balance_micro_usd !== balanceMicroUsd) {
+          setBalance(profile.balance_micro_usd);
+          // The credit exists, so the ledger row does too — reload the first
+          // page rather than prepending a row this component invented.
+          const page = await fetchLedgerPage(supabase);
+          if (poll.cancelled) return;
+          setRows(page.rows);
+          setCursor(page.nextCursor);
+          setReturnState("credited");
+          return;
+        }
+      }
+      // Timed out. Not an error — the webhook is the authority and may simply
+      // be behind. Say so instead of silently clearing the banner.
+      if (!poll.cancelled) setReturnState("slow");
+    }
+
+    void pollUntilCredited();
+    return () => {
+      poll.cancelled = true;
+    };
+  }, [balanceMicroUsd, supabase]);
+
   const loadMore = useCallback(async () => {
     if (cursor === null) return;
     setAppending(true);
@@ -87,27 +171,70 @@ export function WalletPanel({
         </Card.Header>
         <Card.Content>
           <div className="grid gap-6 sm:grid-cols-2">
-            <Stat label="Available" value={formatBalanceMicroUsd(balanceMicroUsd)} />
+            <Stat label="Available" value={formatBalanceMicroUsd(balance)} />
             <Stat label="Lifetime spend" value={formatMicroUsd(lifetimeSpendMicroUsd)} />
           </div>
+
+          {returnState === "waiting" ? (
+            <Alert className="mt-4" status="default">
+              <Alert.Content>
+                <Alert.Title>Confirming your payment</Alert.Title>
+                <Alert.Description>
+                  Stripe is telling us about the payment. Your balance updates here as soon as it
+                  does — you can leave this page.
+                </Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : null}
+
+          {returnState === "credited" ? (
+            <Alert className="mt-4" status="success">
+              <Alert.Content>
+                <Alert.Title>Funds added</Alert.Title>
+                <Alert.Description>
+                  Your balance and the ledger below are up to date.
+                </Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : null}
+
+          {returnState === "slow" ? (
+            <Alert className="mt-4" status="warning">
+              <Alert.Content>
+                <Alert.Title>Payment taken, credit not landed yet</Alert.Title>
+                <Alert.Description>
+                  This is normally seconds. The credit is applied when Stripe&rsquo;s confirmation
+                  reaches us, so refreshing in a minute should show it. If it is still missing in
+                  an hour, contact support with the date and amount — nothing is lost.
+                </Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : null}
+
+          {returnState === "cancelled" ? (
+            <Alert className="mt-4" status="default">
+              <Alert.Content>
+                <Alert.Title>Checkout cancelled</Alert.Title>
+                <Alert.Description>You were not charged.</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : null}
         </Card.Content>
         <Card.Footer>
           <div className="flex flex-col gap-2">
-            {/* The honest disabled state. Not a stub handler, not a "coming
-                soon" toast — a control that cannot be pressed, next to the
-                reason it cannot. */}
-            <Button isDisabled variant="primary">
-              Add funds — unavailable
+            <Button onPress={() => setDialogOpen(true)} variant="primary">
+              Add funds
             </Button>
             <p className="text-muted max-w-prose text-xs">
-              Self-service funding is not built in this release: there is no payment processor wired
-              up, so there is no way to add funds from this page. Balances are credited out of band
-              (a <code className="font-mono">grant</code> row below). Ask an operator if you need
-              more.
+              Paid through Stripe Checkout — card details never reach this site. Credit is applied
+              from Stripe&rsquo;s signed confirmation, not from returning to this page, so a
+              closed tab never loses a payment.
             </p>
           </div>
         </Card.Footer>
       </Card>
+
+      <TopUpDialog isOpen={isDialogOpen} onClose={() => setDialogOpen(false)} />
 
       {error ? <ErrorPanel detail={error} onRetry={() => void loadMore()} /> : null}
 

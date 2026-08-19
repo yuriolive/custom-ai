@@ -68,10 +68,20 @@ Constraints that already exist and must not be broken:
 - measured, never predicted, throughput on cards
 - light **and** dark must both be correct; 375px must not overflow
 
-### 5. Stripe wallet top-up
-Deferred by explicit decision. Wallets can only be funded by SQL `credit_wallet`
-today, so no self-service developer can pay. Schema, ledger and idempotency are done
-(FR-BIL-030…038) — only Checkout + the webhook are missing.
+### 5. Stripe wallet top-up — **done**
+Shipped: `POST /api/wallet/topup` (Checkout Session), `POST /api/stripe/webhook`
+(signature verification, exactly-once credit, refund/dispute reversal),
+`debit_wallet_reversal` RPC, and the Add-funds dialog on `/console/wallet`.
+Verified locally against `stripe listen` + `stripe trigger`: credit applied,
+redelivery of the same `event.id` wrote no second row, a partial refund debited,
+`v_balance_drift` stayed empty.
+
+Operator work remains: set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and
+`SITE_URL` in Vercel, and register the production webhook endpoint.
+
+Crypto rails are designed but not built — see `docs/PAYMENTS.md`. The next step
+there is the provider-agnostic ledger migration, before a second rail exists to
+need it.
 
 ### 6. `/playground/[creator]/[slug]`
 The Playground serves one hardcoded model. Correct with one public model; broken the
@@ -159,7 +169,7 @@ lora/adapter branch of the companion classifier because nothing consumes it yet.
 3. **#1 Creator Studio** — turns it into a product other people can use
 4. **#7 Tool calling** — the cheapest large capability win
 5. **#4 Design** — do it once Studio exists, so the new surfaces get the same treatment
-6. **#5 Stripe** — needed before anyone can pay
+6. **Crypto rails** (`docs/PAYMENTS.md`) — ledger generalisation, then a processor
 7. **#8 Claude Code**, then P3
 
 The consistent lesson from every bug found so far: **failures here are silent rather
