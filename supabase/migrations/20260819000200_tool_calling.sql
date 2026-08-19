@@ -1,5 +1,5 @@
 -- ============================================================================
--- 20260819000100_tool_calling.sql
+-- 20260819000200_tool_calling.sql
 --
 -- FR-TOOL-003: a per-model capability flag for tool calling.
 --
