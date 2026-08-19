@@ -54,11 +54,17 @@ function stripTrailingSlashes(value: string): string {
  * `parseUpstreamProvider` does. Keeping the two in step matters: a model
  * provisioned with a Modal-shaped reference and served through a RunPod-shaped
  * URL 404s at the upstream and reads as a cold-start timeout from the client.
+ *
+ * The DEFAULT is `modal`, because that is what the platform actually serves
+ * from. An unset variable used to resolve to `runpod`, which turned a missing
+ * deployment env var into "RUNPOD_ENDPOINT_ID is not set" — an error naming a
+ * provider this deployment does not use. Only the two RunPod-shaped values opt
+ * in to that path now.
  */
 export function readUpstreamConfig(): UpstreamConfig {
   const raw = process.env.UPSTREAM_PROVIDER?.trim().toLowerCase();
   return {
-    provider: raw === "modal" ? "modal" : "runpod",
+    provider: raw === "runpod" || raw === "mock" ? "runpod" : "modal",
     baseUrl: stripTrailingSlashes(process.env.UPSTREAM_BASE_URL || "http://127.0.0.1:8787"),
     runpodApiKey: process.env.RUNPOD_API_KEY ?? "",
     runpodEndpointId: process.env.RUNPOD_ENDPOINT_ID ?? "",

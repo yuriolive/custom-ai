@@ -248,7 +248,8 @@ export interface UpstreamRequest {
 export type UpstreamProvider = "runpod" | "modal";
 
 export function parseUpstreamProvider(raw: string | undefined): UpstreamProvider {
-  return raw?.trim().toLowerCase() === "modal" ? "modal" : "runpod";
+  const value = raw?.trim().toLowerCase();
+  return value === "runpod" || value === "mock" ? "runpod" : "modal";
 }
 
 /**
