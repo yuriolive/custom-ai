@@ -39,12 +39,16 @@ import {
   resolveRequest,
 } from "../resolve.ts";
 import {
+  assembleNonStreaming,
+  assertToolsSupported,
   buildUpstreamRequest,
   estimatePromptTokens,
   promptChars,
   shouldVoid,
+  toolDefinitionChars,
   uuidv7,
   validateChatRequest,
+  validateToolParams,
 } from "../index.ts";
 import type {
   GatewayErrorCode,
@@ -105,7 +109,43 @@ const resolvedFixture: ResolvedRequest = {
   platformFeeBps: 2000,
   contextLength: 8192,
   coldStartBudgetS: 90,
+  // Unknown, which is what every row provisioned before FR-TOOL-003 carries.
+  supportsTools: null,
 };
+
+/** A well-formed single tool, the shape every OpenAI client sends. */
+const WEATHER_TOOL = {
+  type: "function",
+  function: {
+    name: "get_weather",
+    description: "Look up the weather.",
+    parameters: {
+      type: "object",
+      properties: { location: { type: "string" } },
+      required: ["location"],
+    },
+  },
+};
+
+/** Wraps SSE lines into the framing assembleNonStreaming reads. */
+function sseResponse(lines: string[]): Response {
+  return new Response([...lines, "data: [DONE]", ""].join("\n\n"), {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function chunkLine(choices: unknown[], extra: Record<string, unknown> = {}): string {
+  return `data: ${
+    JSON.stringify({
+      id: "c1",
+      object: "chat.completion.chunk",
+      created: 1730000000,
+      choices,
+      ...extra,
+    })
+  }`;
+}
 
 // ─── 1. Key hashing & generation ─────────────────────────────────────────────
 
@@ -571,7 +611,7 @@ test("honored params pass through, n is pinned to 1, unknown params are dropped"
 
 // ─── 6. Request validation ───────────────────────────────────────────────────
 
-test("n > 1 and logprobs are 400; tools/functions are 501", async () => {
+test("n > 1 and logprobs are 400", async () => {
   const base = { messages: [{ role: "user", content: "hi" }] };
 
   const n = await expectGatewayError(() => validateChatRequest({ ...base, n: 2 }));
@@ -582,15 +622,239 @@ test("n > 1 and logprobs are 400; tools/functions are 501", async () => {
   assert.equal(lp.status, 400);
   assert.equal(lp.param, "logprobs");
 
-  for (const p of ["tools", "functions", "tool_choice", "function_call"]) {
-    const err = await expectGatewayError(() => validateChatRequest({ ...base, [p]: [{}] }));
-    assert.equal(err.status, 501, p);
-    assert.equal(err.code, "not_implemented");
-    assert.equal(err.param, p);
-  }
-
   // n:1 and logprobs:false are fine.
   validateChatRequest({ ...base, n: 1, logprobs: false });
+});
+
+// ─── 6a. Tool calling (FR-TOOL-001, FR-TOOL-003) ─────────────────────────────
+
+test("a well-formed tool request is accepted, not 501'd", () => {
+  const base = { messages: [{ role: "user", content: "hi" }] };
+  validateChatRequest({ ...base, tools: [WEATHER_TOOL] });
+  validateChatRequest({ ...base, tools: [WEATHER_TOOL], tool_choice: "auto" });
+  validateChatRequest({ ...base, tools: [WEATHER_TOOL], tool_choice: "required" });
+  validateChatRequest({ ...base, tools: [WEATHER_TOOL], tool_choice: "none" });
+  validateChatRequest({
+    ...base,
+    tools: [WEATHER_TOOL],
+    tool_choice: { type: "function", function: { name: "get_weather" } },
+  });
+  // The deprecated spelling, still emitted by several agent frameworks.
+  validateChatRequest({ ...base, functions: [{ name: "get_weather" }], function_call: "auto" });
+  validateChatRequest({ ...base, functions: [{ name: "f" }], function_call: { name: "f" } });
+});
+
+test("malformed tool parameters are 400 and name the parameter", async () => {
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [{ tools: [] }, "tools"],
+    [{ tools: "get_weather" }, "tools"],
+    [{ tools: [{}] }, "tools"],
+    [{ tools: [{ type: "function" }] }, "tools"],
+    [{ tools: [{ type: "retrieval", function: { name: "x" } }] }, "tools"],
+    [{ tools: [{ type: "function", function: { name: "" } }] }, "tools"],
+    [{ functions: [] }, "functions"],
+    [{ functions: [{ description: "no name" }] }, "functions"],
+    [{ tools: [WEATHER_TOOL], tool_choice: "any" }, "tool_choice"],
+    [{ tools: [WEATHER_TOOL], tool_choice: { type: "function" } }, "tool_choice"],
+    // Requiring a tool without supplying one cannot be rendered by any template.
+    [{ tool_choice: "required" }, "tool_choice"],
+    [{ function_call: "required" }, "function_call"],
+  ];
+  for (const [body, param] of cases) {
+    const err = await expectGatewayError(() => validateToolParams(body));
+    assert.equal(err.status, 400, JSON.stringify(body));
+    assert.equal(err.code, "unsupported_parameter", JSON.stringify(body));
+    assert.equal(err.param, param, JSON.stringify(body));
+  }
+  // `tool_choice: "none"` with no tools is redundant, not wrong.
+  validateToolParams({ tool_choice: "none" });
+  validateToolParams({ function_call: "none" });
+});
+
+test("supports_tools: only a measured false refuses; null forwards", async () => {
+  const withTools = { messages: [], tools: [WEATHER_TOOL] };
+
+  const err = await expectGatewayError(() =>
+    assertToolsSupported(withTools, { ...resolvedFixture, supportsTools: false })
+  );
+  assert.equal(err.status, 400);
+  assert.equal(err.param, "tools");
+
+  // null = "the template could not be read". Absence of evidence forwards.
+  assertToolsSupported(withTools, { ...resolvedFixture, supportsTools: null });
+  assertToolsSupported(withTools, { ...resolvedFixture, supportsTools: true });
+  // A request that asks for nothing is unaffected by the flag.
+  assertToolsSupported({ messages: [] }, { ...resolvedFixture, supportsTools: false });
+
+  // The deprecated spelling is gated identically.
+  const legacy = await expectGatewayError(() =>
+    assertToolsSupported({ messages: [], functions: [{ name: "f" }] }, {
+      ...resolvedFixture,
+      supportsTools: false,
+    })
+  );
+  assert.equal(legacy.status, 400);
+});
+
+test("tool definitions and replayed tool calls count toward the prompt estimate", () => {
+  // FR-TOOL-006's "verify, do not assume": the schema is rendered INTO the
+  // prompt, so a hold sized without it under-reserves on every agentic turn.
+  assert.ok(
+    toolDefinitionChars({ tools: [WEATHER_TOOL] }) > 100,
+    "a JSON Schema is hundreds of characters and must not be counted as zero",
+  );
+  assert.equal(toolDefinitionChars({ messages: [] }), 0);
+
+  // An assistant turn that only called a tool has content:null, so the
+  // arguments are the whole message and are invisible to a content-only count.
+  const replay = promptChars([
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [{
+        id: "call_1",
+        type: "function",
+        function: { name: "get_weather", arguments: '{"location":"Lisbon"}' },
+      }],
+    },
+  ]);
+  const bare = promptChars([{ role: "assistant", content: null }]);
+  assert.ok(replay > bare + 25, `expected the arguments to count; got ${replay} vs ${bare}`);
+});
+
+test("the non-streaming assembler rebuilds tool_calls from split fragments", async () => {
+  // Arguments arrive as fragments split mid-JSON, two calls interleaved by index
+  // — the shape FR-TOOL-004 describes and the one a naive concatenation ruins.
+  const sse = sseResponse([
+    chunkLine([{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }]),
+    chunkLine([{
+      index: 0,
+      delta: {
+        tool_calls: [{ index: 0, id: "call_a", type: "function", function: { name: "get_weather", arguments: "" } }],
+      },
+      finish_reason: null,
+    }]),
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ index: 0, function: { arguments: '{"loc' } }] },
+      finish_reason: null,
+    }]),
+    chunkLine([{
+      index: 0,
+      delta: {
+        tool_calls: [{ index: 1, id: "call_b", type: "function", function: { name: "get_time", arguments: "" } }],
+      },
+      finish_reason: null,
+    }]),
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ index: 0, function: { arguments: 'ation":"Lisbon"}' } }] },
+      finish_reason: null,
+    }]),
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ index: 1, function: { arguments: "{}" } }] },
+      finish_reason: null,
+    }]),
+    chunkLine([{ index: 0, delta: {}, finish_reason: "tool_calls" }], {
+      usage: { prompt_tokens: 41, completion_tokens: 19, total_tokens: 60 },
+    }),
+  ]);
+
+  const res = await assembleNonStreaming(sse, "req-1", "owner/model", { value: null });
+  assert.equal(res.status, 200);
+  const body = await res.json() as {
+    choices: Array<{
+      finish_reason: string;
+      message: {
+        content: string | null;
+        tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+      };
+    }>;
+  };
+
+  const choice = body.choices[0];
+  assert.equal(choice.finish_reason, "tool_calls");
+  // OpenAI sends null, and agent frameworks branch on it being falsy.
+  assert.equal(choice.message.content, null);
+  const calls = choice.message.tool_calls ?? [];
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].id, "call_a");
+  assert.equal(calls[0].function.name, "get_weather");
+  // Reassembled across a mid-key split, and left as the string the wire carried.
+  assert.deepEqual(JSON.parse(calls[0].function.arguments), { location: "Lisbon" });
+  assert.equal(calls[1].id, "call_b");
+  assert.equal(calls[1].function.arguments, "{}");
+});
+
+test("the assembler infers finish_reason and synthesizes a missing tool-call id", async () => {
+  // A worker that ends without a finish_reason must not read as a plain "stop":
+  // the client would never execute the call it just received.
+  const sse = sseResponse([
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ index: 0, function: { name: "f", arguments: "{}" } }] },
+      finish_reason: null,
+    }]),
+  ]);
+  const res = await assembleNonStreaming(sse, "req-2", "owner/model", { value: null });
+  const body = await res.json() as {
+    choices: Array<{
+      finish_reason: string;
+      message: { tool_calls?: Array<{ id: string; type: string }> };
+    }>;
+  };
+  assert.equal(body.choices[0].finish_reason, "tool_calls");
+  const call = body.choices[0].message.tool_calls?.[0];
+  // Unanswerable without an id, so one is synthesized rather than left undefined.
+  assert.equal(call?.id, "call_req-2_0");
+  assert.equal(call?.type, "function");
+});
+
+test("fragments with no index append to the open call, not to a new one", async () => {
+  // Defensive path: no worker we serve omits `index`, and if one did, splitting
+  // the arguments across two entries would leave neither parseable.
+  const sse = sseResponse([
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ id: "call_a", type: "function", function: { name: "f", arguments: "" } }] },
+      finish_reason: null,
+    }]),
+    chunkLine([{ index: 0, delta: { tool_calls: [{ function: { arguments: '{"a"' } }] }, finish_reason: null }]),
+    chunkLine([{ index: 0, delta: { tool_calls: [{ function: { arguments: ":1}" } }] }, finish_reason: null }]),
+    // A different id, still with no index: that IS a second call.
+    chunkLine([{
+      index: 0,
+      delta: { tool_calls: [{ id: "call_b", type: "function", function: { name: "g", arguments: "{}" } }] },
+      finish_reason: "tool_calls",
+    }]),
+  ]);
+  const res = await assembleNonStreaming(sse, "req-4", "owner/model", { value: null });
+  const body = await res.json() as {
+    choices: Array<{
+      message: { tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> };
+    }>;
+  };
+  const calls = body.choices[0].message.tool_calls ?? [];
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].id, "call_a");
+  assert.deepEqual(JSON.parse(calls[0].function.arguments), { a: 1 });
+  assert.equal(calls[1].id, "call_b");
+  assert.equal(calls[1].function.name, "g");
+});
+
+test("a text-only response keeps content as a string and never grows tool_calls", async () => {
+  const sse = sseResponse([
+    chunkLine([{ index: 0, delta: { role: "assistant", content: "Hi" }, finish_reason: null }]),
+    chunkLine([{ index: 0, delta: { content: " there" }, finish_reason: "stop" }]),
+  ]);
+  const res = await assembleNonStreaming(sse, "req-3", "owner/model", { value: null });
+  const body = await res.json() as {
+    choices: Array<{ finish_reason: string; message: { content: unknown; tool_calls?: unknown } }>;
+  };
+  assert.equal(body.choices[0].message.content, "Hi there");
+  assert.equal(body.choices[0].message.tool_calls, undefined);
+  assert.equal(body.choices[0].finish_reason, "stop");
 });
 
 test("an empty or missing messages array is rejected", async () => {

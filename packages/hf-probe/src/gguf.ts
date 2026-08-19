@@ -172,8 +172,12 @@ function readValue(c: Cursor, type: number, wide: boolean): GgufValue {
         c.skip((count - keep) * width);
       } else if (elemType === T_STRING) {
         for (let i = 0; i < count; i++) {
-          const s = readString(c, wide);
-          if (i < MAX_KEPT_ARRAY_ELEMENTS) kept.push(s);
+          // Past the head, seek over the length-prefixed bytes instead of
+          // decoding them. A 250k-token vocabulary is otherwise 250k discarded
+          // TextDecoder calls, which is most of the cost of reading a header
+          // deep enough to reach tokenizer.chat_template.
+          if (i < MAX_KEPT_ARRAY_ELEMENTS) kept.push(readString(c, wide));
+          else c.skip(readLength(c, wide));
         }
       } else {
         // Nested arrays are not emitted by any known writer.
@@ -516,4 +520,102 @@ export async function readGgufArchitecture(
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+// ─── the chat template (FR-TOOL-003) ────────────────────────────────────────
+
+export const CHAT_TEMPLATE_KEY = "tokenizer.chat_template";
+
+/**
+ * A GGUF-native repo ships no tokenizer_config.json, so the Jinja chat template
+ * inside the file is the only place its tool support is written down.
+ *
+ * It sits MUCH deeper than the architecture keys. llama.cpp writes the tokenizer
+ * block first — `tokenizer.ggml.tokens`, `.token_type`, `.merges` — which is
+ * 4-6 MB for a 150k-token vocabulary and ~10 MB for a 250k one, and only then
+ * the template. So this starts at 8 MB where readGgufArchitecture starts at 2,
+ * and escalates once to 16 MB rather than giving up.
+ */
+export const DEFAULT_TEMPLATE_BYTES = 8 * 1024 * 1024;
+export const DEFAULT_TEMPLATE_MAX_BYTES = 16 * 1024 * 1024;
+
+export type GgufChatTemplateResult =
+  | { ok: true; template: string; bytesRead: number }
+  | { ok: false; bytesRead: number; error: string };
+
+/**
+ * Read `tokenizer.chat_template` from a remote GGUF file over HTTP Range.
+ *
+ * Returns `{ok:false}` when the key is past the read ceiling — deliberately, and
+ * distinctly from "the template says no tools". The caller must keep those two
+ * apart: one is unknown, the other is a measurement.
+ */
+export async function readGgufChatTemplate(
+  url: string,
+  opts: GgufReadOptions = {},
+): Promise<GgufChatTemplateResult> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const maxBytes = opts.maxBytes ?? DEFAULT_TEMPLATE_MAX_BYTES;
+  let want = Math.min(opts.initialBytes ?? DEFAULT_TEMPLATE_BYTES, maxBytes);
+  let bytesRead = 0;
+
+  for (;;) {
+    const headers: Record<string, string> = { Range: `bytes=0-${want - 1}` };
+    if (opts.hfToken) headers.Authorization = `Bearer ${opts.hfToken}`;
+
+    let res: Response;
+    try {
+      res = await doFetch(url, { headers, signal: opts.signal, redirect: "follow" });
+    } catch (err) {
+      return { ok: false, bytesRead, error: `GGUF range request failed: ${errText(err)}` };
+    }
+
+    if (res.status === 200) {
+      // Range ignored. Tolerable only if the whole object is inside the budget.
+      const len = Number(res.headers.get("content-length") ?? "NaN");
+      if (!Number.isFinite(len) || len > maxBytes) {
+        await res.body?.cancel().catch(() => {});
+        return {
+          ok: false,
+          bytesRead,
+          error: "server ignored the Range request and the object is larger than the " +
+            `${maxBytes}-byte read budget; refusing to download the full weights`,
+        };
+      }
+    } else if (res.status !== 206) {
+      await res.body?.cancel().catch(() => {});
+      return {
+        ok: false,
+        bytesRead,
+        error: `GGUF range request returned HTTP ${res.status} ${res.statusText}`.trim(),
+      };
+    }
+
+    const buf = new Uint8Array(await res.arrayBuffer());
+    bytesRead = buf.byteLength;
+
+    let header: GgufHeader;
+    try {
+      header = parseGgufHeader(buf);
+    } catch (err) {
+      return { ok: false, bytesRead, error: `GGUF header parse failed: ${errText(err)}` };
+    }
+
+    const template = header.kv[CHAT_TEMPLATE_KEY];
+    if (typeof template === "string") return { ok: true, template, bytesRead };
+
+    // Not truncated means the whole KV block was read and the key is absent —
+    // a real answer, and widening the window would not change it.
+    const grew = buf.byteLength >= want;
+    if (!header.truncated || !grew || want >= maxBytes) {
+      return {
+        ok: false,
+        bytesRead,
+        error: header.truncated
+          ? `${CHAT_TEMPLATE_KEY} was not within the ${bytesRead}-byte header read`
+          : `${CHAT_TEMPLATE_KEY} is not present in this file`,
+      };
+    }
+    want = Math.min(want * 2, maxBytes);
+  }
 }

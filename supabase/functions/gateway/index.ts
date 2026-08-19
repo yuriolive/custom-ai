@@ -124,6 +124,14 @@ const HONORED_PARAMS = [
   "seed",
   "response_format",
   "user",
+  // FR-TOOL-001. Forwarded verbatim: llama.cpp running `--jinja` renders these
+  // with the model's own chat template, so the gateway must not reshape them.
+  // `functions` / `function_call` are the deprecated spelling and are still what
+  // several agent frameworks emit; upstream accepts both.
+  "tools",
+  "tool_choice",
+  "functions",
+  "function_call",
 ] as const;
 
 export interface ChatBody {
@@ -160,17 +168,7 @@ export function validateChatRequest(body: ChatBody): void {
     );
   }
 
-  // Phase 2 features — explicitly not implemented rather than silently dropped.
-  for (const p of ["tools", "functions", "tool_choice", "function_call"] as const) {
-    if (body[p] !== undefined && body[p] !== null) {
-      throw new GatewayError(
-        "not_implemented",
-        `The '${p}' parameter is not supported yet. Tool and function calling are ` +
-          `planned for a future release.`,
-        { param: p },
-      );
-    }
-  }
+  validateToolParams(body);
 
   if (body.n !== undefined && body.n !== null && Number(body.n) !== 1) {
     throw new GatewayError(
@@ -196,6 +194,151 @@ export function validateChatRequest(body: ChatBody): void {
   }
 }
 
+/** Legal `tool_choice` strings. The object form is checked separately. */
+const TOOL_CHOICE_MODES = ["none", "auto", "required"] as const;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function badTool(message: string, param: string): GatewayError {
+  return new GatewayError("unsupported_parameter", message, { param });
+}
+
+/**
+ * FR-TOOL-001 — structural check on the four tool parameters, which are
+ * otherwise forwarded verbatim.
+ *
+ * This exists because of what llama.cpp does with a malformed `tools` entry: the
+ * chat template dereferences `tool.function.name`, the render aborts, and that
+ * surfaces as a 500 from the worker and then as an opaque `internal_error` to
+ * the caller — after the hold has been placed. A 400 here costs nothing and
+ * names the offending parameter. The JSON Schema inside `parameters` crosses
+ * UNEXAMINED: validating it is the model's job, and every dialect difference
+ * between clients would otherwise become a false rejection.
+ */
+export function validateToolParams(body: ChatBody): void {
+  const hasTools = body.tools !== undefined && body.tools !== null;
+  const hasFunctions = body.functions !== undefined && body.functions !== null;
+
+  if (hasTools) {
+    if (!Array.isArray(body.tools) || body.tools.length === 0) {
+      throw badTool("The 'tools' parameter must be a non-empty array.", "tools");
+    }
+    for (const [i, tool] of (body.tools as unknown[]).entries()) {
+      if (!isRecord(tool) || tool.type !== "function" || !isRecord(tool.function)) {
+        throw badTool(
+          `tools[${i}] must be an object of the form ` +
+            `{ type: "function", function: { name, parameters } }.`,
+          "tools",
+        );
+      }
+      if (typeof tool.function.name !== "string" || tool.function.name.length === 0) {
+        throw badTool(`tools[${i}].function.name must be a non-empty string.`, "tools");
+      }
+    }
+  }
+
+  if (hasFunctions) {
+    if (!Array.isArray(body.functions) || body.functions.length === 0) {
+      throw badTool("The 'functions' parameter must be a non-empty array.", "functions");
+    }
+    for (const [i, fn] of (body.functions as unknown[]).entries()) {
+      if (!isRecord(fn) || typeof fn.name !== "string" || fn.name.length === 0) {
+        throw badTool(`functions[${i}].name must be a non-empty string.`, "functions");
+      }
+    }
+  }
+
+  const choice = body.tool_choice;
+  if (choice !== undefined && choice !== null) {
+    const validString = typeof choice === "string" &&
+      (TOOL_CHOICE_MODES as readonly string[]).includes(choice);
+    const validObject = isRecord(choice) && choice.type === "function" &&
+      isRecord(choice.function) && typeof choice.function.name === "string";
+    if (!validString && !validObject) {
+      throw badTool(
+        `The 'tool_choice' parameter must be one of ${TOOL_CHOICE_MODES.join(", ")} ` +
+          `or { type: "function", function: { name } }.`,
+        "tool_choice",
+      );
+    }
+    // `tool_choice: "none"` with no tools is redundant but harmless. Anything
+    // that NAMES or REQUIRES a tool without supplying one cannot be rendered.
+    if (choice !== "none" && !hasTools && !hasFunctions) {
+      throw badTool(
+        "The 'tool_choice' parameter requires a non-empty 'tools' array.",
+        "tool_choice",
+      );
+    }
+  }
+
+  const fnCall = body.function_call;
+  if (fnCall !== undefined && fnCall !== null) {
+    const validString = fnCall === "none" || fnCall === "auto";
+    const validObject = isRecord(fnCall) && typeof fnCall.name === "string";
+    if (!validString && !validObject) {
+      throw badTool(
+        `The 'function_call' parameter must be "none", "auto", or { name }.`,
+        "function_call",
+      );
+    }
+    if (fnCall !== "none" && !hasFunctions && !hasTools) {
+      throw badTool(
+        "The 'function_call' parameter requires a non-empty 'functions' array.",
+        "function_call",
+      );
+    }
+  }
+}
+
+/**
+ * FR-TOOL-003 — refuse a tool request on a model whose chat template cannot
+ * render one. Runs AFTER resolution, because the answer is a property of the
+ * model rather than of the request.
+ *
+ * Only a measured `false` is refused. `null` means the template could not be
+ * read (see `ResolvedRequest.supportsTools`) and is forwarded: guessing "no"
+ * there would reject calls that work, and every row provisioned before
+ * FR-TOOL-003 carries `null`.
+ */
+export function assertToolsSupported(body: ChatBody, resolved: ResolvedRequest): void {
+  const asksForTools = (body.tools !== undefined && body.tools !== null) ||
+    (body.functions !== undefined && body.functions !== null);
+  if (!asksForTools || resolved.supportsTools !== false) return;
+  throw new GatewayError(
+    "unsupported_parameter",
+    "This model's chat template cannot render tool definitions, so 'tools' " +
+      "cannot be honored. Sending them anyway returns ordinary prose, which a " +
+      "tool-calling client reads as a successful turn that made no call.",
+    { param: "tools" },
+  );
+}
+
+/**
+ * Characters the chat template will render for the tool DEFINITIONS.
+ *
+ * They are part of the prompt and nothing else counts them: the JSON Schema for
+ * a handful of tools routinely runs to several thousand characters, so leaving
+ * them out under-sizes the authorization hold on exactly the agentic traffic
+ * this release exists to serve. `JSON.stringify` deliberately over-estimates the
+ * rendered form — punctuation the template drops still costs characters here,
+ * and the estimator's job is to never under-count.
+ */
+export function toolDefinitionChars(body: ChatBody): number {
+  let total = 0;
+  for (const key of ["tools", "functions", "tool_choice", "function_call"] as const) {
+    const value = body[key];
+    if (value === undefined || value === null) continue;
+    try {
+      total += JSON.stringify(value)?.length ?? 0;
+    } catch {
+      // Unserializable input cannot have come out of req.json().
+    }
+  }
+  return total;
+}
+
 /** Total characters across message contents — the input to the prompt estimator. */
 export function promptChars(messages: unknown): number {
   if (!Array.isArray(messages)) return 0;
@@ -208,6 +351,17 @@ export function promptChars(messages: unknown): number {
       for (const part of content) {
         const t = (part as { text?: unknown })?.text;
         if (typeof t === "string") total += t.length;
+      }
+    }
+    // An agent loop replays its own tool calls on every turn, so from the second
+    // turn on these are most of the prompt — and `content` is null on a
+    // tool-call message, which makes them invisible to the branch above.
+    const toolCalls = (m as { tool_calls?: unknown }).tool_calls;
+    if (Array.isArray(toolCalls)) {
+      for (const call of toolCalls) {
+        const fn = (call as { function?: { name?: unknown; arguments?: unknown } })?.function;
+        if (typeof fn?.name === "string") total += fn.name.length;
+        if (typeof fn?.arguments === "string") total += fn.arguments.length;
       }
     }
     const role = (m as { role?: unknown }).role;
@@ -448,9 +602,13 @@ async function handleChatCompletions(
   const keyHash = await hashApiKey(apiKey);
   const { resolved, cacheHit } = await resolveRequest(keyHash, parsed, deps.exec);
 
+  // 4b. Tool capability. Needs the resolved model, so it cannot live in
+  //     validateChatRequest — but it still runs before the hold is placed.
+  assertToolsSupported(body, resolved);
+
   // 5. Reserve. Balance and suspension are read INSIDE this transaction and are
   //    never cached (FR-GW-053).
-  const chars = promptChars(body.messages);
+  const chars = promptChars(body.messages) + toolDefinitionChars(body);
   const maxTokens = resolveMaxTokens(body, resolved.contextLength);
   const clientWantsStream = body.stream === true;
 
@@ -618,6 +776,64 @@ function withGatewayHeaders(
 
 // ─── Non-streaming assembly (FR-GW-030) ──────────────────────────────────────
 
+/** One tool call being rebuilt from its fragments. FR-TOOL-005. */
+interface PartialToolCall {
+  id: string;
+  type: string;
+  name: string;
+  /** Concatenated `function.arguments` fragments — a JSON string, never parsed. */
+  args: string;
+}
+
+/**
+ * Fold one `delta.tool_calls[]` array into the per-index accumulator.
+ *
+ * The fragments cannot be concatenated blindly (FR-TOOL-004): each entry carries
+ * an `index` identifying WHICH call it extends, parallel calls interleave, and
+ * `function.arguments` is split at arbitrary points — routinely mid-token inside
+ * the JSON, so a fragment on its own does not parse. `id` and `name` arrive once,
+ * on the entry that opens a call, and are absent from every continuation.
+ *
+ * The arguments string is never parsed here. It is a JSON string in the OpenAI
+ * wire shape, and re-serializing it would change bytes the client compares.
+ */
+function nextIndexFor(into: Map<number, PartialToolCall>, id: string): number {
+  if (into.size === 0) return 0;
+  const open = Math.max(...into.keys());
+  const current = into.get(open);
+  if (id.length > 0 && current !== undefined && current.id.length > 0 && current.id !== id) {
+    return open + 1;
+  }
+  return open;
+}
+
+function foldToolCallDeltas(
+  deltas: unknown,
+  into: Map<number, PartialToolCall>,
+): void {
+  if (!Array.isArray(deltas)) return;
+  for (const raw of deltas) {
+    if (!isRecord(raw)) continue;
+    const index = typeof raw.index === "number"
+      ? raw.index
+      // No `index` at all. Every worker we serve sends one, so this is defensive
+      // — but it must APPEND to the open call rather than open a new one, or the
+      // arguments end up split across two entries and neither parses. A frame
+      // carrying a DIFFERENT id is the one exception: that is a new call.
+      : nextIndexFor(into, typeof raw.id === "string" ? raw.id : "");
+    const existing = into.get(index) ??
+      { id: "", type: "function", name: "", args: "" };
+    if (typeof raw.id === "string" && raw.id.length > 0) existing.id = raw.id;
+    if (typeof raw.type === "string" && raw.type.length > 0) existing.type = raw.type;
+    const fn = raw.function;
+    if (isRecord(fn)) {
+      if (typeof fn.name === "string" && fn.name.length > 0) existing.name = fn.name;
+      if (typeof fn.arguments === "string") existing.args += fn.arguments;
+    }
+    into.set(index, existing);
+  }
+}
+
 /** Buffers the forced upstream stream and emits one `chat.completion` object. */
 export async function assembleNonStreaming(
   sse: Response,
@@ -633,6 +849,7 @@ export async function assembleNonStreaming(
   let usage: Record<string, unknown> | null = null;
   let created = Math.floor(Date.now() / 1000);
   let embeddedError: { code?: string; message?: string } | null = null;
+  const toolCalls = new Map<number, PartialToolCall>();
 
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -653,8 +870,9 @@ export async function assembleNonStreaming(
     if (chunk.usage) usage = chunk.usage as Record<string, unknown>;
     const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
     if (!choice) continue;
-    const delta = choice.delta as { content?: unknown } | undefined;
+    const delta = choice.delta as { content?: unknown; tool_calls?: unknown } | undefined;
     if (typeof delta?.content === "string") content += delta.content;
+    foldToolCallDeltas(delta?.tool_calls, toolCalls);
     if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
   }
 
@@ -669,6 +887,27 @@ export async function assembleNonStreaming(
     );
   }
 
+  // Sorted by the upstream index, which is the order the model called them in
+  // and the order a client must reply to them in.
+  const assembled = [...toolCalls.entries()]
+    .toSorted((a, b) => a[0] - b[0])
+    .map(([index, call]) => ({
+      // A client answers a tool call by echoing its id, so a call with no id is
+      // unanswerable. llama.cpp emits one; synthesize a stable fallback rather
+      // than emit `undefined` and break the round trip.
+      id: call.id || `call_${requestId}_${index}`,
+      type: call.type || "function",
+      function: { name: call.name, arguments: call.args },
+    }));
+
+  const message: Record<string, unknown> = assembled.length > 0
+    // OpenAI sends `content: null` on a tool-only turn, and clients branch on
+    // it — `content is None` in the Python SDK, `content === null` in the JS one.
+    // An empty string is CONTENT, and a client that appends it to a transcript
+    // records an assistant turn that said nothing.
+    ? { role: "assistant", content: content.length > 0 ? content : null, tool_calls: assembled }
+    : { role: "assistant", content };
+
   const completion = {
     id: `chatcmpl-${requestId}`,
     object: "chat.completion",
@@ -677,9 +916,13 @@ export async function assembleNonStreaming(
     choices: [
       {
         index: 0,
-        message: { role: "assistant", content },
+        message,
         logprobs: null,
-        finish_reason: finishReason ?? "stop",
+        // FR-TOOL-005: `tool_calls` must survive to the client. A worker that
+        // ends the stream without a finish_reason while having emitted calls
+        // would otherwise read as a plain "stop", and the client would never
+        // execute them.
+        finish_reason: finishReason ?? (assembled.length > 0 ? "tool_calls" : "stop"),
       },
     ],
     usage: usage ?? {

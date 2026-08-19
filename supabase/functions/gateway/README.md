@@ -20,7 +20,7 @@ forms work.
 | 1 | Bearer shape: `sk-plat-` + 43 url-safe chars               | 401 `invalid_api_key`      | `auth.ts`    |
 | 2 | Parse JSON body                                            | 400                        | `index.ts`   |
 | 3 | `creator/model-slug` parse                                 | 400 `invalid_model_format` | `resolve.ts` |
-| 4 | Param validation (`n>1`, `logprobs`, `tools`)              | 400 / 501                  | `index.ts`   |
+| 4 | Param validation (`n>1`, `logprobs`, tool shapes)          | 400                        | `index.ts`   |
 | 5 | SHA-256 the key                                            | —                          | `auth.ts`    |
 | 6 | ONE round trip: `api_keys → profiles → custom_models`      | 401 / 404 / 503            | `resolve.ts` |
 | 7 | `authorize_request()` — balance + suspension, never cached | 402 / 403                  | `index.ts`   |
