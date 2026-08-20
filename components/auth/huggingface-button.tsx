@@ -57,10 +57,10 @@ function HuggingFaceMark() {
 export function HuggingFaceButton({
   next,
   label = "Continue with Hugging Face",
-}: {
+}: Readonly<{
   next: string;
   label?: string;
-}) {
+}>) {
   const [state, formAction, isPending] = useActionState(
     signInWithHuggingFaceAction,
     initialAuthFormState,
