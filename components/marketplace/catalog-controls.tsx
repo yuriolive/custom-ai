@@ -12,6 +12,7 @@ import {
   SearchField,
   Select,
 } from "@heroui/react";
+import { buttonVariants } from "@heroui/styles";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -306,10 +307,15 @@ export function CatalogControls({
           appears. */}
       <div className="flex flex-wrap items-center gap-2 lg:hidden">
         <Drawer>
-          <Drawer.Trigger>
-            <Button size="sm" variant="secondary">
-              {active.length > 0 ? `Filters (${active.length})` : "Filters"}
-            </Button>
+          {/* `Drawer.Trigger` IS the button (a React Aria `Button`), so the
+              label goes directly inside it. Nesting a HeroUI `<Button>` here
+              renders `<button><button>` — invalid HTML that React reports as a
+              hydration mismatch and then recovers from by regenerating the whole
+              tree client-side. `buttonVariants` gives the trigger the same look
+              without the second element; `components/auth/user-menu.tsx`
+              documents the identical trap. */}
+          <Drawer.Trigger className={buttonVariants({ size: "sm", variant: "secondary" })}>
+            {active.length > 0 ? `Filters (${active.length})` : "Filters"}
           </Drawer.Trigger>
 
           <Drawer.Backdrop>

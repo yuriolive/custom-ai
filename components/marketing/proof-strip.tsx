@@ -1,3 +1,4 @@
+import { MEASURED } from "./measured";
 import { MarketingContainer } from "./section";
 
 /**
@@ -10,11 +11,20 @@ import { MarketingContainer } from "./section";
  * turns it into a claim someone can argue with.
  *
  * EVERY FIGURE HERE IS MEASURED OR CONTRACTUAL, AND THE CAPTION SAYS WHICH.
+ *
+ * THE COLD START WAS WRONG AND IS NOW RIGHT. This strip claimed "~100s" and said
+ * warm calls answer "well under a second". `docs/HANDOFF.md` measured 115 s for a
+ * first-ever start and records warm TTFT p50 at 926 ms as a MISS against
+ * NFR-CS-002's 400 ms target — "recorded as a miss, not restated to match what we
+ * measured". 926 ms is not well under a second, and 100 is not the worst case.
+ * Both are now stated as measured, which is the only version of this strip worth
+ * having: the whole argument below is that a figure a reader cannot check is
+ * worthless, and a figure that flatters us is worse than worthless.
  * The numbers come from `docs/HANDOFF.md` ("measured facts worth not
  * re-deriving") and from the 80/20 split the schema enforces. Nothing on this
  * strip is aspirational, and nothing rounds in our favour — the cold start is
  * stated at its worst, not its best, because a visitor who meets it by surprise
- * concludes the product is broken (the argument `home-intro.tsx` makes at
+ * concludes the product is broken (the argument the replaced `HomeIntro` made at
  * length, and it is right).
  *
  * NO HARDWARE VOCABULARY (DESIGN.md §4 item 8). "Idle" and "worker", never a
@@ -40,9 +50,13 @@ const FIGURES: readonly Figure[] = [
     caption: "the base URL and the model id in the OpenAI client you already have.",
   },
   {
-    value: "~100s",
+    // Read from `MEASURED`, not typed here. The comment above promises these
+    // figures are measured; interpolating them is what makes that true rather
+    // than aspirational, and it is why this strip and the cold-start section can
+    // no longer drift apart.
+    value: `${MEASURED.coldStartSeconds}s`,
     label: "First call, worst case",
-    caption: "waking a sleeping model. Warm calls answer in well under a second.",
+    caption: `the measured first-ever start of a sleeping model — ${MEASURED.warmVolumeStartSeconds}s once its weights are cached, then under a second warm.`,
   },
 ] as const;
 
