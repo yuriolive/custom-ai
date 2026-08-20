@@ -14,6 +14,7 @@ import {
   qualityLabel,
   qualityNote,
 } from "./format";
+import { ProvenanceChip } from "./provenance";
 import { modelHref } from "./routes";
 import { SnippetTabs } from "./snippet-tabs";
 import type { CatalogModel } from "./types";
@@ -108,11 +109,18 @@ export function ModelCard({ model, baseUrl }: { model: CatalogModel; baseUrl: st
             />
           </dl>
 
-          {/* Quality survives as the card's one chip. It is a judgement about
-              the artifact rather than a figure to compare, so it does not belong
-              in the figure pair — and it carries its meaning entirely in the
-              label, never in a status colour (see `qualityChipLabel`). */}
-          <div>
+          {/* The two things about the artifact itself, as opposed to figures to
+              compare: what quality of weights it is, and who owns the repository
+              upstream. Both carry their meaning entirely in the LABEL, never in a
+              status colour — quality is a judgement about the artifact, not a
+              health state (see `qualityChipLabel`), and provenance is a fact
+              about a Hugging Face account, not an endorsement (#30).
+
+              Soft beside outline is the §3.2 contrast doing its job: the soft
+              pill is what the artifact IS, the outline pill is where it came
+              from. `flex-wrap` because at 375px this pair is the first row that
+              can run out of width. */}
+          <div className="flex flex-wrap items-center gap-2">
             <Chip
               className="font-mono"
               size="sm"
@@ -121,6 +129,7 @@ export function ModelCard({ model, baseUrl }: { model: CatalogModel; baseUrl: st
             >
               {qualityChipLabel(model.qualityTier)}
             </Chip>
+            <ProvenanceChip isOfficial={model.isOfficial} />
           </div>
 
           <Separator />

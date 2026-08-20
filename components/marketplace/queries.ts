@@ -51,6 +51,17 @@ const CATALOG_COLUMNS =
   "price_prompt_micro_usd_per_mtoken, price_completion_micro_usd_per_mtoken, " +
   "total_requests, total_prompt_tokens, total_completion_tokens, " +
   "p50_ttft_ms, p95_ttft_ms, created_at, ready_at, " +
+  // A PostgREST COMPUTED COLUMN, not a stored one: `listing_is_official` is a
+  // `f(custom_models) -> boolean` in migration 20260820004000, and PostgREST
+  // exposes such a function as a virtual column of the table. That is what lets
+  // the badge (#30) ride the same indexed query as the rest of the card instead
+  // of a per-row round trip or a client-side join against a table `anon` cannot
+  // read at all. The function is SECURITY DEFINER for exactly that reason.
+  //
+  // NEVER usable in an ORDER BY here. Hugging Face OAuth proves control of an
+  // account, not authorship of weights, so the badge must not rank, price or pay
+  // (#30). It is projected and rendered; that is its whole job.
+  "listing_is_official, " +
   "creator_public!inner(handle, display_name)";
 
 type CreatorEmbed = { handle: string; display_name: string | null };
@@ -74,6 +85,13 @@ type CatalogRow = {
   p95_ttft_ms: number | null;
   created_at: string;
   ready_at: string | null;
+  /**
+   * The computed column above. Nullable in the type because a projection whose
+   * function is missing — a deployment where 20260820004000 has not been
+   * applied — comes back absent rather than false, and a card is better off
+   * neutral than crashed.
+   */
+  listing_is_official: boolean | null;
   creator_public: CreatorEmbed | CreatorEmbed[] | null;
 };
 
@@ -112,6 +130,9 @@ function toCatalogModel(row: CatalogRow): CatalogModel | null {
     p95TtftMs: row.p95_ttft_ms,
     createdAt: row.created_at,
     readyAt: row.ready_at,
+    // `=== true`, so absent and null both land on the neutral third-party
+    // state. That state is the marketplace's normal case, not a failure one.
+    isOfficial: row.listing_is_official === true,
   };
 }
 
