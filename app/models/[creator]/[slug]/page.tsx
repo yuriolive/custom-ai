@@ -75,7 +75,17 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     };
   }
 
-  const title = `${model.modelId} — ${formatSpeed(model.measuredTokensPerSecond)}, ${formatContext(model.contextLength)} context`;
+  // "API" AND "PRICING" ARE IN THE TITLE ON PURPOSE, and they are the whole
+  // reason this line is not just the model id and its numbers. The query a
+  // developer types before they have chosen a provider is "<model> api pricing",
+  // not "<model> tokens per second" — every comparable catalog that ranks for it
+  // (OpenRouter, Together, Venice, OrcaRouter) carries both words in the title
+  // tag. The numbers still do their work, one line down, in the description that
+  // a search result and a Slack unfurl actually show.
+  //
+  // Kept short because the root layout appends ` | Nexus Inference`; a title
+  // carrying speed and context as well ran past the width a result renders.
+  const title = `${model.modelId} API — pricing, context & speed`;
   // The description is what shows up in a Slack unfurl and a search result, so
   // it carries the four numbers a developer decides on: speed, context, quality
   // and the output price.
@@ -96,6 +106,10 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
       description,
       type: "article",
       path: `/models/${model.creatorHandle}/${model.slug}`,
+      // This page has a card of its own (`opengraph-image.tsx` beside this
+      // file). Naming it is not optional: declaring `openGraph` at all replaces
+      // the object Next attached that file to.
+      imagePath: `/models/${model.creatorHandle}/${model.slug}/opengraph-image`,
     }),
     twitter: { card: "summary", title, description },
   };

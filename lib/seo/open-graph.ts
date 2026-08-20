@@ -28,6 +28,7 @@ export function pageOpenGraph({
   description,
   path,
   type = "website",
+  imagePath = SITE_CARD,
 }: Readonly<{
   title: string;
   description: string;
@@ -43,6 +44,17 @@ export function pageOpenGraph({
   path: string;
   /** `"article"` for a model page, which has an author and a subject. */
   type?: "website" | "article";
+  /**
+   * A route serving a card specific to this page, e.g. a model's own
+   * `opengraph-image`. Defaults to the site card.
+   *
+   * IT HAS TO BE PASSED EXPLICITLY. Next attaches an `opengraph-image` file to
+   * the `openGraph` object it builds, and a page that declares its own object
+   * replaces that one — so a per-route card silently loses to this function's
+   * default unless the caller names it. The same replacement rule this helper
+   * exists to work around applies one level down.
+   */
+  imagePath?: string;
 }>): NonNullable<Metadata["openGraph"]> {
   return {
     type,
@@ -51,6 +63,6 @@ export function pageOpenGraph({
     url: path,
     title,
     description,
-    images: [SITE_CARD],
+    images: [imagePath],
   };
 }
