@@ -1,0 +1,84 @@
+name: Feature request
+description: Propose a capability or a change in behavior.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `docs/ROADMAP.md` carries the priority order and what was already decided against;
+        `.beans/` carries the status of work in flight. Check both before writing — the thing
+        you want may be scheduled, or deliberately rejected with a reason.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Marketplace (`app/`, `app/models`)
+        - Studio (`app/studio`, `lib/studio`)
+        - Console (`app/console`, `lib/console`)
+        - Playground (`app/playground`)
+        - Gateway Edge Function (`supabase/functions/gateway`)
+        - Modal worker (`tools/modal`)
+        - Database — migrations, RLS, RPCs (`supabase/migrations`)
+        - Billing — wallet, holds, settlement, usage counts
+        - Auth / session
+        - Build, lint, typecheck, or CI tooling
+        - Cross-cutting / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What cannot be done today
+      description: The behavior you hit, not the solution you have in mind.
+      placeholder: |
+        A creator cannot see why the solver picked an L40S over an A10, so a surprising
+        price looks like a bug and gets reported as one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should exist instead. Wire shapes, ids, and money rules are frozen in `docs/CONTRACTS.md` — say so if yours changes one.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: touches
+    attributes:
+      label: Does this touch any of these
+      description: Each one changes who has to review it and which suite has to move with it.
+      options:
+        - label: A monetary path — pricing, holds, settlement, token counting, the 80/20 split
+        - label: A frozen shape in `docs/CONTRACTS.md` — wire format, ids, env, RPC signatures, path ownership
+        - label: The GPU tier catalogs (`supabase/migrations` **and** `tools/modal/tiers.py` — they must stay in step)
+        - label: The database schema, RLS, or an RPC (a new migration in `supabase/migrations/`)
+        - label: None of the above
+
+  - type: dropdown
+    id: mvp_relevance
+    attributes:
+      label: MVP-0 relevance
+      description: >-
+        MVP-0's acceptance test is one sentence in `docs/CONTRACTS.md` — tokens stream from a
+        scale-to-zero worker and exactly one `usage_transactions` row settles correctly.
+        Everything else is deliberately out of scope for it.
+      options:
+        - Required for the MVP-0 acceptance test
+        - Blocks real users once MVP-0 ships
+        - Later — quality of life
+        - Not sure
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing nothing, and why that is not enough.
+    validations:
+      required: false

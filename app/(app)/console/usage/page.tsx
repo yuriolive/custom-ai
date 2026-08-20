@@ -5,7 +5,7 @@ import { fetchCalledModels, fetchUsagePage } from "@/lib/console/queries";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
-  title: "Usage — Nexus Inference",
+  title: "Usage",
 };
 
 export const dynamic = "force-dynamic";

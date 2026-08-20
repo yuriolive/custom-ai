@@ -3,7 +3,7 @@ import { fetchApiKeys } from "@/lib/console/queries";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
-  title: "API keys — Nexus Inference",
+  title: "API keys",
 };
 
 /** Reads under the caller's own RLS context; no user id is passed or needed. */
