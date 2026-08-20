@@ -579,14 +579,15 @@ async function nonStreaming(res: ServerResponse, ctx: RenderCtx): Promise<void> 
     content += tokenAt(i, opts);
   }
   const calls = assembledToolCalls(opts, id);
-  const message: Record<string, unknown> = calls.length > 0
-    // A real worker sends `content: null` on a tool-only turn.
-    ? {
-      role: "assistant",
-      content: content.length > 0 ? content : null,
-      tool_calls: calls,
-    }
-    : { role: "assistant", content };
+  const message: Record<string, unknown> =
+    calls.length > 0
+      ? // A real worker sends `content: null` on a tool-only turn.
+        {
+          role: "assistant",
+          content: content.length > 0 ? content : null,
+          tool_calls: calls,
+        }
+      : { role: "assistant", content };
 
   const payload: Record<string, unknown> = {
     id,
@@ -652,12 +653,14 @@ async function emitToolCallFrames(
   for (let i = 0; i < opts.toolCalls; i++) {
     if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
     emit({
-      tool_calls: [{
-        index: i,
-        id: `call_${id.slice(-8)}_${i}`,
-        type: "function",
-        function: { name: toolNameFor(i, opts), arguments: "" },
-      }],
+      tool_calls: [
+        {
+          index: i,
+          id: `call_${id.slice(-8)}_${i}`,
+          type: "function",
+          function: { name: toolNameFor(i, opts), arguments: "" },
+        },
+      ],
     });
     for (const piece of fragment(toolArgsFor(i), opts.toolArgFragments)) {
       if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);

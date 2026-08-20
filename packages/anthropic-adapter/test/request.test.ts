@@ -4,11 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AnthropicAdapterError, translateRequest } from "../src/index.ts";
-import type {
-  AnthropicMessagesRequest,
-  OpenAIFunctionTool,
-  OpenAIMessage,
-} from "../src/types.ts";
+import type { AnthropicMessagesRequest, OpenAIFunctionTool, OpenAIMessage } from "../src/types.ts";
 
 /**
  * The shape Claude Code actually sends: a long system prompt split into cached
@@ -159,9 +155,18 @@ test("tools: only the schema FIELD is renamed, the JSON Schema body is byte-iden
 
 test("tool_choice maps across all four forms", () => {
   const base = { model: "m", max_tokens: 1, messages: [] } as AnthropicMessagesRequest;
-  assert.equal(translateRequest({ ...base, tool_choice: { type: "auto" } }).request.tool_choice, "auto");
-  assert.equal(translateRequest({ ...base, tool_choice: { type: "any" } }).request.tool_choice, "required");
-  assert.equal(translateRequest({ ...base, tool_choice: { type: "none" } }).request.tool_choice, "none");
+  assert.equal(
+    translateRequest({ ...base, tool_choice: { type: "auto" } }).request.tool_choice,
+    "auto",
+  );
+  assert.equal(
+    translateRequest({ ...base, tool_choice: { type: "any" } }).request.tool_choice,
+    "required",
+  );
+  assert.equal(
+    translateRequest({ ...base, tool_choice: { type: "none" } }).request.tool_choice,
+    "none",
+  );
   assert.deepEqual(
     translateRequest({ ...base, tool_choice: { type: "tool", name: "Grep" } }).request.tool_choice,
     { type: "function", function: { name: "Grep" } },

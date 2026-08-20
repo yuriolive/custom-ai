@@ -32,75 +32,73 @@ export const contentType = "image/png";
 
 export default function OpengraphImage() {
   return new ImageResponse(
-    (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          background: BACKGROUND,
-          color: FOREGROUND,
-          // The accent appears exactly once, as the rule across the top edge
-          // (DESIGN.md §3.1). It is deliberately not on the wordmark.
-          borderTop: `10px solid ${ACCENT}`,
-          padding: "68px 76px 72px 76px",
-          fontFamily: "sans-serif",
-        }}
-      >
-        {/* The wordmark, matching components/wordmark.tsx: name in the
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        background: BACKGROUND,
+        color: FOREGROUND,
+        // The accent appears exactly once, as the rule across the top edge
+        // (DESIGN.md §3.1). It is deliberately not on the wordmark.
+        borderTop: `10px solid ${ACCENT}`,
+        padding: "68px 76px 72px 76px",
+        fontFamily: "sans-serif",
+      }}
+    >
+      {/* The wordmark, matching components/wordmark.tsx: name in the
             foreground, path suffix held back in muted. */}
-        <div style={{ display: "flex", alignItems: "baseline", fontSize: 34 }}>
-          <span style={{ letterSpacing: "-0.02em" }}>nexus</span>
-          <span style={{ color: MUTED, fontSize: 27 }}>&nbsp;/ inference</span>
-        </div>
+      <div style={{ display: "flex", alignItems: "baseline", fontSize: 34 }}>
+        <span style={{ letterSpacing: "-0.02em" }}>nexus</span>
+        <span style={{ color: MUTED, fontSize: 27 }}>&nbsp;/ inference</span>
+      </div>
 
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <div
-            style={{
-              display: "flex",
-              fontSize: 78,
-              lineHeight: 1.05,
-              letterSpacing: "-0.035em",
-              maxWidth: 880,
-            }}
-          >
-            Serverless inference marketplace
-          </div>
-          <div
-            style={{
-              display: "flex",
-              marginTop: 26,
-              fontSize: 31,
-              lineHeight: 1.35,
-              color: MUTED,
-              maxWidth: 900,
-            }}
-          >
-            Open models on one OpenAI-compatible endpoint. Per-token pricing, no hourly GPU bill.
-          </div>
-        </div>
-
+      <div style={{ display: "flex", flexDirection: "column" }}>
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            gap: 18,
-            paddingTop: 26,
-            borderTop: `1px solid ${BORDER}`,
-            fontSize: 25,
-            color: MUTED,
+            fontSize: 78,
+            lineHeight: 1.05,
+            letterSpacing: "-0.035em",
+            maxWidth: 880,
           }}
         >
-          <span style={{ color: FOREGROUND }}>base_url + api_key</span>
-          <span style={{ color: BORDER }}>·</span>
-          <span>scales to zero</span>
-          <span style={{ color: BORDER }}>·</span>
-          <span>billed per token</span>
+          Serverless inference marketplace
+        </div>
+        <div
+          style={{
+            display: "flex",
+            marginTop: 26,
+            fontSize: 31,
+            lineHeight: 1.35,
+            color: MUTED,
+            maxWidth: 900,
+          }}
+        >
+          Open models on one OpenAI-compatible endpoint. Per-token pricing, no hourly GPU bill.
         </div>
       </div>
-    ),
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          paddingTop: 26,
+          borderTop: `1px solid ${BORDER}`,
+          fontSize: 25,
+          color: MUTED,
+        }}
+      >
+        <span style={{ color: FOREGROUND }}>base_url + api_key</span>
+        <span style={{ color: BORDER }}>·</span>
+        <span>scales to zero</span>
+        <span style={{ color: BORDER }}>·</span>
+        <span>billed per token</span>
+      </div>
+    </div>,
     size,
   );
 }

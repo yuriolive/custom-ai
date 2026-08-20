@@ -15,9 +15,7 @@ import "server-only";
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(
-      `Missing required environment variable ${name}. See .env.example.`,
-    );
+    throw new Error(`Missing required environment variable ${name}. See .env.example.`);
   }
   return value;
 }
@@ -29,10 +27,10 @@ function optional(name: string, fallback: string): string {
 export const serverEnv = {
   /** Base URL of the inference gateway. `${gatewayBaseUrl}/v1` is OpenAI-compatible. */
   get gatewayBaseUrl(): string {
-    return optional(
-      "GATEWAY_BASE_URL",
-      "http://127.0.0.1:54321/functions/v1/gateway",
-    ).replace(/\/+$/, "");
+    return optional("GATEWAY_BASE_URL", "http://127.0.0.1:54321/functions/v1/gateway").replace(
+      /\/+$/,
+      "",
+    );
   },
 
   /**

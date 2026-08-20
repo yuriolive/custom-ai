@@ -436,8 +436,8 @@ test("streaming tool calls arrive as fragments that reassemble into valid JSON",
 
   // The arguments must be SPLIT — a single-frame call would not exercise the
   // reassembly this fixture exists to test.
-  const argFrames = frames.filter((f) =>
-    f !== "[DONE]" && f.includes('"arguments"') && !f.includes('"name"')
+  const argFrames = frames.filter(
+    (f) => f !== "[DONE]" && f.includes('"arguments"') && !f.includes('"name"'),
   );
   assert.ok(argFrames.length >= 4, `expected split arguments, got ${argFrames.length} frames`);
 
@@ -499,12 +499,16 @@ test("non-streaming tool calls come back assembled, with content null", async ()
     { "x-mock-tool-calls": "1", "x-mock-tokens": "0" },
     { ...BODY, stream: false },
   );
-  const body = await res.json() as {
+  const body = (await res.json()) as {
     choices: Array<{
       finish_reason: string;
       message: {
         content: string | null;
-        tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+        tool_calls?: Array<{
+          id: string;
+          type: string;
+          function: { name: string; arguments: string };
+        }>;
       };
     }>;
   };

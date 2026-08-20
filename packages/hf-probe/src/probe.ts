@@ -8,11 +8,7 @@
 
 import type { HfFile, HfProbeResult, ModelArchitecture } from "../../shared/types.ts";
 import { classifyRepoFiles, deriveRuntime } from "./classify.ts";
-import {
-  architectureFromConfig,
-  quantMethodFromConfig,
-  type HfConfigJson,
-} from "./config.ts";
+import { architectureFromConfig, quantMethodFromConfig, type HfConfigJson } from "./config.ts";
 import {
   getJson,
   getModelInfo,

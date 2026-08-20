@@ -93,11 +93,7 @@ export function BalanceChip({
       title={isEmpty ? "No balance — add funds to send a request" : "Available balance"}
       variant="soft"
     >
-      {isEmpty ? (
-        <Link href="/console/wallet">Add funds</Link>
-      ) : (
-        formatBalanceMicroUsd(balance)
-      )}
+      {isEmpty ? <Link href="/console/wallet">Add funds</Link> : formatBalanceMicroUsd(balance)}
     </Chip>
   );
 }

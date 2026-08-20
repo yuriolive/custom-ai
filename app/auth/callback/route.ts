@@ -34,9 +34,7 @@ export async function GET(request: NextRequest) {
       providerErrorCode,
       searchParams.get("error_description"),
     );
-    return NextResponse.redirect(
-      `${origin}/login?authError=${encodeURIComponent(failure.code)}`,
-    );
+    return NextResponse.redirect(`${origin}/login?authError=${encodeURIComponent(failure.code)}`);
   }
 
   const code = searchParams.get("code");

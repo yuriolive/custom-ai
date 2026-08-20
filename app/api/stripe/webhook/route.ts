@@ -206,9 +206,7 @@ export async function POST(request: Request): Promise<Response> {
             ? object.payment_intent
             : (object.payment_intent?.id ?? null);
 
-        const metadataUserId = isDispute
-          ? undefined
-          : (object as Stripe.Charge).metadata?.user_id;
+        const metadataUserId = isDispute ? undefined : (object as Stripe.Charge).metadata?.user_id;
 
         const userId = await resolveUserId(admin, metadataUserId, paymentIntentId);
         if (!userId) {

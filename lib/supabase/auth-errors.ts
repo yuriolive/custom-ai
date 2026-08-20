@@ -41,11 +41,7 @@ export type AuthFailure = {
   field?: "email" | "password";
 };
 
-function failure(
-  code: AuthErrorCode,
-  message: string,
-  field?: AuthFailure["field"],
-): AuthFailure {
+function failure(code: AuthErrorCode, message: string, field?: AuthFailure["field"]): AuthFailure {
   return field ? { code, message, field } : { code, message };
 }
 
@@ -203,10 +199,7 @@ export function describeOAuthCallbackError(
       "Sign-in couldn't be completed. Nothing was changed — try again, or use email and password.",
     );
   }
-  return failure(
-    "unknown",
-    "Sign-in couldn't be completed. Nothing was changed — try again.",
-  );
+  return failure("unknown", "Sign-in couldn't be completed. Nothing was changed — try again.");
 }
 
 /** Copy for the one non-provider failure the callback route can produce. */
@@ -231,8 +224,7 @@ const QUERY_MESSAGES: Partial<Record<AuthErrorCode, string>> = {
     "GitHub sign-in isn't enabled on this deployment. Use email and password instead.",
   email_not_confirmed:
     "This account still needs its email confirmed. Open the confirmation link, then sign in.",
-  rate_limited:
-    "Too many attempts in a short window. Wait about a minute and try again.",
+  rate_limited: "Too many attempts in a short window. Wait about a minute and try again.",
   user_banned: "This account is suspended. Contact support to get it reinstated.",
   unknown: "Sign-in couldn't be completed. Nothing was changed — try again.",
 };

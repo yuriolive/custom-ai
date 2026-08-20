@@ -10,8 +10,7 @@
  * Alternation order is load-bearing: `Q\d+_K_[SML]` must be tried before
  * `Q\d+_K` or "Q4_K_M" degrades to "Q4_K".
  */
-export const QUANT_TAG_PATTERN =
-  "(IQ\\d+_[A-Z]+|Q\\d+_K_[SML]|Q\\d+_K|Q\\d+_\\d+|F16|BF16|F32)";
+export const QUANT_TAG_PATTERN = "(IQ\\d+_[A-Z]+|Q\\d+_K_[SML]|Q\\d+_K|Q\\d+_\\d+|F16|BF16|F32)";
 
 const QUANT_TAG_RE = new RegExp(QUANT_TAG_PATTERN, "gi");
 

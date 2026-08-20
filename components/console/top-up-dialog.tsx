@@ -144,8 +144,8 @@ export function TopUpDialog({
 
                 <p className="text-muted max-w-prose text-xs">
                   Payment is handled on Stripe&rsquo;s own checkout page — card details never reach
-                  this site. Your balance updates when Stripe confirms the payment, which is
-                  usually a second or two after you return.
+                  this site. Your balance updates when Stripe confirms the payment, which is usually
+                  a second or two after you return.
                 </p>
 
                 {error ? (

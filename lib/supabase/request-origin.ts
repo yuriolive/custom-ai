@@ -19,14 +19,11 @@ import type { NextRequest } from "next/server";
  * the host the user typed.
  */
 export function browserOrigin(request: NextRequest): string {
-  const host =
-    request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   if (!host) return request.nextUrl.origin;
 
   const proto =
-    request.headers.get("x-forwarded-proto") ??
-    request.nextUrl.protocol.replace(":", "") ??
-    "http";
+    request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "") ?? "http";
 
   return `${proto}://${host}`;
 }

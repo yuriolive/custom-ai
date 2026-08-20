@@ -22,9 +22,7 @@ const AUTH_PAGES = ["/login", "/signup"] as const;
 export const SIGNED_IN_HOME = "/console";
 
 function isProtected(pathname: string): boolean {
-  return PROTECTED_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  return PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 function isAuthPage(pathname: string): boolean {
@@ -77,11 +75,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // `code` there — i.e. the code arrives on `/` rather than `/auth/callback`.
   // Forward it instead of dropping the user on the home page, silently signed
   // out, holding a one-time code nobody will ever exchange.
-  if (
-    searchParams.has("code") &&
-    !pathname.startsWith("/auth/") &&
-    !isProtected(pathname)
-  ) {
+  if (searchParams.has("code") && !pathname.startsWith("/auth/") && !isProtected(pathname)) {
     const callback = request.nextUrl.clone();
     callback.pathname = "/auth/callback";
     return NextResponse.redirect(callback);
@@ -98,10 +92,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   if (user && isAuthPage(pathname)) {
     // `next` may carry its own query string, so resolve it as a URL rather
     // than assigning it to `pathname`.
-    const target = new URL(
-      safeNextPath(searchParams.get("next")) ?? SIGNED_IN_HOME,
-      request.url,
-    );
+    const target = new URL(safeNextPath(searchParams.get("next")) ?? SIGNED_IN_HOME, request.url);
     return NextResponse.redirect(target);
   }
 

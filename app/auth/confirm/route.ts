@@ -1,10 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
-import {
-  CALLBACK_EXCHANGE_FAILED,
-  describeAuthError,
-} from "@/lib/supabase/auth-errors";
+import { CALLBACK_EXCHANGE_FAILED, describeAuthError } from "@/lib/supabase/auth-errors";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
 import { browserOrigin } from "@/lib/supabase/request-origin";
 import { createClient } from "@/lib/supabase/server";

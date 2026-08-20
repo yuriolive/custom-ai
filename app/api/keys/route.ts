@@ -83,11 +83,7 @@ export async function POST(request: Request): Promise<Response> {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return errorResponse(
-      401,
-      "unauthenticated",
-      "Sign in to create an API key.",
-    );
+    return errorResponse(401, "unauthenticated", "Sign in to create an API key.");
   }
 
   // ── 2. Name.
@@ -102,16 +98,12 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse(
       400,
       "invalid_request_body",
-      "Expected a JSON body of the form {\"name\": \"...\"}.",
+      'Expected a JSON body of the form {"name": "..."}.',
     );
   }
 
   if (typeof rawName !== "string") {
-    return errorResponse(
-      400,
-      "invalid_key_name",
-      "A key name is required.",
-    );
+    return errorResponse(400, "invalid_key_name", "A key name is required.");
   }
 
   const name = rawName.trim();
@@ -155,9 +147,7 @@ export async function POST(request: Request): Promise<Response> {
       !KEY_HASH_CHECK_RE.test(generated.hash) ||
       !KEY_PREFIX_CHECK_RE.test(generated.prefix)
     ) {
-      console.error(
-        "[keys] generated key failed shape validation; nothing was persisted",
-      );
+      console.error("[keys] generated key failed shape validation; nothing was persisted");
       return errorResponse(
         500,
         "key_generation_failed",
@@ -209,10 +199,6 @@ export async function POST(request: Request): Promise<Response> {
     // but the detail still describes internal topology, so it goes to the server
     // log and the client gets a flat message.
     console.error("[keys] mint failed:", cause instanceof Error ? cause.message : cause);
-    return errorResponse(
-      500,
-      "internal_error",
-      "Could not create the key. Please try again.",
-    );
+    return errorResponse(500, "internal_error", "Could not create the key. Please try again.");
   }
 }

@@ -10,14 +10,11 @@
  */
 export const publicEnv = {
   defaultModel:
-    process.env.NEXT_PUBLIC_DEFAULT_MODEL ??
-    "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+    process.env.NEXT_PUBLIC_DEFAULT_MODEL ?? "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
 
   /**
    * Honest cold-start estimate, in seconds. The MVP-0 target model wakes a
    * scale-to-zero llama.cpp worker; measured cold start is ~100 s.
    */
-  coldStartEstimateSeconds: Number(
-    process.env.NEXT_PUBLIC_COLD_START_ESTIMATE_SECONDS ?? "100",
-  ),
+  coldStartEstimateSeconds: Number(process.env.NEXT_PUBLIC_COLD_START_ESTIMATE_SECONDS ?? "100"),
 } as const;

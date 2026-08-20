@@ -21,9 +21,7 @@ import { createClient } from "@/lib/supabase/server";
 
 /** Local Supabase has no SMTP; confirmation mail lands in Inbucket. */
 const isLocalSupabase = (): boolean =>
-  /(^|\/\/)(127\.0\.0\.1|localhost)(:|$)/.test(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  );
+  /(^|\/\/)(127\.0\.0\.1|localhost)(:|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
 
 const INBUCKET_URL = "http://localhost:54324";
 

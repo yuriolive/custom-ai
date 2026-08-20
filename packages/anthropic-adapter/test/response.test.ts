@@ -3,12 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  mapFinishReason,
-  mapStopReason,
-  translateResponse,
-  translateUsage,
-} from "../src/index.ts";
+import { mapFinishReason, mapStopReason, translateResponse, translateUsage } from "../src/index.ts";
 import type { OpenAIChatResponse } from "../src/types.ts";
 
 function resp(partial: Partial<OpenAIChatResponse>): OpenAIChatResponse {
@@ -26,7 +21,11 @@ test("text becomes a content ARRAY with one text block, not a bare string", () =
   const { message } = translateResponse(
     resp({
       choices: [
-        { index: 0, message: { role: "assistant", content: "Hello there." }, finish_reason: "stop" },
+        {
+          index: 0,
+          message: { role: "assistant", content: "Hello there." },
+          finish_reason: "stop",
+        },
       ],
       usage: { prompt_tokens: 25, completion_tokens: 4, total_tokens: 29 },
     }),
@@ -118,7 +117,11 @@ test("malformed tool arguments are reported, not thrown", () => {
             role: "assistant",
             content: null,
             tool_calls: [
-              { id: "call_bad", type: "function", function: { name: "Read", arguments: '{"file_path": ' } },
+              {
+                id: "call_bad",
+                type: "function",
+                function: { name: "Read", arguments: '{"file_path": ' },
+              },
               { id: "call_arr", type: "function", function: { name: "Grep", arguments: "[1,2]" } },
             ],
           },
@@ -195,7 +198,11 @@ test("a stop-sequence hit becomes stop_sequence and the sequence is removed from
   const suffix = translateResponse(
     resp({
       choices: [
-        { index: 0, message: { role: "assistant", content: "answer\n\nHuman:" }, finish_reason: "stop" },
+        {
+          index: 0,
+          message: { role: "assistant", content: "answer\n\nHuman:" },
+          finish_reason: "stop",
+        },
       ],
       usage: { prompt_tokens: 1, completion_tokens: 1 },
     }),

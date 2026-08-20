@@ -23,14 +23,7 @@
  * tier of its own rather than the top of `maximum`: filtering it needs an
  * `IS NULL` predicate, not an `IN` list.
  */
-export const QUALITY_TIERS = [
-  "minimum",
-  "reduced",
-  "balanced",
-  "high",
-  "maximum",
-  "full",
-] as const;
+export const QUALITY_TIERS = ["minimum", "reduced", "balanced", "high", "maximum", "full"] as const;
 
 export type QualityTier = (typeof QUALITY_TIERS)[number];
 
@@ -39,13 +32,7 @@ export const PRICE_BANDS = ["budget", "standard", "premium"] as const;
 export type PriceBand = (typeof PRICE_BANDS)[number];
 
 /** FR-MKT-010. */
-export const CATALOG_SORTS = [
-  "newest",
-  "speed",
-  "tokens",
-  "price",
-  "latency",
-] as const;
+export const CATALOG_SORTS = ["newest", "speed", "tokens", "price", "latency"] as const;
 export type CatalogSort = (typeof CATALOG_SORTS)[number];
 
 /** One catalog entry. Every field is safe to render to an anonymous visitor. */

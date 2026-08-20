@@ -24,9 +24,7 @@ export interface AnthropicTextBlock {
 
 export interface AnthropicImageBlock {
   type: "image";
-  source:
-    | { type: "base64"; media_type: string; data: string }
-    | { type: "url"; url: string };
+  source: { type: "base64"; media_type: string; data: string } | { type: "url"; url: string };
   cache_control?: unknown;
 }
 
@@ -132,9 +130,7 @@ export interface AnthropicUsage {
 }
 
 export type AnthropicResponseBlock =
-  | AnthropicTextBlock
-  | AnthropicToolUseBlock
-  | AnthropicThinkingBlock;
+  AnthropicTextBlock | AnthropicToolUseBlock | AnthropicThinkingBlock;
 
 export interface AnthropicMessage {
   id: string;
@@ -273,10 +269,7 @@ export interface OpenAIFunctionTool {
 }
 
 export type OpenAIToolChoice =
-  | "auto"
-  | "none"
-  | "required"
-  | { type: "function"; function: { name: string } };
+  "auto" | "none" | "required" | { type: "function"; function: { name: string } };
 
 export interface OpenAIChatRequest {
   model: string;
@@ -296,12 +289,7 @@ export interface OpenAIChatRequest {
 // ─── OpenAI: response ────────────────────────────────────────────────────────
 
 export type OpenAIFinishReason =
-  | "stop"
-  | "length"
-  | "tool_calls"
-  | "function_call"
-  | "content_filter"
-  | null;
+  "stop" | "length" | "tool_calls" | "function_call" | "content_filter" | null;
 
 export interface OpenAIUsage {
   prompt_tokens?: number;

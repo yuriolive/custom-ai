@@ -97,11 +97,7 @@ export async function POST(request: Request): Promise<Response> {
   // the balance can move between this check and the webhook, and the RPC is the
   // authority (FR-BIL-036).
   if (
-    exceedsMaxBalance(
-      profile.balance_micro_usd,
-      amount.microUsd,
-      profile.max_balance_micro_usd,
-    )
+    exceedsMaxBalance(profile.balance_micro_usd, amount.microUsd, profile.max_balance_micro_usd)
   ) {
     return errorResponse(
       400,
@@ -140,8 +136,7 @@ export async function POST(request: Request): Promise<Response> {
             unit_amount: microUsdToCents(amount.microUsd),
             product_data: {
               name: "Nexus Inference wallet credit",
-              description:
-                "Prepaid balance for API and Playground usage. Non-transferable.",
+              description: "Prepaid balance for API and Playground usage. Non-transferable.",
             },
           },
         },
