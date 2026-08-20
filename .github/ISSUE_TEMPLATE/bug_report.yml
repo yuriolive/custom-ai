@@ -1,0 +1,123 @@
+name: Bug report
+description: Something in the marketplace, the gateway, the worker, or the database is broken.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Redact secrets before you paste anything. API keys (`sk-plat-…`), `SUPABASE_SERVICE_ROLE_KEY`,
+        `MODAL_KEY` / `MODAL_SECRET`, HF tokens and `Authorization` headers do not belong in an issue.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      description: Where the bug shows up. Pick the closest one — "Not sure" is a real answer.
+      options:
+        - Marketplace (`app/`, `app/models`)
+        - Studio (`app/studio`, `lib/studio`)
+        - Console (`app/console`, `lib/console`)
+        - Playground (`app/playground`)
+        - Gateway Edge Function (`supabase/functions/gateway`)
+        - Modal worker (`tools/modal`)
+        - Database — migrations, RLS, RPCs (`supabase/migrations`)
+        - Billing — wallet, holds, settlement, usage counts
+        - Auth / session
+        - Build, lint, typecheck, or CI tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened, and what you expected instead
+      placeholder: |
+        A streamed completion settles two `usage_transactions` rows instead of one.
+        Expected exactly one row, per I2 in docs/CONTRACTS.md.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands, requests, or clicks. A failing test or a curl invocation is worth more than prose.
+      placeholder: |
+        1. `npx supabase start && npx supabase db reset --local`
+        2. `npm start -w @custom-ai/mock-upstream`
+        3. curl -N localhost:54321/functions/v1/gateway/v1/chat/completions -d '{...}'
+        4. select count(*) from usage_transactions where id = '…'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproduces_where
+    attributes:
+      label: Where it reproduces
+      description: >-
+        Local means the Supabase stack the way CI runs it — `npx supabase start`,
+        `npx supabase db reset --local`.
+      options:
+        - Locally, against local Supabase
+        - Only on a deployment (Vercel / Supabase / Modal)
+        - Both
+        - Have not tried locally
+    validations:
+      required: true
+
+  - type: dropdown
+    id: upstream_provider
+    attributes:
+      label: UPSTREAM_PROVIDER
+      description: >-
+        Defaults to `modal`; `runpod` and `mock` opt out. The Modal and RunPod URL shapes differ,
+        and a mismatch reads to the client as a cold-start timeout rather than a 404.
+      options:
+        - modal (the default)
+        - mock (`tools/mock-upstream`)
+        - runpod
+        - Not applicable — no upstream request involved
+        - Unknown
+    validations:
+      required: false
+
+  - type: textarea
+    id: request_details
+    attributes:
+      label: Request details
+      description: >-
+        For anything that crossed the gateway. Model id (`creator-handle/model-slug`), streaming or not,
+        HTTP status and the `error.code` from the response envelope, and the `txn_id` if you have one.
+      placeholder: |
+        model: jonathancoletti/qwen3.8-27b-uncensored-gguf
+        stream: true
+        HTTP 504, error.code = cold_start_timeout
+        txn_id: 0b6e…
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Function logs, Postgres logs, test output, browser console. Secrets redacted.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or deployment
+      description: Commit SHA, branch, or the deployment URL where you hit this.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: No API keys, service-role keys, Modal tokens, HF tokens, or bearer headers appear above.
+          required: true
