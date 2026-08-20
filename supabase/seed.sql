@@ -271,3 +271,58 @@ update public.custom_models
        ready_at                   = now()
  where id = '00000000-0000-0000-0000-0000000000c1'
    and gpu_tier_id is not null;
+
+-- ── 4c. The base model the listing serves ───────────────────────────────────
+-- Without this the local database has the grouping schema and nothing grouped,
+-- which makes the catalog work of the discovery plan untestable: a card that
+-- aggregates over listings needs a row with listings under it.
+--
+-- The slug's first segment is the WEIGHTS publisher, and here it coincides with
+-- the platform creator handle because the same person published the repo and
+-- registered the listing. That is a coincidence of this fixture, exactly like the
+-- HF-path coincidence CONTRACTS.md warns about at the top — the two namespaces
+-- are unrelated, and `base_models.slug` is never an addressable platform id.
+--
+-- commercial_hosting stays `unknown`: the seeded repo's licence was never
+-- captured (lib/studio/server/model-card.ts discards it today — #25), and
+-- `unknown` is the honest answer rather than a guess. It is also the value that
+-- must never auto-publish, so seeding it exercises the interesting case.
+--
+-- No parent_id. The repo is an original as far as anything here knows; inventing
+-- a parent would put a claim about real weights into a fixture that cannot
+-- support it. The parent case is covered by supabase/tests/07_base_models_test.sql.
+insert into public.base_models (
+  id, slug, display_name, summary, family, parameter_count,
+  architecture, n_layers, n_attention_heads, n_kv_heads, head_dim, hidden_size,
+  full_attention_interval, max_position_embeddings,
+  use_cases, commercial_hosting
+) values (
+  '00000000-0000-0000-0000-0000000000d1',
+  'jonathancoletti/qwen3.8-27b-uncensored',
+  'Qwen3.8 27B Uncensored',
+  'Hybrid attention/SSM model: only every 4th of its 65 blocks holds a growing '
+  'KV cache, which is why it fits a 262k context on hardware its parameter count '
+  'would not suggest.',
+  'qwen3.8', 27000000000,
+  -- The fingerprint, from the same GGUF header the listing was probed from
+  -- (20260817001700). n_attention_heads is absent from that header, so it stays
+  -- NULL rather than being back-derived from hidden_size — the derivation this
+  -- codebase already documents as unsafe.
+  'qwen35', 65, null, 4, 256, 5120, 4, 262144,
+  array['uncensored', 'chat', 'long-context'],
+  'unknown'
+)
+on conflict (slug) do nothing;
+
+update public.custom_models
+   set base_model_id = '00000000-0000-0000-0000-0000000000d1',
+       -- The audit trail §2.1 asks for: this link was made by hand in a fixture,
+       -- not by the cascade, and a re-resolution pass has to be able to tell.
+       base_model_match = jsonb_build_object(
+         'signal', 'manual',
+         'relation', null,
+         'confidence', 1.0,
+         'confirmed_by', null,
+         'at', now(),
+         'note', 'seeded by supabase/seed.sql, not resolved by the #25 cascade')
+ where id = '00000000-0000-0000-0000-0000000000c1';
