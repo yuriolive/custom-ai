@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "node --test test/quant.test.ts test/classify.test.ts test/fixture.test.ts test/gguf.test.ts test/config.test.ts test/live.test.ts",
+    "test": "node --test test/quant.test.ts test/classify.test.ts test/fixture.test.ts test/gguf.test.ts test/config.test.ts test/chat-template.test.ts test/live.test.ts",
     "test:live": "node --test test/live.test.ts",
     "typecheck": "tsc --noEmit"
   },

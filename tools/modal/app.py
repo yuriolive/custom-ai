@@ -148,6 +148,12 @@ def _launch_llama_server(model_path: str, ctx_size: int, parallel: int, alias: s
         "--metrics",
         "--alias",
         alias,
+        # FR-TOOL-002. Load-bearing for tool calling: with --jinja the MODEL'S OWN
+        # chat template renders `tools`, and llama.cpp parses the result back into
+        # `tool_calls`. WITHOUT it the server ignores `tools` entirely and returns
+        # ordinary prose — no error, no warning, and a client's tool loop parses
+        # that as a successful turn that chose not to call anything. Removing this
+        # flag does not break the server; it breaks every agentic client silently.
         "--jinja",
     ]
     print(
@@ -195,8 +201,10 @@ def _wait_until_ready(timeout_s: int = 600) -> float:
                         flush=True,
                     )
                     return elapsed
-        except (urllib.error.HTTPError, urllib.error.URLError, OSError):
-            pass  # 503 while loading, or connection refused before the bind
+        except OSError:
+            # HTTPError and URLError are both OSError subclasses, so this one clause
+            # covers the 503-while-loading case and the pre-bind connection refusal.
+            pass
         time.sleep(1.0)
 
     raise RuntimeError(f"llama-server did not become healthy within {timeout_s}s")
@@ -214,15 +222,15 @@ def _wait_until_ready(timeout_s: int = 600) -> float:
 # timeout=900         : max duration of a single proxied request (a long stream).
 # startup_timeout=900 : container start budget, which for a cold model includes the
 #                       weight download. The default is far too small for 15.7 GiB.
-_CLS_KWARGS = dict(
-    image=llamacpp_image,
-    volumes={"/cache": weights_volume},
-    scaledown_window=30,
-    min_containers=0,
-    max_containers=3,
-    timeout=900,
-    startup_timeout=900,
-)
+_CLS_KWARGS = {
+    "image": llamacpp_image,
+    "volumes": {"/cache": weights_volume},
+    "scaledown_window": 30,
+    "min_containers": 0,
+    "max_containers": 3,
+    "timeout": 900,
+    "startup_timeout": 900,
+}
 
 # web_server startup_timeout covers llama-server binding the port after the weights are
 # on local disk — i.e. model load, not download.

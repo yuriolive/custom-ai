@@ -398,3 +398,134 @@ test("cold start + usage=none: gateway estimator path with a real delay", async 
   assert.equal(dataLines(text).at(-1), "[DONE]");
   assert.equal(parsedChunks(text).filter((c) => c.choices?.[0]?.delta?.content).length, 3);
 });
+// ─── tool calls (FR-TOOL-004) ────────────────────────────────────────────────
+
+/** Reassemble `delta.tool_calls` fragments the way a consumer has to. */
+function assembleToolCalls(
+  frames: string[],
+): Map<number, { id: string; name: string; args: string }> {
+  const out = new Map<number, { id: string; name: string; args: string }>();
+  for (const frame of frames) {
+    if (frame === "[DONE]") continue;
+    const chunk = JSON.parse(frame) as {
+      choices?: Array<{
+        delta?: {
+          tool_calls?: Array<{
+            index?: number;
+            id?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+      }>;
+    };
+    for (const call of chunk.choices?.[0]?.delta?.tool_calls ?? []) {
+      const index = call.index ?? 0;
+      const acc = out.get(index) ?? { id: "", name: "", args: "" };
+      if (call.id) acc.id = call.id;
+      if (call.function?.name) acc.name = call.function.name;
+      if (typeof call.function?.arguments === "string") acc.args += call.function.arguments;
+      out.set(index, acc);
+    }
+  }
+  return out;
+}
+
+test("streaming tool calls arrive as fragments that reassemble into valid JSON", async () => {
+  const res = await post({ "x-mock-tool-calls": "2", "x-mock-tokens": "0" });
+  const frames = dataLines(await readAll(res));
+
+  // The arguments must be SPLIT — a single-frame call would not exercise the
+  // reassembly this fixture exists to test.
+  const argFrames = frames.filter((f) =>
+    f !== "[DONE]" && f.includes('"arguments"') && !f.includes('"name"')
+  );
+  assert.ok(argFrames.length >= 4, `expected split arguments, got ${argFrames.length} frames`);
+
+  const calls = assembleToolCalls(frames);
+  assert.equal(calls.size, 2);
+  const first = calls.get(0)!;
+  assert.equal(first.name, "get_weather");
+  assert.ok(first.id.startsWith("call_"));
+  assert.deepEqual(JSON.parse(first.args), {
+    location: "city-0",
+    unit: "celsius",
+    detailed: true,
+  });
+  assert.equal(calls.get(1)!.name, "get_weather_2");
+  assert.deepEqual(JSON.parse(calls.get(1)!.args).location, "city-1");
+});
+
+test("a tool-call stream finishes with tool_calls and counts the tokens", async () => {
+  const res = await post({ "x-mock-tool-calls": "1", "x-mock-tokens": "3" });
+  const frames = dataLines(await readAll(res));
+
+  const finish = frames
+    .filter((f) => f !== "[DONE]")
+    .map((f) => JSON.parse(f) as { choices?: Array<{ finish_reason?: string | null }> })
+    .map((c) => c.choices?.[0]?.finish_reason)
+    .find((r) => typeof r === "string" && r !== null);
+  assert.equal(finish, "tool_calls");
+
+  const usage = frames
+    .filter((f) => f !== "[DONE]")
+    .map((f) => JSON.parse(f) as { usage?: { completion_tokens?: number } })
+    .map((c) => c.usage)
+    .find((u) => u !== undefined);
+  // FR-TOOL-006: the tool output is inside completion_tokens, so the count must
+  // exceed the 3 content tokens on its own.
+  assert.ok(
+    (usage?.completion_tokens ?? 0) > 3,
+    `expected tool tokens inside completion_tokens, got ${usage?.completion_tokens}`,
+  );
+});
+
+test("an explicit finish_reason still wins over the tool-call default", async () => {
+  const res = await post({
+    "x-mock-tool-calls": "1",
+    "x-mock-tokens": "0",
+    "x-mock-finish-reason": "length",
+  });
+  const frames = dataLines(await readAll(res));
+  const reasons = frames
+    .filter((f) => f !== "[DONE]")
+    .map((f) => JSON.parse(f) as { choices?: Array<{ finish_reason?: string | null }> })
+    .map((c) => c.choices?.[0]?.finish_reason)
+    .filter((r) => typeof r === "string");
+  assert.deepEqual(reasons, ["length"]);
+});
+
+test("non-streaming tool calls come back assembled, with content null", async () => {
+  const res = await post(
+    { "x-mock-tool-calls": "1", "x-mock-tokens": "0" },
+    { ...BODY, stream: false },
+  );
+  const body = await res.json() as {
+    choices: Array<{
+      finish_reason: string;
+      message: {
+        content: string | null;
+        tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+      };
+    }>;
+  };
+  const choice = body.choices[0]!;
+  assert.equal(choice.finish_reason, "tool_calls");
+  assert.equal(choice.message.content, null);
+  assert.equal(choice.message.tool_calls?.length, 1);
+  assert.equal(choice.message.tool_calls?.[0]!.type, "function");
+  assert.deepEqual(JSON.parse(choice.message.tool_calls![0]!.function.arguments).unit, "celsius");
+});
+
+test("forwarded tool parameters are recorded for assertion", async () => {
+  const tools = [{ type: "function", function: { name: "get_weather" } }];
+  await post({}, { ...BODY, tools, tool_choice: "auto" });
+  const seen = mock.lastRequest()!;
+  assert.deepEqual(seen.tools, tools);
+  assert.equal(seen.toolChoice, "auto");
+});
+
+test("tool calls are off unless asked for", async () => {
+  const res = await post();
+  const text = await readAll(res);
+  assert.ok(!text.includes("tool_calls"), "the default stream must stay text-only");
+});

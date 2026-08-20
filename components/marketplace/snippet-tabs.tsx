@@ -2,6 +2,7 @@
 
 import { Tabs } from "@heroui/react";
 
+import { LabelHint } from "@/components/label-hint";
 import { MEASURED } from "@/lib/measured";
 
 import { CodeBlock } from "./code-block";
@@ -20,17 +21,30 @@ import { SNIPPET_LANGUAGES, SNIPPET_TIMEOUT_SECONDS, snippetFor } from "./snippe
  *    `gatewayBaseUrl`, so a local build never hands out a production endpoint;
  *  - the timeout, which must survive a cold start.
  *
- * The cold-start note under the tabs is deliberately above the fold rather than
- * buried in the snippet comments. A developer whose first call takes two minutes
- * without warning concludes the product is broken and leaves.
+ * The three values are listed under the tabs as VALUES, with the caveat behind
+ * an ⓘ tooltip. The caveats are each a paragraph and all three inline turned the
+ * block into more text than the snippet it explains — in the Studio dialog they
+ * pushed the snippet itself off the first screen. What stays visible is what a
+ * developer scans for: the id, the URL, and the fact that the first call is slow.
  *
- * `showNotes` EXISTS FOR THE LANDING PAGE AND ONLY FOR IT. On a model card and on
- * the model detail page these three notes are the only place the id, the endpoint
- * and the timeout are explained, so they default on. On `/` all three are already
- * said, better and larger: the base URL and the model id are the two-line diff
- * beside this component, and the cold start has a section of its own. Repeating
- * them in 12px grey under the tabs is the "muito texto" the whole refresh was
- * against.
+ * The cold-start warning specifically is a visible value, not a tooltip. A
+ * developer whose first call takes two minutes without warning concludes the
+ * product is broken and leaves — that has to be readable without hovering.
+ *
+ * `showNotes` EXISTS FOR THE LANDING PAGE AND ONLY FOR IT. On a model card and in
+ * the Studio dialog this block is the only place the id, the endpoint and the
+ * timeout are explained, so it defaults on. On `/` all three are already said,
+ * larger and better: the base URL and the model id are the two-line diff in the
+ * column beside this component, and the cold start has a section of its own.
+ * Repeating them underneath is the "muito texto" the landing refresh was against.
+ *
+ * EVERY LATENCY FIGURE READS `MEASURED` (`lib/measured.ts`, sourced from
+ * `docs/HANDOFF.md`). The timeout caveat used to say later calls answer "well
+ * under a second", which is the same overstatement the proof strip and the
+ * cold-start section carried: HANDOFF measures warm TTFT p50 at 926 ms and
+ * records it as a MISS against NFR-CS-002's 400 ms — "recorded as a miss, not
+ * restated to match what we measured". Interpolating rather than retyping is what
+ * stops this drifting a third time.
  */
 export function SnippetTabs({
   modelId,
@@ -76,34 +90,39 @@ export function SnippetTabs({
       </Tabs>
 
       {showNotes ? (
-        <dl className="text-muted mt-3 grid gap-x-3 gap-y-1 text-xs sm:grid-cols-[auto_1fr]">
+        <dl className="text-muted mt-3 grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1.5 text-xs">
           <dt className="font-medium">Model id</dt>
-          <dd>
-            <code className="text-foreground">{modelId}</code> — the platform id. It is a{" "}
-            <em>platform</em> identity, not the Hugging Face repo path this model was built from:
-            the creator handle need not match the HF account, and the slug is chosen at
-            registration. Case does not matter (the gateway lowercases what you send), but the two
-            names do — send a repo path that differs from the id above and you get 404{" "}
-            <code>model_not_found</code>.
+          <dd className="flex min-w-0 items-start gap-1.5">
+            {/* `break-all`, not `truncate`: an id or a URL that is cut off is a
+                first call that does not run, and both are long enough to wrap in
+                a dialog. */}
+            <code className="text-foreground break-all">{modelId}</code>
+            <LabelHint subject="the model id">
+              The platform id — <code>creator-handle/model-slug</code>, not the Hugging Face repo
+              path this model was built from. The handle need not match the HF account and the slug
+              is chosen at registration. Case does not matter (the gateway lowercases it); the names
+              do — a repo path that differs from this id returns 404 <code>model_not_found</code>.
+            </LabelHint>
           </dd>
           <dt className="font-medium">Base URL</dt>
-          <dd>
-            <code className="text-foreground">{baseUrl}</code> — the trailing <code>/v1</code> is
-            part of it; SDKs append <code>/chat/completions</code>.
+          <dd className="flex min-w-0 items-start gap-1.5">
+            <code className="text-foreground break-all">{baseUrl}</code>
+            <LabelHint subject="the base URL">
+              The trailing <code>/v1</code> is part of it; SDKs append{" "}
+              <code>/chat/completions</code>.
+            </LabelHint>
           </dd>
           <dt className="font-medium">Timeout</dt>
-          <dd>
-            {/* "well under a second" was here, and it was wrong the same way the
-              proof strip and the cold-start section were wrong: `docs/HANDOFF.md`
-              measures warm TTFT p50 at 926 ms and records it as a MISS against
-              NFR-CS-002's 400 ms target — "recorded as a miss, not restated to
-              match what we measured". Interpolating `MEASURED` rather than
-              retyping the figure is what stops this drifting a third time. */}
-            {SNIPPET_TIMEOUT_SECONDS}s, and it matters. This model scales to zero, so a first
-            request to an idle worker can take up to two minutes while a GPU starts and weights load
-            — {MEASURED.coldStartSeconds}s measured on a first-ever start,{" "}
-            {MEASURED.warmVolumeStartSeconds}s once its weights are cached. Later calls return their
-            first token in {MEASURED.warmTtftMs} ms.
+          <dd className="flex min-w-0 items-start gap-1.5">
+            <span className="text-foreground">
+              {SNIPPET_TIMEOUT_SECONDS}s — a first call can take up to 2 min
+            </span>
+            <LabelHint subject="the timeout">
+              This model scales to zero, so a first request to an idle worker waits while a GPU
+              starts and the weights load — {MEASURED.coldStartSeconds}s measured on a first-ever
+              start, {MEASURED.warmVolumeStartSeconds}s once its weights are cached. Later calls
+              return their first token in {MEASURED.warmTtftMs} ms.
+            </LabelHint>
           </dd>
         </dl>
       ) : null}

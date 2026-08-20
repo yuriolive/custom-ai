@@ -46,6 +46,8 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { LabelHint } from "@/components/label-hint";
+
 import {
   dollarsPerMtokenToMicro,
   formatContext,
@@ -69,7 +71,7 @@ import type {
 import { createClient } from "@/lib/supabase/client";
 
 import { DeploymentPlan } from "./deployment-plan";
-import { LabelHint, SummaryLayout } from "./primitives";
+import { SummaryLayout } from "./primitives";
 import { ProvisioningStepper } from "./provisioning-stepper";
 import { feasibleAlternatives, VariantTable } from "./variant-table";
 

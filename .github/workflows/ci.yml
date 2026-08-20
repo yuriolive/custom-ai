@@ -163,19 +163,30 @@ jobs:
           python-version-file: tools/modal/pyproject.toml
 
       # test_measure.py imports only measure.py and tiers.py, both stdlib-only.
-      # `modal` is needed solely by app.py, which the tests never import — so
-      # --no-project runs the full suite with nothing installed at all.
+      # `modal` is needed solely by app.py, which the tests never import — so the
+      # project's `dependencies = []` means the full suite runs with nothing
+      # installed. `--locked` fails the build if uv.lock is stale rather than
+      # resolving something the lockfile does not pin.
+      #
+      # test_tier_drift.py is listed EXPLICITLY, not discovered: it reads
+      # supabase/migrations and fails if gpu_tiers (the catalog that runs at request
+      # time) and tiers.py disagree on hardware or price. It is also stdlib-only —
+      # no database, no network, no Modal credential. The credentialed direction
+      # (are the committed prices still Modal's published ones?) is
+      # tools/modal/sync_rates.py --check, which is local-only by design.
       - name: test
         working-directory: tools/modal
-        run: uv run --no-project python -m unittest test_measure -v
+        run: uv run --locked python -m unittest test_measure test_tier_drift -v
 
+      # --no-build: install ruff from its published wheel only. A source
+      # distribution would run its build backend, i.e. arbitrary code, in the job.
       - name: ruff check
         working-directory: tools/modal
-        run: uv run --group dev ruff check .
+        run: uv run --locked --no-build --group dev ruff check .
 
       - name: ruff format --check
         working-directory: tools/modal
-        run: uv run --group dev ruff format --check .
+        run: uv run --locked --no-build --group dev ruff format --check .
 
   deno:
     name: deno (edge function gateway)
@@ -229,7 +240,7 @@ jobs:
         run: deno fmt --check
 
   pgtap:
-    name: pgtap (141 billing invariants)
+    name: pgtap (197 billing invariants)
     runs-on: ubuntu-latest
     # Generous: the first run on a cold runner pulls supabase/postgres (~1.5 GB),
     # supabase/gotrue and supabase/pg_prove before a single test executes, and

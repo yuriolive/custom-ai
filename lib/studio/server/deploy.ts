@@ -22,6 +22,8 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { resolveToolSupport } from "@nexus/hf-probe";
+
 import { toPlacement } from "../placement";
 import type { DeployRequest, Placement, ProbeSuccess, StudioVariant } from "../types";
 import { probeForStudio, redact } from "./probe";
@@ -252,6 +254,20 @@ export async function runDeployment(
     hfTokenSecretId = data;
   }
 
+  // ── Stage 0e: does this model's chat template do tools? (FR-TOOL-003) ────
+  // Measured, once, here — the gateway reads the column on every request and
+  // must never make a network call to answer it. `supported: null` (no readable
+  // template) is written as NULL and means UNKNOWN: the gateway forwards tools
+  // on it and refuses only a measured false. Never fatal: a repository that will
+  // not yield a template is still deployable, just not known to do tools.
+  const toolSupport = await resolveToolSupport(probe.repoSlug, {
+    revision: probe.revision,
+    ...(request.hfToken ? { hfToken: request.hfToken } : {}),
+    // The GGUF key is the only source for a llama.cpp-native repo, which ships
+    // no tokenizer_config.json at all. Read the variant actually being served.
+    ggufFile: probe.weightsFormat === "gguf" ? (variant.files[0] ?? null) : null,
+  });
+
   // ── Stage 1: the row exists, in `validating` ─────────────────────────────
   const { data: inserted, error: insertError } = await admin
     .from("custom_models")
@@ -288,6 +304,8 @@ export async function runDeployment(
       requires_hf_auth: hfTokenSecretId !== null,
       price_prompt_micro_usd_per_mtoken: request.pricePromptMicro,
       price_completion_micro_usd_per_mtoken: request.priceCompletionMicro,
+      // Three-state on purpose. NULL is "template unreadable", not "no tools".
+      supports_tools: toolSupport.supported,
       visibility: request.isPublic ? "public" : "private",
       status: "validating",
     })

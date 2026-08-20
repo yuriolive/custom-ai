@@ -57,7 +57,9 @@ interface Harness {
   >;
 }
 
-function harness(over: { authorize?: unknown; sse?: string } = {}): Harness {
+function harness(
+  over: { authorize?: unknown; sse?: string; model?: Partial<RawModelRow> } = {},
+): Harness {
   const rpcCalls: Harness["rpcCalls"] = [];
   const upstreamCalls: Harness["upstreamCalls"] = [];
 
@@ -70,7 +72,7 @@ function harness(over: { authorize?: unknown; sse?: string } = {}): Harness {
     exec: () =>
       Promise.resolve({
         api_key: { id: API_KEY_ID, user_id: OWNER_ID, revoked_at: null },
-        model: modelRow(),
+        model: modelRow(over.model ?? {}),
       }),
     rpc: (name, args) => {
       rpcCalls.push({ name, args });
@@ -245,7 +247,10 @@ test("E2E: every rejection and the CORS preflight carry x-nexus-request-id", asy
     [{ model: "no-slash", messages: [HELLO] }, 400],
     [{ model: "owner/secret-model", messages: [HELLO], n: 3 }, 400],
     [{ model: "owner/secret-model", messages: [HELLO], logprobs: true }, 400],
-    [{ model: "owner/secret-model", messages: [HELLO], tools: [{}] }, 501],
+    // Tools are honored now (FR-TOOL-001); `[{}]` is rejected on SHAPE, not on
+    // the feature being absent. The distinction matters: 501 told a client to
+    // come back later, 400 tells it to fix the request.
+    [{ model: "owner/secret-model", messages: [HELLO], tools: [{}] }, 400],
     [{ model: "owner/secret-model", messages: [] }, 400],
   ];
   for (const [body, status] of cases) {
@@ -293,4 +298,168 @@ test("E2E: a bad key is rejected before the body is parsed or upstream is touche
   assert.equal((await res.json()).error.code, "invalid_api_key");
   assert.equal(h.rpcCalls.length, 0);
   assert.equal(h.upstreamCalls.length, 0);
+});
+// ─── Tool calling, end to end (FR-TOOL-001, 003, 004, 005, 006) ──────────────
+
+const WEATHER_TOOL = {
+  type: "function",
+  function: {
+    name: "get_weather",
+    parameters: {
+      type: "object",
+      properties: { location: { type: "string" } },
+      required: ["location"],
+    },
+  },
+};
+
+/** A worker's tool-call stream: fragmented arguments, usage on the last frame. */
+const SSE_TOOL_CALL = [
+  'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}',
+  'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_x","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}',
+  String
+    .raw`data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"locat"}}]},"finish_reason":null}]}`,
+  String
+    .raw`data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ion\":\"Lisbon\"}"}}]},"finish_reason":null}]}`,
+  'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
+  'data: {"id":"c1","object":"chat.completion.chunk","created":1730000000,"choices":[],"usage":{"prompt_tokens":63,"completion_tokens":21,"total_tokens":84}}',
+  "data: [DONE]",
+  "",
+].join("\n\n");
+
+test("E2E: tools reach the upstream payload verbatim", async () => {
+  invalidateModelCache();
+  const h = harness({ sse: SSE_TOOL_CALL });
+
+  const res = await handleRequest(
+    chatRequest({
+      model: "owner/secret-model",
+      messages: [HELLO],
+      stream: true,
+      tools: [WEATHER_TOOL],
+      tool_choice: "auto",
+    }),
+    h.deps,
+  );
+  assert.equal(res.status, 200);
+  await res.text();
+
+  assert.equal(h.upstreamCalls.length, 1);
+  const sent = JSON.parse(h.upstreamCalls[0].init.body as string) as Record<string, unknown>;
+  // Verbatim: the gateway must not reshape a tool definition, because the chat
+  // template — not the gateway — is what renders it.
+  assert.deepEqual(sent.tools, [WEATHER_TOOL]);
+  assert.equal(sent.tool_choice, "auto");
+  // And the rest of the contract still holds around them.
+  assert.equal(sent.stream, true);
+  assert.deepEqual(sent.stream_options, { include_usage: true });
+});
+
+test("E2E: a tool-calling stream settles once, on upstream usage", async () => {
+  invalidateModelCache();
+  const h = harness({ sse: SSE_TOOL_CALL });
+
+  const res = await handleRequest(
+    chatRequest({
+      model: "owner/secret-model",
+      messages: [HELLO],
+      stream: true,
+      tools: [WEATHER_TOOL],
+    }),
+    h.deps,
+  );
+  const body = await res.text();
+  // Forwarded verbatim, fragments included.
+  assert.ok(body.includes('"tool_calls"'), "tool call frames must reach the client");
+
+  await waitFor(() => h.rpcCalls.some((c) => c.name === "deduct_token_cost"));
+  const settle = h.rpcCalls.find((c) => c.name === "deduct_token_cost")!;
+  // FR-TOOL-006: tool tokens are already inside completion_tokens upstream.
+  assert.equal(settle.args.p_completion_tokens, 21);
+  assert.equal(settle.args.p_prompt_tokens, 63);
+  assert.equal(settle.args.p_usage_estimated, false);
+  assert.ok(!h.rpcCalls.some((c) => c.name === "void_reservation"));
+});
+
+test("E2E: a tool-only stream with no usage still bills the tool tokens", async () => {
+  invalidateModelCache();
+  // Strip the usage frame: the estimator has to carry this, and a tool-only turn
+  // has NO content at all — counting content alone would bill the whole
+  // response as zero completion tokens and void the hold.
+  const noUsage = SSE_TOOL_CALL.split("\n\n")
+    .filter((f) => !f.includes('"usage"'))
+    .join("\n\n");
+  const h = harness({ sse: noUsage });
+
+  const res = await handleRequest(
+    chatRequest({
+      model: "owner/secret-model",
+      messages: [HELLO],
+      stream: true,
+      tools: [WEATHER_TOOL],
+    }),
+    h.deps,
+  );
+  await res.text();
+
+  await waitFor(() => h.rpcCalls.some((c) => c.name === "deduct_token_cost"));
+  const settle = h.rpcCalls.find((c) => c.name === "deduct_token_cost")!;
+  assert.ok(
+    Number(settle.args.p_completion_tokens) > 0,
+    "a tool-only response must not settle at zero completion tokens",
+  );
+  assert.equal(settle.args.p_usage_estimated, true);
+});
+
+test("E2E: a model measured as tool-incapable rejects before any upstream call", async () => {
+  invalidateModelCache();
+  const h = harness({ model: { supports_tools: false } });
+
+  const res = await handleRequest(
+    chatRequest({ model: "owner/secret-model", messages: [HELLO], tools: [WEATHER_TOOL] }),
+    h.deps,
+  );
+  assert.equal(res.status, 400);
+  assert.equal(h.upstreamCalls.length, 0, "no GPU work for a request that cannot be served");
+  // Rejected before the hold, so there is nothing to void.
+  assert.equal(h.rpcCalls.length, 0);
+
+  // The same model serves an ordinary request.
+  invalidateModelCache();
+  const plain = harness({ model: { supports_tools: false } });
+  const ok = await handleRequest(
+    chatRequest({ model: "owner/secret-model", messages: [HELLO] }),
+    plain.deps,
+  );
+  assert.equal(ok.status, 200);
+});
+
+test("E2E: non-streaming clients get assembled tool_calls", async () => {
+  invalidateModelCache();
+  const h = harness({ sse: SSE_TOOL_CALL });
+
+  const res = await handleRequest(
+    chatRequest({ model: "owner/secret-model", messages: [HELLO], tools: [WEATHER_TOOL] }),
+    h.deps,
+  );
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /application\/json/);
+  const body = await res.json() as {
+    choices: Array<{
+      finish_reason: string;
+      message: {
+        content: string | null;
+        tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+      };
+    }>;
+  };
+  const choice = body.choices[0];
+  assert.equal(choice.finish_reason, "tool_calls");
+  assert.equal(choice.message.content, null);
+  assert.equal(choice.message.tool_calls?.length, 1);
+  assert.equal(choice.message.tool_calls?.[0].id, "call_x");
+  assert.deepEqual(
+    JSON.parse(choice.message.tool_calls![0].function.arguments),
+    { location: "Lisbon" },
+  );
 });
