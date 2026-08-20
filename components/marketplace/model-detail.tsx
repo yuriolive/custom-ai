@@ -218,11 +218,7 @@ export function ModelDetail({
           Something wrong with this listing — a licence, a rights claim, or the acceptable use
           policy? An operator can take it down.
         </p>
-        <ReportModelButton
-          modelId={model.modelId}
-          modelUuid={model.id}
-          viewerId={viewerId}
-        />
+        <ReportModelButton modelId={model.modelId} modelUuid={model.id} viewerId={viewerId} />
       </footer>
     </div>
   );

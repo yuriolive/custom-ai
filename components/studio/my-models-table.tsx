@@ -252,9 +252,9 @@ export function MyModelsTable({
                         {model.suspendedAt ? (
                           <span className="text-danger max-w-md text-xs">
                             Suspended by an operator
-                            {model.suspensionReason ? `: ${model.suspensionReason}` : ""}. It is
-                            not listed and the API returns 404. Reply to your signup email to
-                            appeal — you cannot lift this yourself.
+                            {model.suspensionReason ? `: ${model.suspensionReason}` : ""}. It is not
+                            listed and the API returns 404. Reply to your signup email to appeal —
+                            you cannot lift this yourself.
                           </span>
                         ) : null}
                       </div>
