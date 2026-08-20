@@ -250,3 +250,148 @@ export type CatalogGroupPage = {
    */
   catalogIsEmpty: boolean;
 };
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * THE MODEL PAGE (#27)
+ *
+ * `CatalogGroup` above is a model as a CARD — one quoted listing and a handful
+ * of labelled best cases. This is the same model as a PAGE: every visible
+ * listing of it, side by side, on the axes a buyer compares. That is the point
+ * of the page and the reason the shapes below carry a list where the card
+ * carries a maximum.
+ *
+ * NO HARDWARE IS REPRESENTABLE HERE, for the third time in this file and for
+ * the same reason (FR-MKT-002): these values cross into the RSC payload, and a
+ * field is the first step to a label.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * Whether a THIRD PARTY may serve these weights for money (`base_models`,
+ * migration 20260820000100). Not derivable from the SPDX id alone: Llama's
+ * community licence permits commercial hosting WITH obligations, CC-BY-NC
+ * forbids it outright, and `other` says nothing at all.
+ *
+ * `conditional` is the value this page owes content for. `unknown` is the value
+ * that must never auto-publish — but the gate that decides that is #29's, on the
+ * write path; here all four are read and reported.
+ */
+export const COMMERCIAL_HOSTING = ["allowed", "conditional", "prohibited", "unknown"] as const;
+export type CommercialHosting = (typeof COMMERCIAL_HOSTING)[number];
+
+/**
+ * ONE OFFER: a single listing of the model, as a row of the comparison table.
+ *
+ * Every field is an axis a buyer sorts on, plus the two things that make the row
+ * actionable: `creatorHandle` (who is selling) and `modelId` (what to paste).
+ *
+ * `quantTag` IS DISCLOSURE ONLY. The tier is the label and the tag is the
+ * detail — `format.ts` rules on this and the table follows it: the Quality
+ * column reads the tier, and the tag sits beside it as the specific build.
+ */
+export type ModelOffer = {
+  /** The listing's row id. A React key, and the anchor comparison. */
+  listingId: string;
+  creatorHandle: string;
+  creatorDisplayName: string | null;
+  slug: string;
+  /**
+   * The id a caller passes as `model` — `creator-handle/model-slug`, lowercase,
+   * built from THIS LISTING.
+   *
+   * NEVER the base model's slug. `qwen/qwen3-8b` looks exactly like a platform
+   * id and resolves to nothing, because its first half is a weights publisher
+   * rather than a creator handle (CONTRACTS.md, top). Every offer row's copy
+   * button puts this string on the clipboard and nothing else.
+   */
+  modelId: string;
+  /** The LISTING's own name, e.g. "Qwen3.8 27B Uncensored (Q6_K)". */
+  displayName: string;
+  quantTag: string | null;
+  qualityTier: QualityTier;
+  contextLength: number;
+  contextVerified: boolean;
+  /** MEASURED throughput (FR-DEP-052), never the solver's prediction. */
+  measuredTokensPerSecond: number | null;
+  p50TtftMs: number | null;
+  /** micro-USD per 1M tokens. Integers, per CONTRACTS.md §Money. */
+  pricePromptMicroPerMtoken: number;
+  priceCompletionMicroPerMtoken: number;
+  totalRequests: number;
+  totalCompletionTokens: number;
+  createdAt: string;
+  readyAt: string | null;
+};
+
+/**
+ * THE MODEL the offers serve — `base_models`, not a listing.
+ *
+ * Null on the page when the anchor listing has no `base_model_id`, which is the
+ * normal state until #25's resolution cascade runs. That null is a distinct
+ * sentence from "this model is an original", and `lineage.ts` keeps them apart.
+ */
+export type BaseModelInfo = {
+  id: string;
+  /**
+   * `publisher/name`. NOT a platform model id and NOT a Hugging Face repo path —
+   * the page renders it as provenance and never offers it for copying.
+   */
+  slug: string;
+  displayName: string;
+  summary: string | null;
+  family: string | null;
+  parameterCount: number | null;
+  categories: ModelCategory[];
+  /** The model these weights were trained FROM, or null on an original (§1.2). */
+  parentId: string | null;
+  licenseId: string | null;
+  licenseName: string | null;
+  licenseUrl: string | null;
+  /**
+   * The revision of the licence TEXT in force. A version rather than a boolean
+   * because the Llama community licence has been revised, and acknowledging the
+   * old text is not acknowledging the new one.
+   */
+  licenseVersion: string | null;
+  commercialHosting: CommercialHosting;
+};
+
+/**
+ * The model this one was trained from (§1.2), for the lineage link.
+ *
+ * `listingCount` is how many visible listings serve the PARENT itself, and it is
+ * honesty rather than decoration: at zero the lineage line must be text, not a
+ * link, because the only place a link could go is a catalog search that returns
+ * nothing. A parent legitimately has no listings of its own — `Qwen3-8B` may be
+ * served here only through fine-tunes — and still owes the attribution.
+ */
+export type ParentModelInfo = {
+  id: string;
+  slug: string;
+  displayName: string;
+  family: string | null;
+  parameterCount: number | null;
+  listingCount: number;
+};
+
+/** Everything the model page renders, from one `model_page` round trip. */
+export type ModelPage = {
+  /**
+   * The listing whose URL this is. The snippet, the price table and the measured
+   * figures on the page are ITS, and the offer table marks its row — a table
+   * whose highlighted row is absent is one the reader cannot place themselves in.
+   */
+  listing: CatalogModel;
+  /** Null until #25's cascade attaches a base model. */
+  model: BaseModelInfo | null;
+  parent: ParentModelInfo | null;
+  /** Every visible listing of the same model, cheapest completion price first. */
+  offers: ModelOffer[];
+  /**
+   * Every offer that EXISTS, which differs from `offers.length` only above the
+   * RPC's cap. The page says so when they differ: a silent truncation on a price
+   * comparison reads as "these are all the offers".
+   */
+  offerTotal: number;
+};
