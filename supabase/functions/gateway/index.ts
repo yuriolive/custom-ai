@@ -1,15 +1,22 @@
 /**
  * Nexus inference gateway — Supabase Edge Function (Deno).
  *
- *   POST /v1/chat/completions   OpenAI-compatible, byte-for-byte
- *   GET  /v1/models             OpenAI-shaped catalog
- *   OPTIONS *                   CORS preflight
+ *   POST /v1/chat/completions       OpenAI-compatible, byte-for-byte
+ *   POST /v1/messages               Anthropic Messages API (PRD §4.6)
+ *   POST /v1/messages/count_tokens  Anthropic token estimate
+ *   GET  /v1/models                 catalog, OpenAI- or Anthropic-shaped
+ *   OPTIONS *                       CORS preflight
  *
  * The pipeline is ordered to fail as cheaply as possible (PRD §4.2.2) and every
  * pre-upstream step counts against the p95 < 10 ms overhead budget (§4.2.6).
  *
- * OWNERSHIP: this file, auth.ts, resolve.ts, errors.ts. `stream.ts` is owned by
- * another agent and imported against the frozen interface documented in README.md.
+ * Both wire formats share ONE pipeline (`runInference`): the Anthropic routes
+ * translate the request, run it, and re-frame the response. No billing decision
+ * is ever made twice (FR-ANTH-002).
+ *
+ * OWNERSHIP: this file, auth.ts, resolve.ts, errors.ts, anthropic.ts. `stream.ts`
+ * is owned by another agent and imported against the frozen interface documented
+ * in README.md.
  */
 
 import type { StreamMeta, UsageResult } from "../../../packages/shared/types.ts";
@@ -23,7 +30,19 @@ import {
   REQUEST_ID_HEADER,
   sseErrorFrame,
 } from "./errors.ts";
-import { extractApiKey, hashApiKey } from "./auth.ts";
+import { extractAnthropicApiKey, extractApiKey, hashApiKey } from "./auth.ts";
+import {
+  anthropicErrorResponse,
+  anthropicJsonResponse,
+  anthropicMessageFrom,
+  countTokensEstimate,
+  isAnthropicClient,
+  mapAnthropicModel,
+  parseModelMap,
+  toAnthropicSse,
+} from "./anthropic.ts";
+import { translateRequest } from "../../../packages/anthropic-adapter/src/index.ts";
+import type { AnthropicMessagesRequest } from "../../../packages/anthropic-adapter/src/types.ts";
 import { proxyStream } from "./stream.ts";
 import {
   makePostgrestExecutor,
@@ -102,6 +121,12 @@ export interface GatewayLog {
   error_code?: string;
   upstream_detail?: string;
   model_flagged?: boolean;
+  /**
+   * COUNT only. The warning STRINGS quote client-supplied block types, and a log
+   * line is the wrong place for anything a caller controls — they go back to the
+   * caller in a response header instead.
+   */
+  adapter_warnings?: number;
 }
 
 export function logJson(fields: GatewayLog): void {
@@ -540,6 +565,10 @@ export interface GatewayDeps {
   modalSecret?: string;
   supabaseUrl: string;
   serviceRoleKey: string;
+  /** Anthropic model name -> `creator/slug`, from `ANTHROPIC_MODEL_MAP`. */
+  anthropicModelMap?: Record<string, string>;
+  /** Used when an Anthropic model name matches nothing in the map. */
+  anthropicDefaultModel?: string;
   /** Deferred so this module stays importable before stream.ts lands. */
   proxyStream: ProxyStreamFn;
 }
@@ -569,6 +598,8 @@ function defaultDeps(): GatewayDeps {
     upstreamProvider: parseUpstreamProvider(getEnv("UPSTREAM_PROVIDER")),
     modalKey: getEnv("MODAL_KEY") ?? "",
     modalSecret: getEnv("MODAL_SECRET") ?? "",
+    anthropicModelMap: parseModelMap(getEnv("ANTHROPIC_MODEL_MAP")),
+    anthropicDefaultModel: getEnv("ANTHROPIC_DEFAULT_MODEL") ?? "",
     exec: makePostgrestExecutor(supabaseUrl, serviceRoleKey),
     rpc: makeRpcCaller(supabaseUrl, serviceRoleKey),
     proxyStream: proxyStream as ProxyStreamFn,
@@ -583,26 +614,32 @@ export function setDeps(d: GatewayDeps | null): void {
 
 // ─── Chat completions ────────────────────────────────────────────────────────
 
-async function handleChatCompletions(
-  req: Request,
+/**
+ * Everything `runInference` hands back to a wire-format handler. The OpenAI and
+ * Anthropic routes differ ONLY in how they parse the request and render the
+ * response; auth, resolution, tool-capability, reservation, upstream and
+ * settlement are this one path (FR-ANTH-002 — the billing path is never
+ * duplicated).
+ */
+export interface InferenceRun {
+  /** Upstream SSE, already proxied: headers flushed, keepalives running. */
+  sse: Response;
+  resolved: ResolvedRequest;
+  /** Set when upstream failed; the SSE body then carries a terminating error frame. */
+  failure: { value: GatewayError | null; flagged: boolean; detail: string };
+  overheadMs: number;
+  /** The estimate that sized the hold. Reused as Anthropic's `message_start` input_tokens. */
+  estPromptTokens: number;
+}
+
+async function runInference(
+  apiKey: string,
+  body: ChatBody,
   requestId: string,
   t0: number,
   deps: GatewayDeps,
-): Promise<Response> {
-  // 1. Bearer shape check — ~0 ms, rejects junk before the body parser runs.
-  const apiKey = extractApiKey(req);
-
-  // 2. Body.
-  let body: ChatBody;
-  try {
-    body = await req.json() as ChatBody;
-  } catch {
-    throw new GatewayError(
-      "unsupported_parameter",
-      "Invalid request body: could not parse JSON.",
-    );
-  }
-
+  clientWantsStream: boolean,
+): Promise<InferenceRun> {
   // 3. Model addressing + parameter validation, before any hashing or IO.
   const parsed = parseModelId(body.model);
   validateChatRequest(body);
@@ -619,14 +656,14 @@ async function handleChatCompletions(
   //    never cached (FR-GW-053).
   const chars = promptChars(body.messages) + toolDefinitionChars(body);
   const maxTokens = resolveMaxTokens(body, resolved.contextLength);
-  const clientWantsStream = body.stream === true;
+  const estPromptTokens = estimatePromptTokens(chars);
 
   const auth = await deps.rpc("authorize_request", {
     p_txn_id: requestId, // FR-GW-005: the request id IS the usage_transactions id
     p_user_id: resolved.userId,
     p_api_key_id: resolved.apiKeyId,
     p_model_id: resolved.modelId,
-    p_est_prompt_tokens: estimatePromptTokens(chars),
+    p_est_prompt_tokens: estPromptTokens,
     p_max_tokens: maxTokens,
     p_was_streaming: clientWantsStream,
   }) as AuthorizeResult;
@@ -667,14 +704,46 @@ async function handleChatCompletions(
     estimateFrom: { promptChars: chars },
   });
 
+  return { sse, resolved, failure, overheadMs, estPromptTokens };
+}
+
+async function handleChatCompletions(
+  req: Request,
+  requestId: string,
+  t0: number,
+  deps: GatewayDeps,
+): Promise<Response> {
+  // 1. Bearer shape check — ~0 ms, rejects junk before the body parser runs.
+  const apiKey = extractApiKey(req);
+
+  // 2. Body.
+  let body: ChatBody;
+  try {
+    body = await req.json() as ChatBody;
+  } catch {
+    throw new GatewayError(
+      "unsupported_parameter",
+      "Invalid request body: could not parse JSON.",
+    );
+  }
+
+  const clientWantsStream = body.stream === true;
+  const run = await runInference(apiKey, body, requestId, t0, deps, clientWantsStream);
+
   if (clientWantsStream) {
-    return withGatewayHeaders(sse, requestId, {
-      "x-nexus-overhead-ms": String(Math.round(overheadMs)),
+    return withGatewayHeaders(run.sse, requestId, {
+      "x-nexus-overhead-ms": String(Math.round(run.overheadMs)),
     });
   }
 
   // FR-GW-030: non-streaming clients get the forced stream buffered and assembled.
-  return await assembleNonStreaming(sse, requestId, String(body.model), failure, overheadMs);
+  return await assembleNonStreaming(
+    run.sse,
+    requestId,
+    String(body.model),
+    run.failure,
+    run.overheadMs,
+  );
 }
 
 /**
@@ -772,7 +841,7 @@ function sseFailureResponse(err: GatewayError): Response {
   });
 }
 
-function withGatewayHeaders(
+export function withGatewayHeaders(
   res: Response,
   requestId: string,
   extra: Record<string, string> = {},
@@ -846,7 +915,15 @@ function foldToolCallDeltas(
 /** Everything one buffered upstream stream says, before it is shaped for a client. */
 interface ScannedStream {
   content: string;
+  /**
+   * Reasoning models stream chain-of-thought here. It is BILLED output and maps
+   * to an Anthropic `thinking` block (FR-ANTH-006), so it is scanned even though
+   * the OpenAI response shape has nowhere standard to put it.
+   */
+  reasoningContent: string;
   finishReason: string | null;
+  /** vLLM extension: the stop string that matched, when the worker reports one. */
+  stopReason: string | null;
   usage: Record<string, unknown> | null;
   created: number;
   embeddedError: { code?: string; message?: string } | null;
@@ -859,10 +936,12 @@ interface ScannedStream {
  * Malformed frames are SKIPPED rather than fatal: the stream is already paid
  * for, and one unparseable frame must not lose the usage on the next one.
  */
-function scanUpstreamStream(raw: string): ScannedStream {
+export function scanUpstreamStream(raw: string): ScannedStream {
   const out: ScannedStream = {
     content: "",
+    reasoningContent: "",
     finishReason: null,
+    stopReason: null,
     usage: null,
     created: Math.floor(Date.now() / 1000),
     embeddedError: null,
@@ -888,10 +967,22 @@ function scanUpstreamStream(raw: string): ScannedStream {
     if (chunk.usage) out.usage = chunk.usage as Record<string, unknown>;
     const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
     if (!choice) continue;
-    const delta = choice.delta as { content?: unknown; tool_calls?: unknown } | undefined;
+    const delta = choice.delta as
+      | {
+        content?: unknown;
+        reasoning_content?: unknown;
+        reasoning?: unknown;
+        tool_calls?: unknown;
+      }
+      | undefined;
     if (typeof delta?.content === "string") out.content += delta.content;
+    // Some servers spell it `reasoning`; both are the same billed output.
+    if (typeof delta?.reasoning_content === "string") {
+      out.reasoningContent += delta.reasoning_content;
+    } else if (typeof delta?.reasoning === "string") out.reasoningContent += delta.reasoning;
     foldToolCallDeltas(delta?.tool_calls, out.toolCalls);
     if (typeof choice.finish_reason === "string") out.finishReason = choice.finish_reason;
+    if (typeof choice.stop_reason === "string") out.stopReason = choice.stop_reason;
   }
   return out;
 }
@@ -921,7 +1012,7 @@ function assistantMessage(
  * which is the order the model called them in and the order a client must
  * answer them in.
  */
-function assembleToolCalls(
+export function assembleToolCalls(
   toolCalls: Map<number, PartialToolCall>,
   requestId: string,
 ): Array<{ id: string; type: string; function: { name: string; arguments: string } }> {
@@ -998,6 +1089,176 @@ export async function assembleNonStreaming(
       ...CORS_HEADERS,
     },
   });
+}
+
+// ─── Anthropic Messages API (PRD §4.6) ───────────────────────────────────────
+
+/**
+ * `POST /v1/messages`.
+ *
+ * Translate in, run the SHARED pipeline, translate out. Everything between the
+ * two translations — key resolution, model resolution, the tool-capability
+ * check, the authorization hold, the upstream call, the usage tee and
+ * settlement — is the same code path as `/v1/chat/completions` (FR-ANTH-002).
+ * If this function ever grows a billing decision of its own, that is the bug.
+ */
+async function handleMessages(
+  req: Request,
+  requestId: string,
+  t0: number,
+  deps: GatewayDeps,
+): Promise<Response> {
+  const apiKey = extractAnthropicApiKey(req);
+
+  let body: AnthropicMessagesRequest;
+  try {
+    body = await req.json() as AnthropicMessagesRequest;
+  } catch {
+    throw new GatewayError(
+      "unsupported_parameter",
+      "Invalid request body: could not parse JSON.",
+    );
+  }
+
+  const platformModel = mapAnthropicModel(
+    body?.model,
+    deps.anthropicModelMap ?? {},
+    deps.anthropicDefaultModel,
+  );
+
+  // Throws AnthropicAdapterError (rendered as an Anthropic 400) when the request
+  // is not representable — most importantly a missing `max_tokens`.
+  const { request, warnings } = translateRequest(body, {
+    model: platformModel,
+    includeUsage: true,
+  });
+
+  // Anything the Anthropic request carried that OpenAI Chat Completions cannot
+  // express (`thinking`, `metadata`, `disable_parallel_tool_use`, …) is reported
+  // back to the caller rather than dropped in silence.
+  const warningHeaders: Record<string, string> = warnings.length > 0
+    ? { "x-nexus-adapter-warnings": String(warnings.length) }
+    : {};
+  if (warnings.length > 0) {
+    logJson({
+      request_id: requestId,
+      outcome: "anthropic_request_lossy",
+      adapter_warnings: warnings.length,
+    });
+  }
+
+  const clientWantsStream = body?.stream === true;
+  const run = await runInference(
+    apiKey,
+    request as ChatBody,
+    requestId,
+    t0,
+    deps,
+    clientWantsStream,
+  );
+
+  const stopSequences = Array.isArray(body?.stop_sequences) ? body.stop_sequences : undefined;
+  const messageId = `msg_${requestId.replace(/-/g, "")}`;
+
+  if (clientWantsStream) {
+    const framed = toAnthropicSse(run.sse, {
+      messageId,
+      model: platformModel,
+      stopSequences,
+      inputTokens: run.estPromptTokens,
+    });
+    return withGatewayHeaders(framed, requestId, {
+      "request-id": requestId,
+      "x-nexus-overhead-ms": String(Math.round(run.overheadMs)),
+      ...warningHeaders,
+    });
+  }
+
+  const scanned = scanUpstreamStream(await run.sse.text());
+  if (run.failure.value) throw run.failure.value;
+  if (scanned.embeddedError) {
+    throw new GatewayError(
+      (scanned.embeddedError.code as never) ?? "internal_error",
+      scanned.embeddedError.message ?? "The server encountered an internal error.",
+    );
+  }
+
+  const message = anthropicMessageFrom({
+    content: scanned.content,
+    reasoningContent: scanned.reasoningContent,
+    toolCalls: assembleToolCalls(scanned.toolCalls, requestId),
+    finishReason: scanned.finishReason,
+    stopReason: scanned.stopReason,
+    usage: scanned.usage,
+    created: scanned.created,
+  }, {
+    model: platformModel,
+    messageId,
+    stopSequences,
+    inputTokens: run.estPromptTokens,
+  });
+
+  return anthropicJsonResponse(message, requestId, {
+    "x-nexus-overhead-ms": String(Math.round(run.overheadMs)),
+    ...warningHeaders,
+  });
+}
+
+/**
+ * `POST /v1/messages/count_tokens` (FR-ANTH-014). Claude Code calls this before
+ * it sends anything, so a 404 here is a client that never starts.
+ *
+ * Authenticated, but free and un-metered: no model resolution, no hold, no
+ * `usage_transactions` row. It engages no GPU, so there is nothing to bill.
+ */
+async function handleCountTokens(
+  req: Request,
+  requestId: string,
+  deps: GatewayDeps,
+): Promise<Response> {
+  const key = await authenticateKey(extractAnthropicApiKey(req), deps);
+
+  let body: AnthropicMessagesRequest;
+  try {
+    body = await req.json() as AnthropicMessagesRequest;
+  } catch {
+    throw new GatewayError(
+      "unsupported_parameter",
+      "Invalid request body: could not parse JSON.",
+    );
+  }
+
+  logJson({ request_id: requestId, outcome: "tokens_counted", user_id: key.user_id });
+  return anthropicJsonResponse(countTokensEstimate(body, estimatePromptTokens), requestId);
+}
+
+/** `GET /v1/models` in Anthropic's shape, for a caller that sent the Anthropic headers. */
+async function handleAnthropicModels(
+  req: Request,
+  requestId: string,
+  deps: GatewayDeps,
+): Promise<Response> {
+  const key = await authenticateKey(extractAnthropicApiKey(req), deps);
+  const rows = await listModels(key, deps);
+
+  const data = rows.map((r) => ({
+    type: "model",
+    id: r.id,
+    display_name: r.id,
+    created_at: new Date(r.createdAt).toISOString(),
+  }));
+
+  logJson({ request_id: requestId, outcome: "models_listed", user_id: key.user_id });
+
+  return anthropicJsonResponse(
+    {
+      data,
+      has_more: false,
+      first_id: data[0]?.id ?? null,
+      last_id: data.length > 0 ? data[data.length - 1]?.id ?? null : null,
+    },
+    requestId,
+  );
 }
 
 // ─── Settlement ──────────────────────────────────────────────────────────────
@@ -1118,12 +1379,15 @@ async function settle(
 
 // ─── GET /v1/models (FR-GW-004) ──────────────────────────────────────────────
 
-async function handleModels(
-  req: Request,
-  requestId: string,
+/**
+ * Resolves a key WITHOUT resolving a model — for routes that need an
+ * authenticated caller but no inference (`/v1/models`, `/v1/messages/count_tokens`).
+ * Key validity is read every time; it is never cached (FR-GW-053).
+ */
+export async function authenticateKey(
+  apiKey: string,
   deps: GatewayDeps,
-): Promise<Response> {
-  const apiKey = extractApiKey(req);
+): Promise<{ id: string; user_id: string }> {
   const keyHash = await hashApiKey(apiKey);
 
   // The key lookup is never cached, so this reuses the resolve executor with a
@@ -1142,7 +1406,21 @@ async function handleModels(
         "https://nexus.dev/dashboard/keys.",
     );
   }
+  return { id: key.id, user_id: key.user_id };
+}
 
+export interface CatalogRow {
+  /** `creator-handle/model-slug`. */
+  id: string;
+  handle: string;
+  createdAt: string;
+}
+
+/** The models this key may address: every public `ready` model plus its owner's own. */
+export async function listModels(
+  key: { user_id: string },
+  deps: GatewayDeps,
+): Promise<CatalogRow[]> {
   const base = deps.supabaseUrl.replace(/\/+$/, "");
   const params = new URLSearchParams({
     select: "slug,created_at,visibility,user_id,profiles!inner(handle)",
@@ -1172,16 +1450,27 @@ async function handleModels(
     profiles?: { handle?: string } | Array<{ handle?: string }>;
   }>;
 
-  const data = rows.map((r) => {
+  return rows.map((r) => {
     const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
     const handle = p?.handle ?? "unknown";
-    return {
-      id: `${handle}/${r.slug}`,
-      object: "model",
-      created: Math.floor(new Date(r.created_at).getTime() / 1000),
-      owned_by: handle,
-    };
+    return { id: `${handle}/${r.slug}`, handle, createdAt: r.created_at };
   });
+}
+
+async function handleModels(
+  req: Request,
+  requestId: string,
+  deps: GatewayDeps,
+): Promise<Response> {
+  const key = await authenticateKey(extractApiKey(req), deps);
+  const rows = await listModels(key, deps);
+
+  const data = rows.map((r) => ({
+    id: r.id,
+    object: "model",
+    created: Math.floor(new Date(r.createdAt).getTime() / 1000),
+    owned_by: r.handle,
+  }));
 
   logJson({ request_id: requestId, outcome: "models_listed", user_id: key.user_id });
 
@@ -1212,9 +1501,12 @@ export function toIntOrNull(n: number | null | undefined): number | null {
 }
 
 /** Matches both `/v1/...` and the deployed `/functions/v1/gateway/v1/...` form. */
-function routeOf(pathname: string): string {
+export function routeOf(pathname: string): string {
   const p = pathname.replace(/\/+$/, "");
   if (p.endsWith("/v1/chat/completions")) return "chat";
+  // Longest first: `/v1/messages/count_tokens` also ends with a `/v1/messages` prefix.
+  if (p.endsWith("/v1/messages/count_tokens")) return "count_tokens";
+  if (p.endsWith("/v1/messages")) return "messages";
   if (p.endsWith("/v1/models")) return "models";
   return "unknown";
 }
@@ -1233,9 +1525,42 @@ export async function handleRequest(
     });
   }
 
+  const route = routeOf(new URL(req.url).pathname);
+  const anthropicRoute = route === "messages" || route === "count_tokens" ||
+    (route === "models" && isAnthropicClient(req));
+
   try {
-    const route = routeOf(new URL(req.url).pathname);
     const deps = depsOverride ?? defaultDeps();
+
+    if (route === "messages") {
+      if (req.method !== "POST") {
+        throw new GatewayError(
+          "not_implemented",
+          "Method not allowed. Use POST for /v1/messages.",
+        );
+      }
+      return await handleMessages(req, requestId, t0, deps);
+    }
+
+    if (route === "count_tokens") {
+      if (req.method !== "POST") {
+        throw new GatewayError(
+          "not_implemented",
+          "Method not allowed. Use POST for /v1/messages/count_tokens.",
+        );
+      }
+      return await handleCountTokens(req, requestId, deps);
+    }
+
+    if (route === "models" && anthropicRoute) {
+      if (req.method !== "GET") {
+        throw new GatewayError(
+          "not_implemented",
+          "Method not allowed. Use GET for /v1/models.",
+        );
+      }
+      return await handleAnthropicModels(req, requestId, deps);
+    }
 
     if (route === "chat") {
       if (req.method !== "POST") {
@@ -1259,8 +1584,8 @@ export async function handleRequest(
 
     throw new GatewayError(
       "model_not_found",
-      "Unrecognized request URL. This gateway serves POST /v1/chat/completions " +
-        "and GET /v1/models.",
+      "Unrecognized request URL. This gateway serves POST /v1/chat/completions, " +
+        "POST /v1/messages, POST /v1/messages/count_tokens and GET /v1/models.",
     );
   } catch (err) {
     const code = err instanceof GatewayError ? err.code : "internal_error";
@@ -1270,7 +1595,12 @@ export async function handleRequest(
       error_code: code,
       gateway_overhead_ms: round2(now() - t0),
     });
-    return errorResponse(err, requestId);
+    // An Anthropic client cannot read an OpenAI envelope: its SDK reads
+    // `error.type` off the top level and would report every failure as a generic
+    // API error with no message.
+    return anthropicRoute
+      ? anthropicErrorResponse(err, requestId)
+      : errorResponse(err, requestId);
   }
 }
 

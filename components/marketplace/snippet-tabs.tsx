@@ -89,7 +89,10 @@ export function SnippetTabs({
         <dd className="flex min-w-0 items-start gap-1.5">
           <code className="text-foreground break-all">{baseUrl}</code>
           <LabelHint subject="the base URL">
-            The trailing <code>/v1</code> is part of it; SDKs append <code>/chat/completions</code>.
+            The trailing <code>/v1</code> is part of it; OpenAI SDKs append{" "}
+            <code>/chat/completions</code>. Anthropic clients (Claude Code) are the exception —{" "}
+            <code>ANTHROPIC_BASE_URL</code> drops the <code>/v1</code>, because the Anthropic SDK
+            appends <code>/v1/messages</code> itself.
           </LabelHint>
         </dd>
         <dt className="font-medium">Timeout</dt>
