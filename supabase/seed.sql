@@ -202,7 +202,12 @@ insert into public.custom_models (
   500000,       -- $0.50 per 1M prompt tokens
   1500000,      -- $1.50 per 1M completion tokens
   2000,         -- 20% platform fee -> the 80/20 split in the acceptance test
-  'public', 'draft'
+  -- PRIVATE at birth, and it is the licence gate (#29) that says so: a listing
+  -- may not be `public` until the terms of the weights it serves are
+  -- established, and the base model it serves is not inserted until 4c below.
+  -- 4c publishes it, in that order, which is the order the deploy pipeline
+  -- itself works in.
+  'private', 'draft'
 ) on conflict (id) do nothing;
 
 -- ── 4a. Run the real solver over that row and store its output ──────────────
@@ -283,10 +288,25 @@ update public.custom_models
 -- HF-path coincidence CONTRACTS.md warns about at the top — the two namespaces
 -- are unrelated, and `base_models.slug` is never an addressable platform id.
 --
--- commercial_hosting stays `unknown`: the seeded repo's licence was never
--- captured (lib/studio/server/model-card.ts discards it today — #25), and
--- `unknown` is the honest answer rather than a guess. It is also the value that
--- must never auto-publish, so seeding it exercises the interesting case.
+-- commercial_hosting is `allowed` WITHOUT a licence id, and both halves of that
+-- are deliberate. The repo's licence was never captured — the recorded probe in
+-- tests/fixtures/hf-qwen38-27b-uncensored-gguf.json predates `?full=true` and
+-- carries no cardData at all — so naming one here would be inventing a fact
+-- about real weights, which this fixture does not do anywhere else either.
+--
+-- The verdict is a separate fact from the id, which is what the column's own
+-- comment says: whether a third party may serve these weights for money is not
+-- derivable from `license_id`. `allowed` here stands for the operator review
+-- decision that §5.1's `unknown` row routes to (#29) — the same decision the
+-- real queue records, through the same column, and the only thing in this file
+-- that is an operator judgement rather than a probed value.
+--
+-- It cannot stay `unknown`: MVP-0's acceptance test needs a consumer OTHER than
+-- the creator to call this model, the gateway 404s a private model for anybody
+-- who is not its owner, and `unknown` may not be `public`. A fixture that
+-- cannot be called is not the acceptance fixture. The interesting cases of the
+-- gate are exercised in supabase/tests/08_license_gate_test.sql, which is where
+-- they belong.
 --
 -- No parent_id. The repo is an original as far as anything here knows; inventing
 -- a parent would put a claim about real weights into a fixture that cannot
@@ -310,7 +330,7 @@ insert into public.base_models (
   -- codebase already documents as unsafe.
   'qwen35', 65, null, 4, 256, 5120, 4, 262144,
   array['uncensored', 'chat', 'long-context'],
-  'unknown'
+  'allowed'
 )
 on conflict (slug) do nothing;
 
@@ -325,4 +345,12 @@ update public.custom_models
          'confirmed_by', null,
          'at', now(),
          'note', 'seeded by supabase/seed.sql, not resolved by the #25 cascade')
+ where id = '00000000-0000-0000-0000-0000000000c1';
+
+-- Only now may it be public. The listing was born private above; the trigger
+-- installed by 20260820007000 has just mirrored the base model's `allowed`
+-- verdict onto it, and `custom_models_public_needs_license` accepts the flip.
+-- Reversing these two statements fails the seed, which is the gate working.
+update public.custom_models
+   set visibility = 'public'
  where id = '00000000-0000-0000-0000-0000000000c1';

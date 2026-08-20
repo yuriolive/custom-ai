@@ -22,13 +22,20 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { CommercialHosting } from "@nexus/hf-probe";
+
+import { evaluateLicenseGate, holdHintForListing } from "./license";
 import type { ModelStatus, MyModelRow } from "./types";
 
 const MODEL_COLUMNS =
   "id, slug, display_name, status, visibility, context_length, " +
   "measured_tokens_per_second, predicted_tokens_per_second, cost_floor_micro_per_mtoken, " +
   "price_prompt_micro_usd_per_mtoken, price_completion_micro_usd_per_mtoken, pricing_version, " +
-  "total_requests, remediation_hint, provisioning_error, created_at, ready_at";
+  "total_requests, remediation_hint, provisioning_error, created_at, ready_at, " +
+  // The licence gate's own state (#29). Read here rather than left to the
+  // constraint because the alternative is a creator pressing "Make public" and
+  // being shown the text of a CHECK violation.
+  "license_hosting, license_terms_version, license_ack_version, license_public_requested_at";
 
 /** Rows shaped as PostgREST returns them, before renaming. */
 type RawModel = {
@@ -49,6 +56,10 @@ type RawModel = {
   provisioning_error: unknown;
   created_at: string;
   ready_at: string | null;
+  license_hosting: CommercialHosting;
+  license_terms_version: string | null;
+  license_ack_version: string | null;
+  license_public_requested_at: string | null;
 };
 
 /** The upstream's own message out of the `provisioning_error` envelope. */
@@ -105,8 +116,44 @@ export async function fetchMyModels(
       provisioningError: errorMessage(m.provisioning_error),
       createdAt: m.created_at,
       readyAt: m.ready_at,
+      ...licenseFields(m),
     };
   });
+}
+
+/**
+ * Can this listing be public, and if not, why not (#29)?
+ *
+ * Asked with `wantsPublic: true` unconditionally, including for a row that is
+ * already private and has not asked: the question the page has to answer is
+ * whether the "Make public" control would work, not whether anybody has pressed
+ * it. A row that IS public necessarily answers yes — the CHECK guarantees it —
+ * so `licenseHold` is null there without a special case.
+ */
+function licenseFields(
+  m: RawModel,
+): Pick<
+  MyModelRow,
+  "licenseHosting" | "licenseTermsVersion" | "licenseHold" | "licenseAwaitingReview"
+> {
+  const decision = evaluateLicenseGate({
+    hosting: m.license_hosting,
+    termsVersion: m.license_terms_version,
+    wantsPublic: true,
+    acknowledgedVersion: m.license_ack_version,
+  });
+  return {
+    licenseHosting: m.license_hosting,
+    licenseTermsVersion: m.license_terms_version,
+    licenseHold:
+      decision.publish || decision.hold === null
+        ? null
+        : { message: decision.message ?? "", hint: holdHintForListing(decision.hold) },
+    // In the operator queue right now: the creator asked, and the answer is one
+    // only an operator can give.
+    licenseAwaitingReview:
+      m.license_public_requested_at !== null && m.license_hosting === "unknown",
+  };
 }
 
 /**

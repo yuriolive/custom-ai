@@ -71,6 +71,11 @@ import type {
 import { createClient } from "@/lib/supabase/client";
 
 import { BaseModelStep, decodeBaseModelChoice } from "./base-model-step";
+import {
+  acknowledgeableTerms,
+  LicenseGateOutcomeAlert,
+  LicenseGateStep,
+} from "./license-gate-step";
 import { DeploymentPlan } from "./deployment-plan";
 import { SummaryLayout } from "./primitives";
 import { ProvisioningStepper } from "./provisioning-stepper";
@@ -135,6 +140,10 @@ export function DeployForm() {
   /** Set the first time a price is edited. Nothing auto-fills a price after. */
   const [pricesTouched, setPricesTouched] = useState(false);
   const [isPublic, setPublic] = useState(true);
+  // The creator's acceptance of a conditional licence's terms (#29). False is
+  // the only safe initial value, and it is not "unanswered": a deployment with
+  // it unchecked is a deliberate private one, which the alert says out loud.
+  const [licenseAcknowledged, setLicenseAcknowledged] = useState(false);
 
   // Which base model the creator says this is (#25). Null until they answer, and
   // an answer is never required — see `BaseModelStep`.
@@ -150,6 +159,11 @@ export function DeployForm() {
   const [modelId, setModelId] = useState<string | null>(null);
   const [deployStatus, setDeployStatus] = useState<ModelStatus | null>(null);
   const [deployError, setDeployError] = useState<{ message: string; hint: string } | null>(null);
+  /** What the licence gate did. Null until the pipeline answers, and on failure. */
+  const [licenseHold, setLicenseHold] = useState<{
+    message: string | null;
+    hint: string | null;
+  } | null>(null);
   /** Which stage the server says broke, so the marker lands on the right one. */
   const [failedStage, setFailedStage] = useState<ModelStatus | null>(null);
   const [deployedSlug, setDeployedSlug] = useState<string | null>(null);
@@ -200,6 +214,11 @@ export function DeployForm() {
           // A different repository's candidates are a different question, so an
           // answer to the previous one is dropped rather than carried across.
           setBaseModelChoice(null);
+          // And a different repository is a different LICENCE. Carrying an
+          // acceptance across would record the creator accepting a document they
+          // were never shown, which is the one thing an acknowledgement must
+          // never be (#29).
+          setLicenseAcknowledged(false);
           // FR-DEP-005: the architecture's ceiling caps the slider, and a value
           // already above it is pulled down rather than left invalid.
           const ceiling = body.architecture?.maxPositionEmbeddings ?? CTX_FALLBACK_MAX;
@@ -348,6 +367,8 @@ export function DeployForm() {
     ? (placementById.get(variantId)?.placement ?? null)
     : null;
   const selectedVariant = probe?.variants.find((v) => v.id === variantId) ?? null;
+  /** The licence document the acknowledgement below would name. */
+  const acknowledgedTerms = acknowledgeableTerms(probe?.baseModel.license ?? null);
 
   const remedies = useMemo(() => {
     if (!selectedPlacement || selectedPlacement.feasible) return [];
@@ -444,6 +465,13 @@ export function DeployForm() {
           ...(probe.baseModel.declared === null && baseModelChoice
             ? { baseModelChoice: decodeBaseModelChoice(baseModelChoice) }
             : {}),
+          // The licence text the creator accepted, named rather than asserted as
+          // a boolean: the server publishes only if this is the document
+          // actually in force for the resolved weights, so an acknowledgement of
+          // the wrong licence reads as one and is refused (#29).
+          ...(isPublic && licenseAcknowledged && acknowledgedTerms
+            ? { licenseAckVersion: acknowledgedTerms }
+            : {}),
         }),
         cache: "no-store",
         headers: { "content-type": "application/json" },
@@ -451,7 +479,14 @@ export function DeployForm() {
       });
 
       const body = (await response.json()) as
-        | { ok: true; modelId: string; slug: string; measuredTokensPerSecond: number }
+        | {
+            ok: true;
+            modelId: string;
+            slug: string;
+            measuredTokensPerSecond: number;
+            visibility: "public" | "private";
+            license: { published: boolean; message: string | null; hint: string | null };
+          }
         | {
             ok: false;
             code: string;
@@ -467,6 +502,14 @@ export function DeployForm() {
         setHfToken("");
         setModelId(body.modelId);
         setDeployedSlug(body.slug);
+        // A listing the licence gate held back is a SUCCESS with one thing
+        // missing, and the creator asked for that thing — so it is reported,
+        // next to the stepper that says the model is live.
+        setLicenseHold(
+          body.license.published
+            ? null
+            : { message: body.license.message, hint: body.license.hint },
+        );
         setDeployStatus("ready");
         setPhase("done");
         router.refresh();
@@ -496,8 +539,10 @@ export function DeployForm() {
     contextLength,
     description,
     displayName,
+    acknowledgedTerms,
     hfToken,
     isPublic,
+    licenseAcknowledged,
     probe,
     promptMicro,
     revision,
@@ -526,6 +571,10 @@ export function DeployForm() {
             status={deployStatus}
           />
         </div>
+
+        {deployStatus === "ready" && licenseHold ? (
+          <LicenseGateOutcomeAlert hint={licenseHold.hint} message={licenseHold.message} />
+        ) : null}
 
         <div className="flex flex-wrap gap-3">
           <Button onPress={() => router.push("/studio")} variant="primary">
@@ -947,6 +996,17 @@ export function DeployForm() {
               still billed at the prices below.
             </Description>
           </Switch>
+
+          {/* Only ever about being LISTED, which is why it lives here and not in
+              its own section: the switch above is the control it qualifies. */}
+          {probe ? (
+            <LicenseGateStep
+              acknowledged={licenseAcknowledged}
+              isPublic={isPublic}
+              license={probe.baseModel.license}
+              onAcknowledgedChange={setLicenseAcknowledged}
+            />
+          ) : null}
         </section>
 
         {/* Enter submits; the visible CTA lives in the sticky panel. */}
