@@ -24,6 +24,7 @@ import {
 } from "@/components/marketplace/search-params";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
 import type { CatalogQuery } from "@/components/marketplace/types";
+import { pageOpenGraph } from "@/lib/seo/open-graph";
 import { SUPABASE_URL } from "@/lib/supabase/public-config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -73,11 +74,7 @@ export async function generateMetadata({
     // pages, which are the URLs actually worth ranking.
     alternates: { canonical: "/models" },
     robots: filtered ? { index: false, follow: true } : undefined,
-    openGraph: {
-      title: TITLE,
-      description: DESCRIPTION,
-      type: "website",
-    },
+    openGraph: pageOpenGraph({ title: TITLE, description: DESCRIPTION, path: "/models" }),
   };
 }
 

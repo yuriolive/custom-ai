@@ -4,7 +4,7 @@ import { ConsoleNav } from "@/components/console/console-nav";
 import { getCurrentUser } from "@/lib/supabase/server";
 
 export const metadata = {
-  title: "Console — Nexus Inference",
+  title: "Console",
 };
 
 /**

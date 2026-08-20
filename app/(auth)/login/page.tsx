@@ -5,7 +5,7 @@ import { messageForQueryCode } from "@/lib/supabase/auth-errors";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
 
 export const metadata: Metadata = {
-  title: "Sign in · Nexus Inference",
+  title: "Sign in",
   description: "Sign in to deploy models and mint API keys.",
 };
 

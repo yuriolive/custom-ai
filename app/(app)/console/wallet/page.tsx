@@ -6,7 +6,7 @@ import { fetchLedgerPage, fetchSummary } from "@/lib/console/queries";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
-  title: "Wallet — Nexus Inference",
+  title: "Wallet",
 };
 
 export const dynamic = "force-dynamic";

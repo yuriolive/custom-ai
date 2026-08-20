@@ -12,6 +12,9 @@ import { ModelDetail } from "@/components/marketplace/model-detail";
 import { fetchModelByHandleAndSlug } from "@/components/marketplace/queries";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
 import type { CatalogModel } from "@/components/marketplace/types";
+import { JsonLdScript } from "@/components/seo/json-ld-script";
+import { buildModelApplication, buildModelBreadcrumbs } from "@/lib/seo/json-ld";
+import { pageOpenGraph } from "@/lib/seo/open-graph";
 import { SUPABASE_URL } from "@/lib/supabase/public-config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -72,7 +75,17 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     };
   }
 
-  const title = `${model.modelId} — ${formatSpeed(model.measuredTokensPerSecond)}, ${formatContext(model.contextLength)} context`;
+  // "API" AND "PRICING" ARE IN THE TITLE ON PURPOSE, and they are the whole
+  // reason this line is not just the model id and its numbers. The query a
+  // developer types before they have chosen a provider is "<model> api pricing",
+  // not "<model> tokens per second" — every comparable catalog that ranks for it
+  // (OpenRouter, Together, Venice, OrcaRouter) carries both words in the title
+  // tag. The numbers still do their work, one line down, in the description that
+  // a search result and a Slack unfurl actually show.
+  //
+  // Kept short because the root layout appends ` | Nexus Inference`; a title
+  // carrying speed and context as well ran past the width a result renders.
+  const title = `${model.modelId} API — pricing, context & speed`;
   // The description is what shows up in a Slack unfurl and a search result, so
   // it carries the four numbers a developer decides on: speed, context, quality
   // and the output price.
@@ -88,12 +101,17 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     title,
     description,
     alternates: { canonical: `/models/${model.creatorHandle}/${model.slug}` },
-    openGraph: {
+    openGraph: pageOpenGraph({
       title,
       description,
       type: "article",
-      url: `/models/${model.creatorHandle}/${model.slug}`,
-    },
+      path: `/models/${model.creatorHandle}/${model.slug}`,
+      // `null`, not a path. The card lives in `opengraph-image.tsx` beside this
+      // file, and Next serves a DYNAMIC route's generated image at a hashed
+      // segment — so any path written here is both wrong and a 404. Leaving
+      // `images` unset lets the file convention name its own route.
+      imagePath: null,
+    }),
     twitter: { card: "summary", title, description },
   };
 }
@@ -107,5 +125,16 @@ export default async function ModelPage({ params }: { params: Promise<Params> })
   // (CONTRACTS.md §Gateway wire contract).
   if (!model) notFound();
 
-  return <ModelDetail baseUrl={gatewayBaseUrl(SUPABASE_URL)} model={model} />;
+  return (
+    <>
+      {/* Structured data for the one page on this site that describes a
+          purchasable thing. Rendered here rather than in `ModelDetail` because
+          that component is client-side (HeroUI v3), and JSON-LD has to be in the
+          HTML a crawler receives. */}
+      <JsonLdScript node={buildModelApplication(model)} />
+      <JsonLdScript node={buildModelBreadcrumbs(model)} />
+
+      <ModelDetail baseUrl={gatewayBaseUrl(SUPABASE_URL)} model={model} />
+    </>
+  );
 }
