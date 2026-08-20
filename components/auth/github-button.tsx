@@ -23,17 +23,17 @@ function GitHubMark() {
 
 /**
  * The first sign-in path offered. The audience is HF-adjacent developers, so
- * GitHub leads and email is the fallback below it.
+ * GitHub leads, Hugging Face sits beside it, and email is the fallback below.
  *
  * FIRST IN ORDER IS NOT THE SAME AS FIRST IN WEIGHT, and this button carries
  * `variant="secondary"` on purpose (DESIGN.md §3.7). The accent is spent once
- * per page and it is spent on the email submit, so a page offering two ways in
- * has exactly one filled control rather than two competing for the eye. This
- * was inverted in the code for a while — GitHub filled, submit outlined — which
- * left the email form looking disabled next to it.
+ * per page and it is spent on the email submit, so a page offering three ways
+ * in still has exactly one filled control rather than several competing for the
+ * eye. This was inverted in the code for a while — GitHub filled, submit
+ * outlined — which left the email form looking disabled next to it.
  *
  * Its own form and its own `useActionState`, so its pending state is
- * independent of the email form's.
+ * independent of the other buttons' and of the email form's.
  */
 export function GitHubButton({
   next,

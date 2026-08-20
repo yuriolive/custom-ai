@@ -193,6 +193,33 @@ lib/supabase/server.ts   createClient()        RSC + route handlers     — crea
 lib/supabase/middleware.ts updateSession(req)  middleware only          — refreshes the auth cookie
 ```
 
+Sign-in paths offered, in the order the forms present them:
+
+| Path | Supabase provider | Configured where |
+|---|---|---|
+| GitHub | `github` | Dashboard → Authentication → Providers (built-in) |
+| Hugging Face | `custom:huggingface` | Dashboard → Authentication → **Custom Providers** |
+| Email + password | — | `config.toml` / dashboard |
+
+Hugging Face is a standards-compliant OIDC issuer, so it goes in as a **Custom Provider**
+with auto-discovery against `https://huggingface.co` — there is no bespoke OAuth code, and
+`app/auth/callback/route.ts` exchanges its `?code=` on the same path as every other one.
+Two consequences that are contract, not detail:
+
+- **`custom:*` providers do not exist on a local stack.** They are dashboard-only; the CLI
+  has no `[auth.external.custom.*]` key to mirror one into `config.toml`. So the Hugging
+  Face button is not rendered when `isLocalSupabase()` (`lib/supabase/is-local.ts`) is
+  true, and local sign-in is email + GitHub. Do not "fix" this by adding a config key.
+- **`Provider` in `@supabase/auth-js` is a closed union** with no `custom:${string}`
+  member, so the call site casts. The cast is safe — the string is only interpolated into
+  the `provider` query parameter of `/authorize` — and it is commented as such at the one
+  place it appears (`app/(auth)/actions.ts`). Do not add a second one elsewhere.
+
+Error copy lives in `lib/supabase/auth-errors.ts` and follows one rule now that there are
+two providers: the OAuth **start** path knows which button was pressed and may name it;
+the **callback** path does not — GoTrue's error redirect carries only `error` /
+`error_code` — so its copy names no provider at all.
+
 Route protection:
 
 | Public | Authenticated |

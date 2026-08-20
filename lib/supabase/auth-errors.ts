@@ -18,6 +18,25 @@ import type { AuthError } from "@supabase/supabase-js";
 const INVALID_CREDENTIALS =
   "That email and password combination doesn't match an account. Check both and try again.";
 
+/**
+ * The OAuth providers the sign-in surfaces offer, spelled the way a person
+ * reads them. This is display copy only — the Supabase provider strings
+ * (`github`, `custom:huggingface`) live in `app/(auth)/actions.ts`.
+ */
+export type OAuthProviderLabel = "GitHub" | "Hugging Face";
+
+/**
+ * Copy for "the sign-in call succeeded but handed back no authorization URL",
+ * which is what GoTrue does when the provider is not configured on this
+ * project. Shared so the two OAuth actions cannot drift apart in wording.
+ */
+export function oauthUnavailableMessage(provider: OAuthProviderLabel): string {
+  return (
+    `${provider} sign-in isn't configured on this deployment — no authorization ` +
+    "URL was returned. Use email and password instead."
+  );
+}
+
 export type AuthErrorCode =
   | "invalid_credentials"
   | "email_not_confirmed"
@@ -55,10 +74,16 @@ function failure(
  * `intent` matters for one case only: on sign-up a duplicate email must not be
  * confirmable by the visitor, so it gets the same neutral copy as any other
  * refused sign-up.
+ *
+ * `provider` is only ever known on the OAuth *start* path, where the caller
+ * picked the provider a moment ago. The callback cannot supply it — GoTrue's
+ * error redirect carries no provider — so those branches stay neutral rather
+ * than naming the wrong one of the two buttons.
  */
 export function describeAuthError(
   error: AuthError | Error,
   intent: "sign-in" | "sign-up" | "oauth" | "callback" = "sign-in",
+  provider?: OAuthProviderLabel,
 ): AuthFailure {
   const code = (error as AuthError).code ?? "";
   const status = (error as AuthError).status ?? 0;
@@ -104,7 +129,9 @@ export function describeAuthError(
     case "provider_disabled":
       return failure(
         "provider_disabled",
-        "GitHub sign-in isn't enabled on this deployment. Use email and password instead.",
+        provider
+          ? `${provider} sign-in isn't enabled on this deployment. Use email and password instead.`
+          : "That sign-in provider isn't enabled on this deployment. Use email and password instead.",
       );
 
     case "over_request_rate_limit":
@@ -177,8 +204,12 @@ export function describeOAuthCallbackError(
   // `otp_expired` FIRST. GoTrue reports an expired or already-used *email*
   // link as `error=access_denied&error_code=otp_expired`, so matching on
   // `access_denied` first told everyone whose confirmation link had expired
-  // that their "GitHub sign-in was cancelled" — verified against a re-used
+  // that their "sign-in was cancelled" — verified against a re-used
   // confirmation link on the local stack.
+  //
+  // None of the copy below names a provider. The redirect carries `error` and
+  // `error_code` and nothing else, so with GitHub *and* Hugging Face on the
+  // page, naming one would be wrong roughly half the time.
   if (errorCode === "otp_expired" || errorCode === "expired_token") {
     return failure(
       "expired_link",
@@ -188,13 +219,13 @@ export function describeOAuthCallbackError(
   if (error === "access_denied" || errorCode === "access_denied") {
     return failure(
       "oauth_denied",
-      "GitHub sign-in was cancelled, so no account was connected. You can try again or use email and password.",
+      "Sign-in was cancelled, so no account was connected. You can try again or use email and password.",
     );
   }
   if (error === "server_error") {
     return failure(
       "unknown",
-      "GitHub returned an error instead of completing sign-in. Nothing was changed — try again.",
+      "The sign-in provider returned an error instead of completing sign-in. Nothing was changed — try again.",
     );
   }
   if (errorDescription) {
@@ -224,11 +255,11 @@ export const CALLBACK_EXCHANGE_FAILED: AuthFailure = {
  */
 const QUERY_MESSAGES: Partial<Record<AuthErrorCode, string>> = {
   oauth_denied:
-    "GitHub sign-in was cancelled, so no account was connected. Try again, or use email and password.",
+    "Sign-in was cancelled, so no account was connected. Try again, or use email and password.",
   expired_link:
     "That link is no longer valid — confirmation links are single-use and expire. Request a new one below.",
   provider_disabled:
-    "GitHub sign-in isn't enabled on this deployment. Use email and password instead.",
+    "That sign-in provider isn't enabled on this deployment. Use email and password instead.",
   email_not_confirmed:
     "This account still needs its email confirmed. Open the confirmation link, then sign in.",
   rate_limited:

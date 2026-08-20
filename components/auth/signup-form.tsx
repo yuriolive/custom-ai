@@ -19,6 +19,7 @@ import { signUpAction } from "@/app/(auth)/actions";
 import { initialAuthFormState } from "@/app/(auth)/form-state";
 import { AuthAlert } from "@/components/auth/auth-alert";
 import { GitHubButton } from "@/components/auth/github-button";
+import { HuggingFaceButton } from "@/components/auth/huggingface-button";
 
 /**
  * Sign-up surface.
@@ -34,7 +35,11 @@ export function SignupForm({
   inbucketUrl,
 }: {
   next: string;
-  /** True when pointed at a local stack, which has no SMTP. */
+  /**
+   * True when pointed at a local stack. Two consequences here: no SMTP, so the
+   * confirmation mail goes to Inbucket, and no Supabase Custom Provider, so the
+   * Hugging Face button is omitted rather than offered and refused.
+   */
   isLocalSupabase: boolean;
   inbucketUrl: string;
 }) {
@@ -89,7 +94,12 @@ export function SignupForm({
       </Card.Header>
 
       <Card.Content className="flex flex-col gap-5 p-0">
-        <GitHubButton label="Sign up with GitHub" next={next} />
+        <div className="flex flex-col gap-3">
+          <GitHubButton label="Sign up with GitHub" next={next} />
+          {isLocalSupabase ? null : (
+            <HuggingFaceButton label="Sign up with Hugging Face" next={next} />
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />
