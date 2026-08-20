@@ -126,18 +126,36 @@ export type FeasiblePlacement = {
   gpuLabel: string;
   usdPerHourMicro: number;
   predictedTokensPerSecond: number;
+  /** llama.cpp's slot count — what becomes `--parallel`. Capped (#37). */
   maxConcurrentStreams: number;
+  /** What the KV pool divided into before the cap, so a binding cap is visible. */
+  maxConcurrentStreamsUncapped: number;
+  maxSlotsCeiling: number;
   nLayers: number;
   nAttentionLayers: number;
   kvBytesPerToken: number;
   kvBytesTotal: number;
   ssmStateBytesPerSeq: number;
   bytesPerStream: number;
+  /** What one more slot costs: stream KV + its own overhead and compute buffers. */
+  slotCostBytes: number;
   weightsBytes: number;
+  /** Overhead AT `maxConcurrentStreams` — it is not a flat term (#37). */
   overheadBytes: number;
+  overheadBaseBytes: number;
+  /**
+   * What the worker will actually allocate. THE number that has to fit inside
+   * `usableVramBytes`: llama.cpp allocates ctx x parallel of KV eagerly at load, so
+   * a placement checked one stream at a time is a placement that was never checked.
+   */
+  aggregateBytes: number;
   usableVramBytes: number;
   kvDtypeBytes: number;
-  prefixCacheBytes: number;
+  /**
+   * KV bytes deliberately left unallocated. Was `prefixCacheBytes`, which described a
+   * pool llama.cpp never allocates — it reuses slot KV for prefix reuse (#37).
+   */
+  kvHeadroomBytes: number;
   needsVolume: boolean;
   volumeGb: number;
   coldStartBudgetS: number;

@@ -54,6 +54,52 @@ function smokeTimeoutMs(coldStartBudgetS: number): number {
 }
 
 /**
+ * The slot count this placement may be launched with, or a reason it may not be.
+ *
+ * A TRIPWIRE, NOT ARITHMETIC. It derives nothing (FR-DEP-050 keeps the solver in one
+ * place); it checks the envelope's own identity before that number becomes
+ * `--parallel`. This used to be `Math.max(1, placement.maxConcurrentStreams)`, and
+ * that clamp is what let #37 through the last gate it had: llama.cpp multiplies
+ * `ctx_size * parallel` and allocates the product eagerly at load, so 91 slots asked
+ * one card for 46592 MiB of KV and the container died 60 seconds into a cold start
+ * that the form had already reported as provisioning. Clamping a bad number UP to 1
+ * is the wrong direction anyway — a placement with no room for a single stream is not
+ * a one-slot placement, it is an infeasible one.
+ *
+ * The check is expressed in the envelope's own figures rather than against the
+ * solver's constants, so this does not become a second copy of them: the solver
+ * publishes `aggregate_bytes` and `usable_vram_bytes`, and their relationship is the
+ * whole invariant. A stale snapshot resolved by an older solver fails here.
+ */
+function workerSlots(
+  placement: Extract<Placement, { feasible: true }>,
+): { ok: true; slots: number } | { ok: false; message: string } {
+  const slots = placement.maxConcurrentStreams;
+
+  if (!Number.isInteger(slots) || slots < 1) {
+    return {
+      ok: false,
+      message: `the solver resolved ${slots} concurrent streams on ${placement.gpuLabel}, which cannot serve a request`,
+    };
+  }
+  if (slots > placement.maxSlotsCeiling) {
+    return {
+      ok: false,
+      message: `the solver resolved ${slots} slots, above its own ceiling of ${placement.maxSlotsCeiling}`,
+    };
+  }
+  if (placement.aggregateBytes > placement.usableVramBytes) {
+    return {
+      ok: false,
+      message:
+        `${slots} slots at this context need ${placement.aggregateBytes} bytes on a ` +
+        `${placement.gpuLabel} with ${placement.usableVramBytes} usable`,
+    };
+  }
+  return { ok: true, slots };
+}
+
+/**
  * Ask the ONE solver. Called twice on this path — once per candidate tier
  * during escalation — and never reimplemented.
  */
@@ -341,14 +387,26 @@ export async function runDeployment(
     stage = "provisioning";
     await setStatus(admin, modelId, { status: "provisioning" });
 
+    // The worker's slot count IS the solver's concurrency ceiling, verified rather
+    // than clamped — see workerSlots() for what clamping cost (#37).
+    const slots = workerSlots(placement);
+    if (!slots.ok) {
+      return await failModel(
+        admin,
+        modelId,
+        "unusable_placement",
+        `The resolved placement cannot be launched: ${slots.message}.`,
+        "This is a platform-side capacity error, not a problem with the repository. " +
+          "A smaller context window is the usual remedy; nothing was made callable.",
+        "provisioning",
+      );
+    }
+
     const ref = buildUpstreamRef(config, {
       hfRepoSlug: probe.repoSlug,
       variantFile: variant.files[0] ?? "",
       contextLength: request.contextLength,
-      // The worker's slot count IS the solver's concurrency ceiling. Asking for
-      // more slots than the KV budget allows makes llama.cpp allocate a cache
-      // it cannot fit and fail at load, well after the form said "ready".
-      parallel: Math.max(1, placement.maxConcurrentStreams),
+      parallel: slots.slots,
     });
 
     if (!ref.ok) {
@@ -393,12 +451,16 @@ export async function runDeployment(
         current: placement,
       });
 
-      if (escalation) {
+      // The escalated placement is a DIFFERENT tier, so its slot count is a different
+      // number and gets the same check — an escalation that cannot be launched is
+      // simply not taken, because the first placement already measured and serves.
+      const escalatedSlots = escalation ? workerSlots(escalation) : null;
+      if (escalation && escalatedSlots?.ok) {
         const retryRef = buildUpstreamRef(config, {
           hfRepoSlug: probe.repoSlug,
           variantFile: variant.files[0] ?? "",
           contextLength: request.contextLength,
-          parallel: Math.max(1, escalation.maxConcurrentStreams),
+          parallel: escalatedSlots.slots,
         });
         if (retryRef.ok) {
           await setStatus(admin, modelId, applyPlacement(escalation, retryRef.ref));

@@ -163,12 +163,47 @@ TIERS_BY_ID = {t.id: t for t in GPU_TIERS}
 
 
 # Solver constants. Config, not code — recalibrate from measured production data.
+#
+# EVERY KEY HERE MUST HAVE A ROW IN public.solver_config WITH THE SAME VALUE. That
+# table is what runs at request time; this dict is what the deploy tooling and the
+# tests solve against, and they have already drifted once on the slot count (#37: the
+# SQL side applied the 0.15 reserve, this side applied nothing, so this solver
+# returned ~17.6% more slots than the RPC). test_tier_drift.py compares them.
 SOLVER_CONFIG = {
     "mfu": 0.75,  # achieved fraction of theoretical memory bandwidth
     "vram_utilization": 0.92,
     "assumed_utilization": 0.35,  # endpoints are not saturated; used for the cost floor
     "speed_tolerance": 0.90,  # fraction of target tok/s accepted as meeting target
+    # Unallocated slack on the KV region: allocator fragmentation, the contiguous-block
+    # cost of one multi-GiB cudaMalloc, and buffers the overhead terms do not model.
+    # NOT a prefix-cache pool — llama.cpp has none, it reuses slot KV, so the SQL
+    # catalog's old `prefix_cache_reserve` name described a pool that never existed.
+    "kv_headroom_reserve": 0.15,
+    # The largest slot count the platform will ASK a worker for (#37). Policy, not
+    # physics: llama.cpp allocates ctx_size x parallel of KV eagerly at load, so an
+    # uncapped division result is a cudaMalloc failure waiting for a big enough card.
+    "max_slots_ceiling": 8,
+    # Compute/mask buffers scale with TOTAL context (ctx x slots), not with one stream.
+    "graph_bytes_per_ctx_token": 2048,
+    # Fixed per slot, independent of context: output/logits buffers, sampler state.
+    "slot_overhead_bytes": 67108864,
+    # What the COST FLOOR may assume batching buys, as a multiple of single-stream
+    # tok/s. This replaces the slot count in that formula: pricing against the slot
+    # count made a bigger `--parallel` look cheaper, which is backwards.
+    "batch_throughput_factor": 4,
 }
+
+# A slot count no config value may exceed. `max_slots_ceiling` above is policy and is
+# meant to be retuned; this is the bound that survives a bad value. #37 emitted 91
+# slots, and a config-only guard would let one edit bring that back. Mirrored as
+# `v_slot_hard_cap` in supabase/migrations/20260820000100_solver_slot_cap.sql, and
+# test_tier_drift.py compares the two literals.
+SLOT_HARD_CAP = 32
+
+
+def slot_ceiling() -> int:
+    """The effective cap: policy, clamped by the hard bound."""
+    return max(1, min(SLOT_HARD_CAP, int(SOLVER_CONFIG["max_slots_ceiling"])))
 
 
 @dataclass
@@ -234,9 +269,43 @@ class ModelShape:
         return 2 * self.n_ssm_layers * self.ssm_inner_size * self.ssm_state_size
 
     @property
-    def overhead_bytes(self) -> int:
-        """CUDA context, compute buffers, framework. max(2 GiB, 10% of weights)."""
+    def base_overhead_bytes(self) -> int:
+        """
+        The slot-INDEPENDENT overhead: CUDA context, framework, and buffers that scale
+        with the weights. max(2 GiB, 10% of weights).
+
+        This used to be the whole overhead term, and that was the third of #37's four
+        causes: it is independent of both the slot count and the total context, while
+        llama.cpp's compute buffers scale with both. Those two parts now live in
+        `slot_cost_bytes()`, where one more slot pays for its own buffers.
+        """
         return max(2 * GIB, int(0.10 * self.weights_bytes))
+
+    @property
+    def bytes_per_stream(self) -> int:
+        """One stream: its full KV cache plus its constant recurrent state."""
+        return self.kv_bytes_per_token * self.context_length + self.ssm_state_bytes_per_sequence
+
+    def slot_cost_bytes(self) -> int:
+        """
+        Everything one additional llama.cpp slot costs.
+
+        The context-scaled compute term belongs HERE rather than in a separate
+        total-context term, because total context IS ctx x slots — folding it in keeps
+        the fit a single division instead of a fixed point.
+        """
+        return (
+            self.bytes_per_stream
+            + int(SOLVER_CONFIG["slot_overhead_bytes"])
+            + int(SOLVER_CONFIG["graph_bytes_per_ctx_token"]) * self.context_length
+        )
+
+    def overhead_bytes_at(self, slots: int) -> int:
+        """Total overhead at a given slot count — base, plus what the slots add."""
+        return self.base_overhead_bytes + slots * (
+            int(SOLVER_CONFIG["slot_overhead_bytes"])
+            + int(SOLVER_CONFIG["graph_bytes_per_ctx_token"]) * self.context_length
+        )
 
 
 @dataclass
@@ -247,24 +316,49 @@ class TierEvaluation:
     meets_speed: bool
     usable_vram_bytes: int
     max_concurrent_streams: int
+    # What the KV pool divided into, BEFORE the ceiling. Carried so a cap that starts
+    # binding everywhere (or one that never binds) is visible rather than inferred.
+    max_concurrent_streams_uncapped: int
     predicted_tokens_per_second: int
     kv_bytes_per_token: int
     bytes_per_stream: int
+    slot_cost_bytes: int
+    overhead_bytes: int
+    # What the worker will actually allocate at `max_concurrent_streams`. THE number
+    # that has to fit inside usable_vram_bytes (#37).
+    aggregate_bytes: int
     usd_per_hour_micro: int
     cost_floor_micro_per_mtoken: int | None
     reject_reason: str | None
 
 
 def evaluate_tier(tier: GpuTier, shape: ModelShape) -> TierEvaluation:
-    """Pure arithmetic. No I/O."""
+    """
+    Pure arithmetic. No I/O. Mirrors public.resolve_placement() — when this changes,
+    that changes, in the same commit (see the SOLVER_CONFIG note above).
+    """
     usable = int(tier.vram_bytes * SOLVER_CONFIG["vram_utilization"])
-    per_stream = (
-        shape.kv_bytes_per_token * shape.context_length + shape.ssm_state_bytes_per_sequence
-    )
-    budget = usable - shape.weights_bytes - shape.overhead_bytes
+    per_stream = shape.bytes_per_stream
+    base_overhead = shape.base_overhead_bytes
+    slot_cost = shape.slot_cost_bytes()
 
-    max_concurrent = budget // per_stream if budget > 0 and per_stream > 0 else 0
-    fits = max_concurrent >= 1
+    pool = max(0, usable - shape.weights_bytes - base_overhead)
+    allocatable = int(pool * (1 - SOLVER_CONFIG["kv_headroom_reserve"]))
+
+    fit_slots = allocatable // slot_cost if slot_cost > 0 else 0
+    slots = min(fit_slots, slot_ceiling())
+
+    overhead = shape.overhead_bytes_at(slots)
+    aggregate = shape.weights_bytes + base_overhead + slots * slot_cost
+    # "Does this tier fit at all" is the aggregate at ONE slot, not a bare stream: a
+    # single slot still pays the per-slot and compute-buffer costs.
+    required = shape.weights_bytes + base_overhead + slot_cost
+
+    # The aggregate test cannot fail given the division above — and is applied anyway.
+    # #37 shipped a solver that emitted a slot count nothing ever compared against what
+    # the worker would allocate; a tier that fails this is rejected here rather than
+    # discovered by a cudaMalloc failure 60 seconds into a cold start.
+    fits = slots >= 1 and required <= usable and aggregate <= usable
 
     predicted = int(
         (tier.memory_bandwidth_bytes_s * SOLVER_CONFIG["mfu"]) / shape.active_weights_bytes
@@ -275,22 +369,33 @@ def evaluate_tier(tier: GpuTier, shape: ModelShape) -> TierEvaluation:
     cost_floor = None
     if fits and predicted > 0:
         gpu_micro_per_sec = tier.usd_per_hour_micro / 3600
+        # NOT `slots`. Pricing against the slot count is what made a bigger
+        # `--parallel` look cheaper (#37) — decode on one GPU shares one bandwidth
+        # budget, so aggregate throughput is bounded by the hardware, not by how many
+        # slots we opened. The slot count may only ever REDUCE the assumed batching
+        # benefit: a one-slot placement cannot batch and must not be priced as if it could.
+        price_streams = min(slots, SOLVER_CONFIG["batch_throughput_factor"])
         seconds_per_mtoken = 1e6 / (
-            predicted * max_concurrent * SOLVER_CONFIG["assumed_utilization"]
+            predicted * price_streams * SOLVER_CONFIG["assumed_utilization"]
         )
         cost_floor = math.ceil(gpu_micro_per_sec * seconds_per_mtoken)
 
     reason = None
     if not fits:
-        if budget <= 0:
+        if pool <= 0:
             reason = (
                 f"weights ({shape.weights_bytes / GIB:.2f} GiB) + overhead "
-                f"({shape.overhead_bytes / GIB:.2f} GiB) exceed usable VRAM ({usable / GIB:.2f} GiB)"
+                f"({base_overhead / GIB:.2f} GiB) exceed usable VRAM ({usable / GIB:.2f} GiB)"
+            )
+        elif slots < 1:
+            reason = (
+                f"{shape.context_length} context needs {slot_cost / GIB:.2f} GiB per slot; "
+                f"only {allocatable / GIB:.2f} GiB remain after weights, overhead and headroom"
             )
         else:
             reason = (
-                f"{shape.context_length} context needs {per_stream / GIB:.2f} GiB per stream; "
-                f"only {budget / GIB:.2f} GiB remain after weights and overhead"
+                f"solver over-committed VRAM: {slots} slots need "
+                f"{aggregate / GIB:.2f} GiB of {usable / GIB:.2f} GiB usable"
             )
     elif not meets_speed:
         reason = (
@@ -304,10 +409,14 @@ def evaluate_tier(tier: GpuTier, shape: ModelShape) -> TierEvaluation:
         fits=fits,
         meets_speed=meets_speed,
         usable_vram_bytes=usable,
-        max_concurrent_streams=int(max_concurrent),
+        max_concurrent_streams=int(slots),
+        max_concurrent_streams_uncapped=int(fit_slots),
         predicted_tokens_per_second=predicted,
         kv_bytes_per_token=shape.kv_bytes_per_token,
         bytes_per_stream=per_stream,
+        slot_cost_bytes=slot_cost,
+        overhead_bytes=overhead,
+        aggregate_bytes=aggregate,
         usd_per_hour_micro=tier.usd_per_hour_micro,
         cost_floor_micro_per_mtoken=cost_floor,
         reject_reason=reason,

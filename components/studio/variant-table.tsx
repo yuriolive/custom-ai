@@ -45,14 +45,21 @@ function speedCell(placement: Placement): string {
 }
 
 /**
- * Concurrent streams — the term that actually drives the cost floor.
+ * Concurrent streams — how many requests this variant can serve at once.
  *
- * cost_floor = (usd_per_hour / 3600) x (1e6 / (tok_s x streams x utilisation)),
- * so the floor is INVERSELY proportional to this column. Two rows on the same
- * card whose costs differ 2x usually differ here and nowhere else: streams is a
- * `floor()` of a KV-cache budget, so it moves in whole-number cliffs and a
- * gigabyte of extra weights can halve it. Without this column the cost column
- * reads as arbitrary, which is the defect this fixes.
+ * IT NO LONGER DRIVES THE COST FLOOR, and the correction matters here because this
+ * column was added to explain that column. The floor used to be
+ * `(usd_per_hour / 3600) x (1e6 / (tok_s x streams x utilisation))` — inversely
+ * proportional to this number — which meant a variant that happened to divide the KV
+ * budget into more slots priced lower, as though 40 streams each decoded at full
+ * single-stream speed. They share one memory-bandwidth budget and they do not (#37).
+ * The floor now uses a fixed batching factor, so it moves with the card, the weights
+ * and the context, and this column moves with the KV budget alone. Two rows on the
+ * same card with the same speed now show the same cost; the difference shows up
+ * here, as capacity, which is what it always was.
+ *
+ * The value is a `floor()` of a KV budget, capped by the solver's slot ceiling, so it
+ * moves in whole-number cliffs and often sits flat AT that ceiling across variants.
  */
 function streamsCell(placement: Placement): string {
   return placement.feasible ? placement.maxConcurrentStreams.toLocaleString("en-US") : "—";
