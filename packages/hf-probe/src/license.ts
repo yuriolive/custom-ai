@@ -28,7 +28,7 @@ const PROHIBITED_PATTERNS: RegExp[] = [
   /(^|[-_.])nc([-_.]|$)/,
   /(^|[-_.])nd([-_.]|$)/,
   /non-?commercial/,
-  /research(-only)?(-|$)|(^|-)research$/,
+  /(^|[-_.])research([-_.]|$)/,
   /no-?deriv/,
   /evaluation-only/,
 ];

@@ -161,32 +161,54 @@ export function frontmatterFromCard(markdown: string): HfCardData | null {
 
   const out: Record<string, string | string[]> = {};
   let listKey: string | null = null;
-
   for (const line of markdown.slice(3, end).split("\n")) {
-    const item = /^\s*-\s+(.*)$/.exec(line);
-    if (item && listKey) {
-      const value = scalar(item[1]!);
-      if (value) (out[listKey] as string[]).push(value);
-      continue;
-    }
-    // Anchored with no leading whitespace on purpose: an indented key belongs to
-    // a nested map (`model-index:`, `widget:`) and is not a card-level fact.
-    const pair = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line);
-    if (!pair) continue;
-    // A top-level key closes whatever list was being collected.
-    listKey = null;
-    const key = pair[1]!;
-    if (!FRONTMATTER_KEYS.has(key)) continue;
-    const value = scalar(pair[2]!);
-    if (value.length > 0) {
-      out[key] = value;
-    } else {
-      out[key] = [];
-      listKey = key;
-    }
+    listKey = readFrontmatterLine(line, out, listKey);
   }
 
   return Object.keys(out).length > 0 ? (out as HfCardData) : null;
+}
+
+/**
+ * One frontmatter line, folded into `out`. Returns the list still being
+ * collected, if any — a blank or unparseable line does not end a list, which is
+ * what lets `base_model:` followed by an indented block of `- entries` work.
+ */
+function readFrontmatterLine(
+  line: string,
+  out: Record<string, string | string[]>,
+  listKey: string | null,
+): string | null {
+  const item = /^[ \t]*-[ \t]+(.*)$/.exec(line);
+  if (item && listKey) {
+    const value = scalar(item[1]!);
+    if (value) (out[listKey] as string[]).push(value);
+    return listKey;
+  }
+
+  // Anchored with no leading whitespace on purpose: an indented key belongs to a
+  // nested map (`model-index:`, `widget:`) and is not a card-level fact.
+  const pair = /^([A-Za-z_]\w*)[ \t]*:[ \t]*(.*)$/.exec(line);
+  if (!pair) return listKey;
+
+  const key = pair[1]!;
+  // A top-level key closes whatever list was being collected, whether or not
+  // this is a key worth keeping.
+  if (!FRONTMATTER_KEYS.has(key)) return null;
+
+  const value = scalar(pair[2]!);
+  if (value.length > 0) {
+    out[key] = value;
+    return null;
+  }
+  // `key:` with nothing after it opens a list.
+  out[key] = [];
+  return key;
+}
+
+/** `base_model:` is a scalar on most cards and a list on a merge. Both, as a list. */
+function asList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
+  return typeof value === "string" ? [value] : [];
 }
 
 /** Everything one fetch of the card yields. Every field is independently null. */
@@ -202,8 +224,7 @@ export function factsFromCard(
   repo: { repoSlug: string; revision: string },
 ): CardFacts {
   const frontmatter = frontmatterFromCard(markdown);
-  const raw = frontmatter?.base_model;
-  const entries = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
+  const entries = asList(frontmatter?.base_model);
   const relation = normalizeRelation(frontmatter?.base_model_relation);
 
   const declaredBaseModels: DeclaredBaseModel[] = [];

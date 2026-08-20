@@ -213,7 +213,9 @@ function displayNameFromRepo(repoSlug: string): string {
 async function ensureBaseModel(admin: SupabaseClient, spec: BaseModelSpec): Promise<string | null> {
   const existing = await admin
     .from("base_models")
-    .select("id, license_id, commercial_hosting, architecture, parent_id, parameter_count")
+    .select(
+      "id, license_id, license_name, commercial_hosting, architecture, parent_id, parameter_count",
+    )
     .eq("slug", spec.slug)
     .maybeSingle();
 
@@ -221,6 +223,7 @@ async function ensureBaseModel(admin: SupabaseClient, spec: BaseModelSpec): Prom
     const row = existing.data as {
       id: string;
       license_id: string | null;
+      license_name: string | null;
       commercial_hosting: string;
       architecture: string | null;
       parent_id: string | null;
@@ -229,8 +232,12 @@ async function ensureBaseModel(admin: SupabaseClient, spec: BaseModelSpec): Prom
     const patch: Record<string, unknown> = {};
     if (row.license_id === null && spec.license?.id) {
       patch.license_id = spec.license.id;
-      patch.license_name = spec.license.name;
       patch.license_url = spec.license.url;
+    }
+    // Separately from the id, because a card that says `license: other` with a
+    // `license_name` has a name and no id — and the name is what classified it.
+    if (row.license_name === null && spec.license?.name) {
+      patch.license_name = spec.license.name;
     }
     if (row.commercial_hosting === "unknown" && spec.license?.commercialHosting) {
       patch.commercial_hosting = spec.license.commercialHosting;
@@ -261,7 +268,12 @@ async function ensureBaseModel(admin: SupabaseClient, spec: BaseModelSpec): Prom
       parameter_count: spec.parameterCount,
       parent_id: spec.parentId,
       license_id: spec.license?.id ?? null,
-      license_name: spec.license?.id ? spec.license.name : null,
+      // The NAME survives an absent id — `license: other` + `license_name:
+      // qwen-research` is a real shape, and the name is what classified it. The
+      // URL cannot: `base_models_license_url_needs_id` (#24) rejects a url with
+      // no id, and a licence link pointing at nothing identified is worse than
+      // no link. `commercial_hosting` below carries the classification either way.
+      license_name: spec.license?.name ?? null,
       license_url: spec.license?.id ? spec.license.url : null,
       commercial_hosting: spec.license?.commercialHosting ?? "unknown",
       ...fingerprintColumns(spec),
@@ -420,7 +432,23 @@ async function resolveInner(
     return await linkDeclared(admin, args, identity, fingerprint, at);
   }
 
-  const suggestions = identity.suggestions.map((c) => ({
+  return await resolveUndeclared(admin, reader, args, identity, fingerprint, at);
+}
+
+/**
+ * Nothing was declared. Either the creator answered the confirm step, or the
+ * listing stays UNGROUPED — `base_model_id` null, the catalog renders it as its
+ * own card, and no licence is claimed for weights nobody has identified.
+ */
+async function resolveUndeclared(
+  admin: SupabaseClient,
+  reader: SupabaseClient,
+  args: ResolveArgs,
+  identity: BaseModelIdentity,
+  fingerprint: Fingerprint | null,
+  at: string,
+): Promise<BaseModelResolution> {
+  const candidates = identity.suggestions.map((c) => ({
     baseModelId: c.id,
     slug: c.slug,
     confidence: c.confidence,
@@ -428,25 +456,18 @@ async function resolveInner(
     relationHint: c.relationHint,
   }));
 
-  if (args.choice && args.choice.kind !== "none") {
-    const confirmed = await linkManual(
-      admin,
-      reader,
-      args,
-      args.choice,
-      fingerprint,
-      at,
-      suggestions,
-    );
+  const choice = args.choice;
+
+  if (choice && choice.kind !== "none") {
+    const confirmed = await linkManual(admin, reader, args, choice, fingerprint, at, candidates);
     if (confirmed) return confirmed;
   }
 
-  if (args.choice?.kind === "none") {
+  if (choice?.kind === "none") {
     // "Something else": its own model, no parent. A deliberate answer, so it
     // gets a row — the next quantization of this repo groups under it.
-    const ownId = await ensureOwnModel(admin, args, fingerprint, null);
     return {
-      baseModelId: ownId,
+      baseModelId: await ensureOwnModel(admin, args, fingerprint, null),
       match: {
         signal: "manual",
         relation: null,
@@ -455,14 +476,11 @@ async function resolveInner(
         at,
         reason: "The creator confirmed this is a model of its own, with no parent in the catalog.",
         sourceRepo: null,
-        candidates: suggestions,
+        candidates,
       },
     };
   }
 
-  // Nothing declared and nothing confirmed. The listing stays UNGROUPED on
-  // purpose: `base_model_id` is null, the catalog renders it as its own card,
-  // and no licence is claimed for weights nobody has identified.
   return {
     baseModelId: null,
     match: {
@@ -473,7 +491,7 @@ async function resolveInner(
       at,
       reason: identity.reason,
       sourceRepo: null,
-      candidates: suggestions,
+      candidates,
     },
   };
 }
