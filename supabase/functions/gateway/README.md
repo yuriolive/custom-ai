@@ -1,8 +1,8 @@
 # `gateway` — OpenAI-compatible inference gateway (Supabase Edge Function, Deno)
 
 Request-handling half of the gateway. Owns `index.ts`, `auth.ts`, `resolve.ts`, `errors.ts`,
-`anthropic.ts`, `deno.json`. `stream.ts` and `usage.ts` are owned by another agent and are consumed against the
-frozen interface below.
+`anthropic.ts`, `deno.json`. `stream.ts` and `usage.ts` are owned by another agent and are
+consumed against the frozen interface below.
 
 ```
 POST /v1/chat/completions       OpenAI Chat Completions, byte-compatible
@@ -23,9 +23,9 @@ never the translator.
 `GET /v1/models` picks its shape from the request headers: `x-api-key` or `anthropic-version`
 gets `{data:[{type:"model",…}],has_more}`, anything else gets `{object:"list",data:[…]}`.
 
-Auth on the Anthropic routes is `x-api-key: sk-plat-…`, falling back to
-`Authorization: Bearer`. Same key table, same hash, same permissions — the envelope is all that
-differs, and no Anthropic-issued key is ever accepted.
+Auth on the Anthropic routes is `x-api-key: sk-plat-…`, falling back to `Authorization: Bearer`.
+Same key table, same hash, same permissions — the envelope is all that differs, and no
+Anthropic-issued key is ever accepted.
 
 Deployed path is `/functions/v1/gateway/v1/…`; the router matches on the `/v1/…` suffix so both
 forms work.
