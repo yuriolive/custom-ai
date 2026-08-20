@@ -130,7 +130,9 @@ export async function fetchMyModels(
  * it. A row that IS public necessarily answers yes — the CHECK guarantees it —
  * so `licenseHold` is null there without a special case.
  */
-function licenseFields(m: RawModel): Pick<
+function licenseFields(
+  m: RawModel,
+): Pick<
   MyModelRow,
   "licenseHosting" | "licenseTermsVersion" | "licenseHold" | "licenseAwaitingReview"
 > {
