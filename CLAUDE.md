@@ -81,7 +81,11 @@ npm test           # node --test across app, hf-probe, gateway, mock-upstream, k
 npm run dev        # Next dev server
 ```
 
-Python worker tests: `cd tools/modal && uv run pytest`. Postgres invariants are pgTAP under
+Python worker tests are stdlib `unittest`, not pytest — `pyproject.toml` declares no
+runtime deps and pytest is not installed, so `uv run pytest` fails with "program not
+found". Run what CI runs:
+`cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift`.
+Postgres invariants are pgTAP under
 `supabase/tests/` and are the authority on billing behavior — a money change that does not
 touch them is incomplete.
 

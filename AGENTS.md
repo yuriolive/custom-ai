@@ -36,7 +36,13 @@ npm test        # node --test across app, hf-probe, gateway, mock-upstream, keyg
 ```
 
 Money or billing touched? The pgTAP suite under `supabase/tests/` is the authority — a
-money change that does not touch it is incomplete. Python worker: `cd tools/modal && uv run pytest`.
+money change that does not touch it is incomplete.
+
+Python worker (stdlib `unittest`, not pytest — pytest is not installed):
+
+```bash
+cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift
+```
 
 ## 4. Two rules that are cheap to break silently
 
