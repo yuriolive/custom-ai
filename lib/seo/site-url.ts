@@ -13,11 +13,10 @@
  * one sits on a money path and is not worth churning for a metadata change;
  * they must not be allowed to drift.
  *
- *   SITE_URL — declared in `.env.example` under "server-only, non-secret",
- *     already read by the billing helper. Set it for a custom domain. Note it
- *     is NOT in the `docs/CONTRACTS.md §Environment` list, which predates it;
- *     that list and `.env.example` disagree here and the contract is the one
- *     that should be amended.
+ *   SITE_URL — declared in `.env.example` under "server-only, non-secret", read
+ *     by the billing helper, and now listed in `docs/CONTRACTS.md §Environment`
+ *     alongside the note that these two readers must not drift. Set it for a
+ *     custom domain.
  *   VERCEL_PROJECT_PRODUCTION_URL — the stable production domain, identical on
  *     every deployment of the project. Safe for a canonical URL.
  *   VERCEL_URL — the per-deployment hostname, different for every preview build.

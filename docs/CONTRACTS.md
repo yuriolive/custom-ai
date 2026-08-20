@@ -52,14 +52,26 @@ tests/fixtures/           shared fixtures                [contract — read-only
 
 ```
 SUPABASE_URL, SUPABASE_ANON_KEY            # client-safe
+NEXT_PUBLIC_SUPABASE_URL                   # browser mirror of SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY              # browser mirror; publishable, powerless without RLS
 SUPABASE_SERVICE_ROLE_KEY                  # secret, Edge Functions only
+PLATFORM_API_KEY                           # secret — the platform's own gateway key
 RUNPOD_API_KEY                             # secret
 MODAL_KEY                                  # secret — proxy token id  (wk-...)
 MODAL_SECRET                               # secret — proxy token     (ws-...)
+STRIPE_SECRET_KEY                          # secret
+STRIPE_WEBHOOK_SECRET                      # secret — HMAC key for Stripe-Signature
 RUNPOD_ENDPOINT_ID                         # MVP-0: one manually provisioned endpoint
 LLAMACPP_WORKER_IMAGE                      # pinned, usage-emitting build
+UPSTREAM_PROVIDER                          # modal (default) | runpod | mock
 UPSTREAM_BASE_URL                          # override → point at mock-upstream in tests
+GATEWAY_BASE_URL                           # the playground route POSTs to ${…}/v1/chat/completions
+SITE_URL                                   # absolute origin; Stripe redirects AND page metadata
 ```
+
+`SITE_URL` has ONE consumer contract and two readers, and they must not drift: `lib/billing/server-env.ts` builds Stripe Checkout's success and cancel URLs from it, and `lib/seo/site-url.ts` builds `metadataBase`, canonical URLs, the sitemap and the `Sitemap:` line in `robots.txt`. Two different answers to "where does this site live" is not a cosmetic split — on a custom domain it returns a paying developer to one host while every canonical tag names another. Both fall back the same way: `SITE_URL`, then `VERCEL_PROJECT_PRODUCTION_URL` (stable across deployments), then localhost. `lib/seo` adds `VERCEL_URL` below those so a preview links to itself; it must never outrank the production domain, because a per-deployment hostname in a canonical tag is worse than none.
+
+`.env.example` also declares `NEXT_PUBLIC_DEFAULT_MODEL` and `NEXT_PUBLIC_COLD_START_ESTIMATE_SECONDS`. Neither is read anywhere in the codebase — they are deferred config, and they are named here so the next person to grep for them stops looking.
 
 Never read a secret from a `NEXT_PUBLIC_*` variable. Never log an API key, an HF token, or a bearer header.
 
