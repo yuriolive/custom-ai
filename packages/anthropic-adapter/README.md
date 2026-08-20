@@ -19,12 +19,12 @@ import {
 
 ## Surfaces
 
-| | Function | Notes |
-|---|---|---|
-| Request | `translateRequest(req, opts?)` | → `{ request, warnings }`. Throws `AnthropicAdapterError` on unrepresentable input. |
-| Response | `translateResponse(resp, opts?)` | → `{ message, warnings }`. |
-| Stream | `new AnthropicStreamTranslator(opts)` | `.push(chunk)` / `.finish()` → `AnthropicStreamEvent[]`. Also `translateStream()` (chunks in, events out) and `translateSseText()` (raw SSE text in, Anthropic SSE text out). |
-| Errors | `translateError(body, httpStatus?)` | → `{ status, body }`. Never throws. |
+|          | Function                              | Notes                                                                                                                                                                         |
+| -------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Request  | `translateRequest(req, opts?)`        | → `{ request, warnings }`. Throws `AnthropicAdapterError` on unrepresentable input.                                                                                           |
+| Response | `translateResponse(resp, opts?)`      | → `{ message, warnings }`.                                                                                                                                                    |
+| Stream   | `new AnthropicStreamTranslator(opts)` | `.push(chunk)` / `.finish()` → `AnthropicStreamEvent[]`. Also `translateStream()` (chunks in, events out) and `translateSseText()` (raw SSE text in, Anthropic SSE text out). |
+| Errors   | `translateError(body, httpStatus?)`   | → `{ status, body }`. Never throws.                                                                                                                                           |
 
 Framing helpers: `formatSseEvent`, `formatSseEvents`, `createSseDecoder`,
 `isDoneSentinel`.
@@ -56,7 +56,7 @@ Two mitigations exist:
   when upstream reports nothing at all.
 - `message_delta.usage` includes `input_tokens`. Anthropic itself emits
   `input_tokens` in `message_delta` on server-tool turns, so this is
-  contract-legal, but it is *not* what a plain text turn from Anthropic looks
+  contract-legal, but it is _not_ what a plain text turn from Anthropic looks
   like — there, `message_delta.usage` carries `output_tokens` only.
 
 Anthropic also reports a small **non-zero** `output_tokens` (1–3) in
@@ -73,8 +73,8 @@ be worse than omitting it. So:
 - `thinking_delta` events are emitted normally
 - **no `signature_delta` is emitted**
 
-A client that round-trips a thinking block back to *real* Anthropic will have it
-rejected. Round-tripping it back to *this* adapter is fine: input `thinking`
+A client that round-trips a thinking block back to _real_ Anthropic will have it
+rejected. Round-tripping it back to _this_ adapter is fine: input `thinking`
 blocks are dropped by default (`thinkingBlocks: "drop"`), because OpenAI Chat
 Completions has no field for prior chain-of-thought and reasoning models
 regenerate their own.
@@ -90,7 +90,7 @@ output but reported no usage.
 
 ### 4. Stop-sequence detection is best-effort
 
-OpenAI's `finish_reason: "stop"` is ambiguous — natural end of turn *or* a stop
+OpenAI's `finish_reason: "stop"` is ambiguous — natural end of turn _or_ a stop
 sequence hit — and the standard response says nothing about which sequence matched.
 Detection consults, in order:
 
@@ -110,7 +110,7 @@ does); in the streaming path it cannot be, because the bytes are already gone.
 - `metadata` — no OpenAI equivalent.
 - `n > 1` — Anthropic Messages has no multi-choice shape; `choice[0]` only.
 - Images inside a `tool_result` — OpenAI `{role:"tool"}` messages are text-only.
-- A tool `function.name` arriving *after* its first argument fragment cannot be
+- A tool `function.name` arriving _after_ its first argument fragment cannot be
   represented, because Anthropic pins the name into `content_block_start`.
 
 ## Corrections to the original spec
@@ -168,7 +168,7 @@ the gateway side:
    requires the gateway to always request `stream: true` upstream. For a
    non-streaming `/v1/messages` call it must buffer and assemble, then use
    `translateResponse`. This library does not do the assembling.
-   *As built:* `assembleFromSse()` in `index.ts` does it once, for both routes —
+   _As built:_ `assembleFromSse()` in `index.ts` does it once, for both routes —
    including per-index reassembly of `tool_calls[].function.arguments`, which
    arrive as fragments split mid-JSON.
 6. **Header flush order and keepalives.** Flush response headers before the
@@ -178,7 +178,7 @@ the gateway side:
 7. **Verbatim-forwarding is impossible on this path.** `docs/CONTRACTS.md` #3
    requires the OpenAI path to forward upstream bytes untouched. `/v1/messages`
    cannot: the whole point is re-framing.
-   *As built, usage does NOT come from the translator.* The re-framing runs
+   _As built, usage does NOT come from the translator._ The re-framing runs
    DOWNSTREAM of the same `proxyStream` the OpenAI route uses, so the byte tee
    still sees ordinary OpenAI chunks and settlement is byte-identical between the
    two routes. Deriving usage from `message_delta` instead would have created a

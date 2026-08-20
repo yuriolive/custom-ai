@@ -7,7 +7,13 @@
  * produces a hydration mismatch on every timestamp in every table.
  */
 
-export { formatBalanceMicroUsd, formatMicroUsd, formatMs, formatRate, formatTokens } from "@/lib/format";
+export {
+  formatBalanceMicroUsd,
+  formatMicroUsd,
+  formatMs,
+  formatRate,
+  formatTokens,
+} from "@/lib/format";
 
 import { formatMicroUsd } from "@/lib/format";
 
@@ -61,10 +67,7 @@ const RELATIVE_STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
  * client render agree — passing `Date.now()` implicitly is the usual cause of
  * "text content did not match" on relative timestamps.
  */
-export function formatRelative(
-  iso: string | null | undefined,
-  now: number,
-): string {
+export function formatRelative(iso: string | null | undefined, now: number): string {
   if (!iso) return "Never";
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "—";

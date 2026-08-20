@@ -85,7 +85,12 @@ test("the HTTP status is the last resort", () => {
 
 test("param is preserved in the message rather than dropped", () => {
   const { body } = translateError({
-    error: { message: "Invalid value", type: "invalid_request_error", param: "max_tokens", code: null },
+    error: {
+      message: "Invalid value",
+      type: "invalid_request_error",
+      param: "max_tokens",
+      code: null,
+    },
   });
   assert.equal(body.error.message, "Invalid value (param=max_tokens)");
 });
@@ -103,10 +108,24 @@ test("garbage in produces a well-formed api_error, never a throw", () => {
 test("the reverse direction produces a valid OpenAI envelope", () => {
   assert.deepEqual(
     toOpenAIError({ type: "error", error: { type: "rate_limit_error", message: "slow down" } }),
-    { error: { message: "slow down", type: "rate_limit_error", param: null, code: "rate_limit_error" } },
+    {
+      error: {
+        message: "slow down",
+        type: "rate_limit_error",
+        param: null,
+        code: "rate_limit_error",
+      },
+    },
   );
   assert.deepEqual(
     toOpenAIError({ type: "error", error: { type: "billing_error", message: "no funds" } }),
-    { error: { message: "no funds", type: "insufficient_quota", param: null, code: "billing_error" } },
+    {
+      error: {
+        message: "no funds",
+        type: "insufficient_quota",
+        param: null,
+        code: "billing_error",
+      },
+    },
   );
 });

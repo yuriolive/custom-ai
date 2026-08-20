@@ -37,7 +37,7 @@ Beans is alpha — its CLI surface can move between releases, so trust `beans <c
 over anything memorised, including this file.
 
 `docs/ROADMAP.md` stays the narrative: priority order, the reasoning behind it, and what
-was decided against. The beans carry the same work as *state* — status, blockers,
+was decided against. The beans carry the same work as _state_ — status, blockers,
 checklists. When the two disagree, the beans are right about status and the roadmap is
 right about intent; fix whichever is stale instead of deleting the other.
 
@@ -46,14 +46,14 @@ Bean bodies are prose and are in `.prettierignore`. Never reformat them by hand:
 
 ## Read before changing anything
 
-| Doc | What it holds |
-|---|---|
-| `docs/CONTRACTS.md` | **FROZEN** shapes: wire format, ids, money rules, env, path ownership. If it looks wrong, say so — do not silently diverge. |
-| `docs/PRD-inference-marketplace-mvp.md` | Requirements, FR-* ids referenced throughout the code comments. |
-| `docs/HANDOFF.md` | Current state, measured facts (cold start, decode rate, KV size) worth not re-deriving. |
-| `docs/DEPLOY.md` | Which host deploys what, and what is already configured. |
-| `docs/ROADMAP.md` | What is left and in which order, and what was decided against. Beans hold the *status* of the same work. |
-| `tools/modal/README.md` | How the Modal worker actually serves: class parameters, pools, cold start. |
+| Doc                                     | What it holds                                                                                                               |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `docs/CONTRACTS.md`                     | **FROZEN** shapes: wire format, ids, money rules, env, path ownership. If it looks wrong, say so — do not silently diverge. |
+| `docs/PRD-inference-marketplace-mvp.md` | Requirements, FR-* ids referenced throughout the code comments.                                                             |
+| `docs/HANDOFF.md`                       | Current state, measured facts (cold start, decode rate, KV size) worth not re-deriving.                                     |
+| `docs/DEPLOY.md`                        | Which host deploys what, and what is already configured.                                                                    |
+| `docs/ROADMAP.md`                       | What is left and in which order, and what was decided against. Beans hold the _status_ of the same work.                    |
+| `tools/modal/README.md`                 | How the Modal worker actually serves: class parameters, pools, cold start.                                                  |
 
 ## Layout
 
@@ -76,7 +76,7 @@ tools/mock-upstream/        Fake upstream SSE server, for tests and GPU-free loc
 ## Commands
 
 ```bash
-npm run check      # check:env + check:migrations + lint (oxlint + eslint) + typecheck
+npm run check      # check:env + check:migrations + format:check + lint (oxlint + eslint) + typecheck
 npm test           # node --test across app, hf-probe, gateway, mock-upstream, keygen, adapter
 npm run dev        # Next dev server
 ```
@@ -90,7 +90,9 @@ Postgres invariants are pgTAP under
 touch them is incomplete.
 
 Always run `npm run check` before claiming a change is done. Lint is not advisory here:
-oxlint rules like `no-array-sort` are enforced in CI.
+oxlint rules like `no-array-sort` are enforced in CI. Neither is formatting — `npm run
+format` fixes it, and where Prettier and oxlint disagree Prettier wins, because it runs
+first and rewrites the file (see the `format:check` note in `.github/workflows/ci.yml`).
 
 ## Things that are true here and are not obvious
 
@@ -112,7 +114,7 @@ pool with unbound parameters that never serves.
 
 **The GPU tier list is not a ladder.** Memory bandwidth sets decode speed and does not track
 VRAM — the L40S has more VRAM than the A100-40GB and less bandwidth; the L4 and A10 have the
-same VRAM and differ 2x in speed. Selection is `argmin(price)` over tiers meeting *both* the
+same VRAM and differ 2x in speed. Selection is `argmin(price)` over tiers meeting _both_ the
 VRAM fit and the throughput target. Never sort the list and call it quality; never show it to
 a creator as a menu.
 

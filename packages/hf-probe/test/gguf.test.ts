@@ -71,7 +71,11 @@ class Writer {
 
 type KvPair = [string, number, unknown];
 
-function buildGguf(version: number, kv: KvPair[], opts: { trailingJunk?: number } = {}): Uint8Array {
+function buildGguf(
+  version: number,
+  kv: KvPair[],
+  opts: { trailingJunk?: number } = {},
+): Uint8Array {
   const wide = version >= 2;
   const w = new Writer(wide);
   w.ascii("GGUF").u32(version);
@@ -158,7 +162,12 @@ test("Qwen3 geometry: head_dim is decoupled from hidden_size / head_count", () =
   // Same model without key_length: the fallback does not divide evenly, so we
   // reject rather than emit 213.
   const noKeyLen = architectureFromHeader(
-    parseGgufHeader(buildGguf(3, kv.filter(([k]) => k !== "qwen3.attention.key_length"))),
+    parseGgufHeader(
+      buildGguf(
+        3,
+        kv.filter(([k]) => k !== "qwen3.attention.key_length"),
+      ),
+    ),
   );
   assert.equal(noKeyLen.ok, false);
   assert.match((noKeyLen as { error: string }).error, /cannot derive head_dim/);
@@ -209,7 +218,11 @@ test("hybrid: the noMTP family independently agrees on 16 attention layers", () 
   // Same repo, other family: 64 blocks and no MTP block. If the MTP
   // subtraction were wrong the two families would disagree here.
   const kv = QWEN35_LIVE_KV.map(([k, t, v]): KvPair =>
-    k === "qwen35.block_count" ? [k, t, 64] : k === "qwen35.nextn_predict_layers" ? [k, t, 0] : [k, t, v],
+    k === "qwen35.block_count"
+      ? [k, t, 64]
+      : k === "qwen35.nextn_predict_layers"
+        ? [k, t, 0]
+        : [k, t, v],
   );
   const r = architectureFromHeader(parseGgufHeader(buildGguf(3, kv)));
   assert.ok(r.ok, r.ok ? "" : r.error);
@@ -249,7 +262,9 @@ test("hybrid: ssm is null on a plain transformer, and group_count defaults to 1"
 
 test("the raw architecture string is passed through, never validated", () => {
   const kv = QWEN35_LIVE_KV.map(([k, t, v]): KvPair =>
-    k === "general.architecture" ? [k, t, "some-arch-invented-next-week"] : [k.replace(/^qwen35\./, "some-arch-invented-next-week."), t, v],
+    k === "general.architecture"
+      ? [k, t, "some-arch-invented-next-week"]
+      : [k.replace(/^qwen35\./, "some-arch-invented-next-week."), t, v],
   );
   const r = architectureFromHeader(parseGgufHeader(buildGguf(3, kv)));
   assert.ok(r.ok, r.ok ? "" : r.error);
@@ -291,7 +306,10 @@ test("a prefix that ends before the required keys is reported, never guessed", (
 });
 
 test("a non-GGUF payload is rejected, not interpreted", () => {
-  assert.throws(() => parseGgufHeader(new TextEncoder().encode("<!doctype html>....")), /not a GGUF/);
+  assert.throws(
+    () => parseGgufHeader(new TextEncoder().encode("<!doctype html>....")),
+    /not a GGUF/,
+  );
 });
 
 test("an unsupported GGUF version is rejected", () => {

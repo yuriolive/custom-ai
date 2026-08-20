@@ -75,7 +75,10 @@ test("split shards: families stay separate across a split (FR-DEP-041b + 042)", 
       f("Big-Model-noMTP-Q4_K_M-00002-of-00002.gguf", 19 * GB),
     ],
   });
-  assert.deepEqual(r.variants.map((v) => v.id), ["base:Q4_K_M", "noMTP:Q4_K_M"]);
+  assert.deepEqual(
+    r.variants.map((v) => v.id),
+    ["base:Q4_K_M", "noMTP:Q4_K_M"],
+  );
   assert.equal(r.variants[0].weightsBytes, 40 * GB);
   assert.equal(r.variants[1].weightsBytes, 38 * GB);
 });
@@ -207,10 +210,16 @@ test("non-weight artifacts are excluded by extension", () => {
 });
 
 test("deriveBaseName strips the packaging suffix from the repo name", () => {
-  assert.equal(deriveBaseName("o/Qwen3.8-27B-Uncensored-GGUF", ["Qwen3.8-27B-Uncensored-Q4_K_M"]), "Qwen3.8-27B-Uncensored");
+  assert.equal(
+    deriveBaseName("o/Qwen3.8-27B-Uncensored-GGUF", ["Qwen3.8-27B-Uncensored-Q4_K_M"]),
+    "Qwen3.8-27B-Uncensored",
+  );
   assert.equal(deriveBaseName("o/Model.gguf", ["Model-Q4_K_M"]), "Model");
   // Repo name unrelated to the filenames -> longest common prefix, at a boundary.
-  assert.equal(deriveBaseName("o/unrelated", ["Weird-Name-Q4_K_M", "Weird-Name-Q8_0"]), "Weird-Name");
+  assert.equal(
+    deriveBaseName("o/unrelated", ["Weird-Name-Q4_K_M", "Weird-Name-Q8_0"]),
+    "Weird-Name",
+  );
 });
 
 test("deriveFamily returns null for the base family and the residue otherwise", () => {

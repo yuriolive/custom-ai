@@ -10,12 +10,7 @@
  * `searchParams` and the `"use client"` filter rail that writes them.
  */
 
-import type {
-  CatalogQuery,
-  CatalogSort,
-  PriceBand,
-  QualityTier,
-} from "./types";
+import type { CatalogQuery, CatalogSort, PriceBand, QualityTier } from "./types";
 import { CATALOG_SORTS, PRICE_BANDS, QUALITY_TIERS } from "./types";
 
 export const PAGE_SIZE = 24;
@@ -37,10 +32,7 @@ function positiveInt(value: string | undefined): number | null {
   return n;
 }
 
-function oneOf<T extends string>(
-  value: string | undefined,
-  allowed: readonly T[],
-): T | null {
+function oneOf<T extends string>(value: string | undefined, allowed: readonly T[]): T | null {
   if (!value) return null;
   return allowed.includes(value as T) ? (value as T) : null;
 }
@@ -74,9 +66,7 @@ export function parseCatalogQuery(raw: RawSearchParams): CatalogQuery {
  * catalog URL is a bare `/models` — which is also what belongs in the
  * `<link rel=canonical>`.
  */
-export function catalogQueryToSearchParams(
-  query: CatalogQuery,
-): URLSearchParams {
+export function catalogQueryToSearchParams(query: CatalogQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
   if (query.minSpeed != null) params.set("speed", String(query.minSpeed));
@@ -108,10 +98,7 @@ export function catalogHref(query: CatalogQuery, pathname = "/models"): string {
  * landing on page 4 of a two-page result set is a dead end the user did not ask
  * for.
  */
-export function withCatalogQuery(
-  query: CatalogQuery,
-  patch: Partial<CatalogQuery>,
-): CatalogQuery {
+export function withCatalogQuery(query: CatalogQuery, patch: Partial<CatalogQuery>): CatalogQuery {
   const next = { ...query, ...patch };
   if (patch.page === undefined) next.page = 1;
   return next;
@@ -121,11 +108,11 @@ export function withCatalogQuery(
 export function hasActiveFilters(query: CatalogQuery): boolean {
   return Boolean(
     query.q ||
-      query.minSpeed != null ||
-      query.minContext != null ||
-      query.quality ||
-      query.price ||
-      query.creator,
+    query.minSpeed != null ||
+    query.minContext != null ||
+    query.quality ||
+    query.price ||
+    query.creator,
   );
 }
 

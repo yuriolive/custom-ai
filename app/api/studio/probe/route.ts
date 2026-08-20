@@ -56,10 +56,7 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse(400, "invalid_request_body", "Expected a JSON body.");
   }
 
-  const fields = (typeof body === "object" && body !== null ? body : {}) as Record<
-    string,
-    unknown
-  >;
+  const fields = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
   const slug = typeof fields.repoSlug === "string" ? fields.repoSlug : "";
   const revision = typeof fields.revision === "string" ? fields.revision : "main";
   const token = typeof fields.hfToken === "string" ? fields.hfToken.trim() : "";

@@ -18,9 +18,7 @@ import "server-only";
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(
-      `Missing required environment variable ${name}. See .env.example.`,
-    );
+    throw new Error(`Missing required environment variable ${name}. See .env.example.`);
   }
   return value;
 }
@@ -29,9 +27,7 @@ export const consoleServerEnv = {
   /** Server-side Supabase URL. Falls back to the browser mirror. */
   get supabaseUrl(): string {
     return (
-      process.env.SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      required("SUPABASE_URL")
+      process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || required("SUPABASE_URL")
     );
   },
 

@@ -24,15 +24,11 @@ import { consoleServerEnv } from "@/lib/console/server-env";
  * accidentally persisted between requests.
  */
 export function createAdminClient() {
-  return createSupabaseClient(
-    consoleServerEnv.supabaseUrl,
-    consoleServerEnv.serviceRoleKey,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
+  return createSupabaseClient(consoleServerEnv.supabaseUrl, consoleServerEnv.serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
     },
-  );
+  });
 }

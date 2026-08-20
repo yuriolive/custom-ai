@@ -21,10 +21,7 @@ test("a payload split across pushes is only emitted once complete", () => {
 
 test("CRLF line endings and comment keepalives are handled", () => {
   const d = createSseDecoder();
-  assert.deepEqual(
-    d.push(': keepalive\r\n\r\ndata: {"a":1}\r\n\r\n'),
-    ['{"a":1}'],
-  );
+  assert.deepEqual(d.push(': keepalive\r\n\r\ndata: {"a":1}\r\n\r\n'), ['{"a":1}']);
 });
 
 test("a trailing unterminated frame is recovered by flush", () => {

@@ -31,10 +31,7 @@ export const TOPUP_PRESETS_MICRO_USD = [
 ] as const;
 
 export type TopupAmountError =
-  | "not_a_number"
-  | "not_a_whole_cent"
-  | "below_minimum"
-  | "above_maximum";
+  "not_a_number" | "not_a_whole_cent" | "below_minimum" | "above_maximum";
 
 export type TopupAmountResult =
   | { ok: true; centsUsd: number; microUsd: number }
@@ -92,7 +89,11 @@ export function validateTopupAmount(raw: string): TopupAmountResult {
     };
   }
   if (!Number.isSafeInteger(cents)) {
-    return { ok: false, error: "not_a_whole_cent", message: "Amount must be a whole number of cents." };
+    return {
+      ok: false,
+      error: "not_a_whole_cent",
+      message: "Amount must be a whole number of cents.",
+    };
   }
 
   const microUsd = centsToMicroUsd(cents);

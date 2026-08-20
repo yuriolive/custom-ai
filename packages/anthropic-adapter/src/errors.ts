@@ -3,11 +3,7 @@
  * for requests it refuses to translate.
  */
 
-import type {
-  AnthropicErrorResponse,
-  AnthropicErrorType,
-  OpenAIErrorResponse,
-} from "./types.ts";
+import type { AnthropicErrorResponse, AnthropicErrorType, OpenAIErrorResponse } from "./types.ts";
 
 /** HTTP status Anthropic uses for each error type. */
 const STATUS_FOR_TYPE: Record<AnthropicErrorType, number> = {

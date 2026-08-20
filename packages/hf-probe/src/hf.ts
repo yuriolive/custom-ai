@@ -151,10 +151,7 @@ export async function getText(
   }
 }
 
-export async function getJson<T>(
-  url: string,
-  opts: HfClientOptions = {},
-): Promise<HfResponse<T>> {
+export async function getJson<T>(url: string, opts: HfClientOptions = {}): Promise<HfResponse<T>> {
   const doFetch = opts.fetchImpl ?? fetch;
   let res: Response;
   try {

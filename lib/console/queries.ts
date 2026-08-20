@@ -56,8 +56,7 @@ const ROLLUP_LIMIT = 5_000;
  * `key_hash` is not in this list, and must never be added. See the note on
  * `ApiKeyRow`.
  */
-const KEY_COLUMNS =
-  "id, name, key_prefix, created_at, last_used_at, revoked_at, request_count";
+const KEY_COLUMNS = "id, name, key_prefix, created_at, last_used_at, revoked_at, request_count";
 
 const USAGE_COLUMNS =
   "id, created_at, settled_at, status, model_id, prompt_tokens, completion_tokens, " +
@@ -80,9 +79,7 @@ function firstEmbedded<T>(value: unknown): T | null {
 
 // ─── API keys ───────────────────────────────────────────────────────────────
 
-export async function fetchApiKeys(
-  supabase: SupabaseClient,
-): Promise<ApiKeyRow[]> {
+export async function fetchApiKeys(supabase: SupabaseClient): Promise<ApiKeyRow[]> {
   const { data, error } = await supabase
     .from("api_keys")
     .select(KEY_COLUMNS)
@@ -168,8 +165,7 @@ export async function fetchUsagePage(
   const last = rows[rows.length - 1];
   return {
     rows,
-    nextCursor:
-      hasMore && last ? { createdAt: last.created_at, id: last.id } : null,
+    nextCursor: hasMore && last ? { createdAt: last.created_at, id: last.id } : null,
   };
 }
 
@@ -202,9 +198,7 @@ export async function fetchCalledModels(
     custom_models?: unknown;
   }[]) {
     if (seen.has(record.model_id)) continue;
-    const model = firstEmbedded<{ slug: string; display_name: string }>(
-      record.custom_models,
-    );
+    const model = firstEmbedded<{ slug: string; display_name: string }>(record.custom_models);
     seen.set(record.model_id, {
       id: record.model_id,
       label: model?.slug ?? model?.display_name ?? "unavailable model",

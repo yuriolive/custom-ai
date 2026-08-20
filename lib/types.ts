@@ -49,4 +49,3 @@ export type PlaygroundRequestBody = {
   maxTokens?: number;
   systemPrompt?: string;
 };
-

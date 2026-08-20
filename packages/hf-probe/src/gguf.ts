@@ -347,6 +347,11 @@ export function architectureFromHeader(header: GgufHeader): GgufArchitectureResu
     };
   }
   const nKvHeads = nKvHeadsRaw ?? nAttentionHeads!;
+  // Both are non-null past the `missing` guard above, which TypeScript cannot
+  // narrow through. Bound here so the assertion stays out of the `=== 0` test
+  // below, where `nAttentionHeads! === 0` reads as if it were `!==`.
+  const embeddingSize = hiddenSize!;
+  const attentionHeads = nAttentionHeads!;
   // head_dim is NOT always hidden_size / head_count: Qwen3 decouples them
   // (5120 / 24 = 213.3, actual head_dim 128). Use key_length when present, and
   // refuse the fallback when it does not divide evenly rather than emit a
@@ -354,8 +359,8 @@ export function architectureFromHeader(header: GgufHeader): GgufArchitectureResu
   let headDim: number;
   if (keyLength !== null) {
     headDim = keyLength;
-  } else if ((hiddenSize! % nAttentionHeads!) === 0) {
-    headDim = hiddenSize! / nAttentionHeads!;
+  } else if (embeddingSize % attentionHeads === 0) {
+    headDim = embeddingSize / attentionHeads;
   } else {
     return {
       ok: false,
@@ -469,11 +474,11 @@ export async function readGgufArchitecture(
   );
   return read.ok
     ? {
-      ok: true,
-      architecture: read.value.architecture,
-      header: read.value.header,
-      bytesRead: read.bytesRead,
-    }
+        ok: true,
+        architecture: read.value.architecture,
+        header: read.value.header,
+        bytesRead: read.bytesRead,
+      }
     : { ok: false, bytesRead: read.bytesRead, error: read.error };
 }
 
@@ -520,7 +525,8 @@ async function fetchHeaderPrefix(
       await res.body?.cancel().catch(() => {});
       return {
         ok: false,
-        error: "server ignored the Range request and the object is larger than the " +
+        error:
+          "server ignored the Range request and the object is larger than the " +
           `${maxBytes}-byte read budget; refusing to download the full weights`,
       };
     }

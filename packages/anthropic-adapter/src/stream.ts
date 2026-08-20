@@ -118,9 +118,7 @@ export class AnthropicStreamTranslator {
     if (!choice) return events;
 
     if (chunk.choices && chunk.choices.length > 1) {
-      this.warnings.push(
-        "Upstream streamed more than one choice; only choice[0] was translated.",
-      );
+      this.warnings.push("Upstream streamed more than one choice; only choice[0] was translated.");
     }
 
     const delta = choice.delta ?? {};
@@ -235,7 +233,10 @@ export class AnthropicStreamTranslator {
 
     events.push({
       type: "message_delta",
-      delta: { stop_reason: stopReason, stop_sequence: stopReason === "stop_sequence" ? matchedStop : null },
+      delta: {
+        stop_reason: stopReason,
+        stop_sequence: stopReason === "stop_sequence" ? matchedStop : null,
+      },
       usage,
     });
     events.push({ type: "message_stop" });
@@ -274,9 +275,7 @@ export class AnthropicStreamTranslator {
     const cur = this.#open;
 
     const sameBlock =
-      cur !== null &&
-      cur.kind === kind &&
-      (kind !== "tool_use" || cur.toolIndex === toolIndex);
+      cur !== null && cur.kind === kind && (kind !== "tool_use" || cur.toolIndex === toolIndex);
     if (sameBlock) return events;
 
     if (cur) events.push({ type: "content_block_stop", index: cur.index });

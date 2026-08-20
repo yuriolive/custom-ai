@@ -48,7 +48,11 @@ function usageChunk(prompt: number, completion: number): OpenAIStreamChunk {
     object: "chat.completion.chunk",
     model: "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
     choices: [],
-    usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion },
+    usage: {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      total_tokens: prompt + completion,
+    },
   };
 }
 
@@ -64,7 +68,8 @@ function sig(e: AnthropicStreamEvent): string {
     }
     case "content_block_delta": {
       const d = e.delta;
-      if (d.type === "text_delta") return `content_block_delta ${e.index} text ${JSON.stringify(d.text)}`;
+      if (d.type === "text_delta")
+        return `content_block_delta ${e.index} text ${JSON.stringify(d.text)}`;
       if (d.type === "thinking_delta")
         return `content_block_delta ${e.index} thinking ${JSON.stringify(d.thinking)}`;
       if (d.type === "input_json_delta")
@@ -239,7 +244,10 @@ test("reasoning_content produces a thinking block with thinking_delta events", (
 });
 
 test("reasoning is never silently dropped even when it is the whole response", () => {
-  const { events, warnings } = run([chunk({ reasoning_content: "only thinking" }), chunk({}, "stop")]);
+  const { events, warnings } = run([
+    chunk({ reasoning_content: "only thinking" }),
+    chunk({}, "stop"),
+  ]);
   const thinking = events.filter(
     (e) => e.type === "content_block_delta" && e.delta.type === "thinking_delta",
   );
@@ -293,7 +301,10 @@ test("a streamed stop-sequence hit reports stop_sequence", () => {
   // vLLM reports the matched string on the choice.
   const reported = run([
     text("answer"),
-    { ...chunk({}, "stop"), choices: [{ index: 0, delta: {}, finish_reason: "stop", stop_reason: "END" }] },
+    {
+      ...chunk({}, "stop"),
+      choices: [{ index: 0, delta: {}, finish_reason: "stop", stop_reason: "END" }],
+    },
   ]);
   const md1 = reported.events.find((e) => e.type === "message_delta")!;
   assert.equal(md1.delta.stop_reason, "stop_sequence");
@@ -405,7 +416,7 @@ test("the async generator wrapper produces the same sequence", async () => {
 test("raw SSE text in, Anthropic SSE text out, across arbitrary network boundaries", async () => {
   const upstream =
     'data: {"id":"chatcmpl-1","model":"m","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n\n' +
-    ': keepalive\n\n' +
+    ": keepalive\n\n" +
     'data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"Read","arguments":"{\\"p\\":"}}]},"finish_reason":null}]}\n\n' +
     'data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]},"finish_reason":null}]}\n\n' +
     'data: {"id":"chatcmpl-1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\n' +

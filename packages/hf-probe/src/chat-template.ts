@@ -41,10 +41,7 @@ export const TOKENIZER_CONFIG_FILE = "tokenizer_config.json";
  * `role == "tool"` alone — a template that consumes tool RESULTS but cannot
  * declare tools — deliberately does not match.
  */
-const TOOL_MARKERS: readonly RegExp[] = [
-  /\btools\b/i,
-  /\btool_calls?\b/i,
-];
+const TOOL_MARKERS: readonly RegExp[] = [/\btools\b/i, /\btool_calls?\b/i];
 
 /**
  * Does this chat template declare tool support?
@@ -176,10 +173,7 @@ function unknown(error: string | undefined): ToolSupportResult {
     : { supported: null, source: null, error };
 }
 
-async function fromTemplateFile(
-  at: RepoRef,
-  opts: ToolSupportOptions,
-): Promise<ToolSupportResult> {
+async function fromTemplateFile(at: RepoRef, opts: ToolSupportOptions): Promise<ToolSupportResult> {
   const url = resolveUrl(at.slug, at.revision, CHAT_TEMPLATE_FILE, at.endpoint);
   const res = await getText(url, opts);
   const supported = detectToolSupport(res.body);

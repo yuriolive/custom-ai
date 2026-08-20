@@ -77,13 +77,7 @@ export type UsageRow = {
   error_code: string | null;
 };
 
-export type LedgerKind =
-  | "topup"
-  | "grant"
-  | "usage_debit"
-  | "refund"
-  | "chargeback"
-  | "adjustment";
+export type LedgerKind = "topup" | "grant" | "usage_debit" | "refund" | "chargeback" | "adjustment";
 
 /** One row of `wallet_ledger`. Signed amount: credits > 0, debits < 0. */
 export type LedgerRow = {

@@ -36,12 +36,7 @@ export const maxDuration = 300;
 /** Price ceiling from the column CHECK: 0 … 1e9 micro-USD per 1M tokens. */
 const MAX_PRICE_MICRO = 1_000_000_000;
 
-function errorResponse(
-  status: number,
-  code: string,
-  message: string,
-  hint = "",
-) {
+function errorResponse(status: number, code: string, message: string, hint = "") {
   return Response.json(
     { ok: false, code, message, hint },
     { status, headers: { "Cache-Control": "no-store" } },
@@ -56,7 +51,9 @@ function errorResponse(
  * Postgres, which is the loud failure — but it would be rejected AFTER the
  * probe, the solver and the Vault write, so it is caught before any of that.
  */
-function parseBody(raw: unknown): { ok: true; value: DeployRequest } | { ok: false; message: string } {
+function parseBody(
+  raw: unknown,
+): { ok: true; value: DeployRequest } | { ok: false; message: string } {
   if (typeof raw !== "object" || raw === null) {
     return { ok: false, message: "Expected a JSON object." };
   }
@@ -97,8 +94,7 @@ function parseBody(raw: unknown): { ok: true; value: DeployRequest } | { ok: fal
   if (pricePromptMicro === null || priceCompletionMicro === null) {
     return {
       ok: false,
-      message:
-        "Prices must be whole micro-USD per 1M tokens, between 0 and 1,000,000,000.",
+      message: "Prices must be whole micro-USD per 1M tokens, between 0 and 1,000,000,000.",
     };
   }
 
@@ -170,10 +166,7 @@ export async function POST(request: Request): Promise<Response> {
   } catch (cause) {
     // The detail describes internal topology, so it goes to the server log and
     // the client gets a flat message.
-    console.error(
-      "[studio] deploy failed:",
-      cause instanceof Error ? cause.message : cause,
-    );
+    console.error("[studio] deploy failed:", cause instanceof Error ? cause.message : cause);
     return errorResponse(
       500,
       "internal_error",

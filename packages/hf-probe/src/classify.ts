@@ -82,8 +82,7 @@ const ROLE_PATTERNS: { role: Exclude<GgufRole, "model" | "unknown">; re: RegExp 
 ];
 
 /** Same markers, for stripping them out of the family residue. */
-const ROLE_MARKER_STRIP =
-  /(?<=[-_. ])(draft|mmproj|vision|clip|lora|adapter)(?=[-_. ])/gi;
+const ROLE_MARKER_STRIP = /(?<=[-_. ])(draft|mmproj|vision|clip|lora|adapter)(?=[-_. ])/gi;
 
 export function classifyRole(stem: string): GgufRole {
   const padded = `-${stem}-`;
@@ -124,7 +123,7 @@ const REPO_SUFFIX_RE = /[-_.](gguf|ggml|awq|gptq)$/i;
 export function deriveBaseName(repoSlug: string, stems: string[]): string {
   const repoName = repoSlug.includes("/") ? repoSlug.slice(repoSlug.indexOf("/") + 1) : repoSlug;
   let candidate = repoName;
-  for (let prev = ""; prev !== candidate; ) {
+  for (let prev = ""; prev !== candidate;) {
     prev = candidate;
     candidate = candidate.replace(REPO_SUFFIX_RE, "");
   }
@@ -171,9 +170,7 @@ export function deriveFamily(
   if (baseName && residue.toLowerCase().startsWith(baseName.toLowerCase())) {
     residue = residue.slice(baseName.length);
   }
-  const tokens = residue
-    .split(/[-_. ]+/)
-    .filter((t) => t.length > 0 && !NOISE_TOKEN_RE.test(t));
+  const tokens = residue.split(/[-_. ]+/).filter((t) => t.length > 0 && !NOISE_TOKEN_RE.test(t));
   if (tokens.length === 0) return null;
   return tokens.join("-");
 }
@@ -348,18 +345,13 @@ function classifyGguf(repoSlug: string, ggufFiles: HfFile[]): ClassifyResult {
   };
 }
 
-function classifySafetensors(
-  files: HfFile[],
-  quantMethod: "awq" | "gptq" | null,
-): ClassifyResult {
+function classifySafetensors(files: HfFile[], quantMethod: "awq" | "gptq" | null): ClassifyResult {
   // safetensors: ONE variant — the repo's native precision (FR-DEP-040).
   const sorted = files.toSorted((a, b) => (a.path < b.path ? -1 : 1));
   const weightsBytes = sorted.reduce((n, f) => n + f.sizeBytes, 0);
   const format: WeightsFormat = quantMethod ?? "safetensors";
   const tag = quantMethod ? quantMethod.toUpperCase() : null;
-  const quality = tag
-    ? qualityForTag(tag)
-    : { bitsPerWeight: 16, qualityLabel: "Full precision" };
+  const quality = tag ? qualityForTag(tag) : { bitsPerWeight: 16, qualityLabel: "Full precision" };
   return {
     weightsFormat: format,
     runtime: deriveRuntime(format),

@@ -35,10 +35,7 @@ function errorResponse(
   message: string,
   type = "invalid_request_error",
 ) {
-  return Response.json(
-    { error: { message, type, param: null, code } },
-    { status },
-  );
+  return Response.json({ error: { message, type, param: null, code } }, { status });
 }
 
 export async function POST(req: Request) {

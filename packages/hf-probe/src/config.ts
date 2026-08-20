@@ -41,8 +41,7 @@ export interface HfConfigJson {
 }
 
 export type ConfigArchitectureResult =
-  | { ok: true; architecture: ModelArchitecture }
-  | { ok: false; error: string };
+  { ok: true; architecture: ModelArchitecture } | { ok: false; error: string };
 
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : null;
@@ -67,6 +66,11 @@ export function architectureFromConfig(cfg: HfConfigJson): ConfigArchitectureRes
 
   // Absent num_key_value_heads means plain MHA, not unknown.
   const nKvHeads = num(c.num_key_value_heads) ?? nAttentionHeads!;
+  // Both are non-null past the `missing` guard above, which TypeScript cannot
+  // narrow through. Bound here so the assertion stays out of the `=== 0` test
+  // below, where `nAttentionHeads! === 0` reads as if it were `!==`.
+  const embeddingSize = hiddenSize!;
+  const attentionHeads = nAttentionHeads!;
   // head_dim is not always hidden_size / num_attention_heads — Qwen3 decouples
   // them. Use the explicit field when present; refuse the fallback when it does
   // not divide evenly rather than emit a head_dim the KV solver would trust.
@@ -74,8 +78,8 @@ export function architectureFromConfig(cfg: HfConfigJson): ConfigArchitectureRes
   let headDim: number;
   if (explicitHeadDim !== null) {
     headDim = explicitHeadDim;
-  } else if ((hiddenSize! % nAttentionHeads!) === 0) {
-    headDim = hiddenSize! / nAttentionHeads!;
+  } else if (embeddingSize % attentionHeads === 0) {
+    headDim = embeddingSize / attentionHeads;
   } else {
     return {
       ok: false,
@@ -130,7 +134,11 @@ function attentionLayersFromConfig(
     // model: no growing KV at all. Report 0 rather than inventing layers.
     return 0;
   }
-  return deriveAttentionLayers(nLayers, fullAttentionInterval, num(c.num_nextn_predict_layers) ?? 0);
+  return deriveAttentionLayers(
+    nLayers,
+    fullAttentionInterval,
+    num(c.num_nextn_predict_layers) ?? 0,
+  );
 }
 
 /**
