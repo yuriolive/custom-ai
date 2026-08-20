@@ -61,9 +61,7 @@ export function LicenseGateStep({
     return (
       <Alert status="warning">
         <Alert.Content>
-          <Alert.Title>
-            This licence allows commercial hosting with conditions
-          </Alert.Title>
+          <Alert.Title>This licence allows commercial hosting with conditions</Alert.Title>
           <Alert.Description>
             <span className="flex flex-col gap-3">
               <span>
@@ -102,6 +100,11 @@ export function LicenseGateStep({
       </Alert>
     );
   }
+
+  // Nothing to say about a permissive licence. Without this the fall-through
+  // below tells the creator their apache-2.0 model is unclassified and will be
+  // held for review, which is the opposite of true.
+  if (hosting === "allowed") return null;
 
   if (hosting === "prohibited") {
     return (
