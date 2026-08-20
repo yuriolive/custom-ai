@@ -152,6 +152,15 @@ export async function list(store: KeyStore, user: string, io: Io): Promise<ApiKe
 
   const active = rows.filter((r) => !r.revoked_at).length;
   io.err(`\n${rows.length} key(s) for ${profile.handle} — ${active} active.`);
+  // On stderr, not in the table: stdout is the pipeable surface. `last_used` and
+  // `requests` are written by authorize_request, so they count requests admitted
+  // for billing — not calls presented. A key whose owner has an empty wallet can
+  // be hammered all day and read "never / 0", which is exactly the reading that
+  // would otherwise get someone to revoke a live key.
+  io.err(
+    "last_used/requests count requests admitted for billing; calls refused at the gate " +
+      "(revoked key, empty wallet, model not ready) are not counted.",
+  );
   return rows;
 }
 
@@ -199,6 +208,10 @@ export async function revoke(store: KeyStore, opts: RevokeOptions, io: Io): Prom
   io.err(`  created   ${target.created_at}`);
   io.err(`  last used ${target.last_used_at ?? "never"}`);
   io.err(`  requests  ${target.request_count ?? 0}`);
+  // Revocation is the one place the gap matters most: "never / 0" is the strongest
+  // argument for revoking, and it is also what a key reads whose every call was
+  // refused before reservation. Say so before the confirmation, not after.
+  io.err("  (admitted for billing only — refused calls are not counted here)");
   io.err("This is immediate and cannot be undone. Any caller using it starts getting 401s.");
 
   const ok = opts.yes || (await io.confirm(`Revoke ${target.key_prefix}…? [y/N] `));
