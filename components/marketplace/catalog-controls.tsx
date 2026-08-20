@@ -178,7 +178,13 @@ export function CatalogFacetRail({
   // THE RUNG LIST IS DATA. The creator facet offers the handles the RPC counted,
   // so a handle can never appear on the rail without rows behind it — and the
   // page no longer has to run a second query to populate it.
-  const creators = Object.keys(counts?.creator ?? {}).toSorted();
+  //
+  // `localeCompare`, not a bare `toSorted()`. The default comparator sorts by
+  // UTF-16 code unit, which puts `-` (U+002D) ahead of every digit and letter —
+  // so `a-lice` would sort before `alice` in a rail a visitor reads as
+  // alphabetical. Handles are `^[a-z0-9][a-z0-9-]{1,38}$`, so the hyphen is a
+  // legal interior character and that ordering is reachable, not theoretical.
+  const creators = Object.keys(counts?.creator ?? {}).toSorted((a, b) => a.localeCompare(b));
   const creatorOptions: Option[] = [
     { key: ANY, label: "Any creator" },
     ...creators.map((handle) => ({

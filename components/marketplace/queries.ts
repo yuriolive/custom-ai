@@ -451,8 +451,11 @@ export async function fetchCatalogGroups(
       // search-as-you-type behaviour is defined, and the RPC re-validates the
       // shape so a hand-edited `?q=` cannot raise 42601 on the front page.
       p_ts_query: toPrefixTsQuery(query.q),
-      // The creator-handle arm of search (FR-MKT-003). Inert without a ts query,
-      // which is exactly when the whole search predicate is inert.
+      // The creator-handle arm of search (FR-MKT-003). Sent independently of
+      // `p_ts_query`, because the two sanitize differently and the gap is
+      // reachable: `?q=--` yields no tsquery tokens but a legal handle fragment,
+      // and the RPC treats "no search" as BOTH being absent rather than as the
+      // tsquery alone being absent.
       p_handle_fragment: query.q ? handleFragment(query.q) : null,
       p_min_speed: query.minSpeed,
       p_min_context: query.minContext,

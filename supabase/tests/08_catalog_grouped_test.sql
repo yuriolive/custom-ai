@@ -35,7 +35,7 @@
 -- the billing path is touched, and 01-06 own that ground.
 -- ============================================================================
 begin;
-select plan(50);
+select plan(54);
 
 \set creator_a '00000000-0000-0000-0000-0000000000a1'
 \set creator_b '00000000-0000-0000-0000-0000000000b1'
@@ -171,10 +171,12 @@ create function pg_temp.grouped(
   p_min_speed integer default null,
   p_ts text default null,
   p_limit integer default 24,
-  p_offset integer default 0
+  p_offset integer default 0,
+  p_handle text default null
 ) returns jsonb language sql as $fn$
   select public.catalog_grouped(
     p_ts_query := p_ts,
+    p_handle_fragment := p_handle,
     p_quality_key := p_quality,
     p_category := p_category,
     p_creator := p_creator,
@@ -388,6 +390,27 @@ select is(
   (select count(*) from jsonb_array_elements(pg_temp.grouped(p_limit := 0)->'groups')),
   1::bigint,
   'a zero limit is clamped to 1 rather than returning an empty page');
+
+-- ── The two search inputs are independent, and the gap between them is real ──
+-- `p_ts_query` and `p_handle_fragment` come from the same search box but
+-- sanitize differently, so one can be absent while the other is present. The
+-- sharp case is a query that tokenizes to nothing yet leaves a legal handle
+-- fragment — `?q=--`, whose fragment is `--`. Treating "no search" as "no
+-- tsquery" answered that search with the ENTIRE catalog, which reads as
+-- "search found everything" rather than as a search that matched nothing.
+-- Two, because `aliceb` serves the Q8 of the grouped model AND the unresolved
+-- listing — and three is the whole catalog, which is the bug being pinned.
+select is((pg_temp.grouped(p_handle := 'aliceb')->>'total')::int, 2,
+  'a handle fragment alone still searches — it does not fall through to no filter');
+select is(
+  (select count(*) from jsonb_array_elements(pg_temp.grouped(p_handle := 'aliceb')->'groups') g
+    where g->>'creator_handle' <> 'aliceb'),
+  0::bigint,
+  'and every card it returns is one the named creator serves');
+select is((pg_temp.grouped(p_handle := 'nobodyhere')->>'total')::int, 0,
+  'a handle fragment nothing matches returns nothing, not everything');
+select is((pg_temp.grouped()->>'total')::int, 3,
+  'while BOTH inputs absent is the real "no search" case and filters nothing');
 
 select finish();
 rollback;

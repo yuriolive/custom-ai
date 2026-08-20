@@ -217,11 +217,18 @@ listing as (
   from visible_listing v
   left join public.base_models b on b.id = v.base_model_id
   cross join args a
-  where a.ts_query is null
-     or v.listing_search_vector @@ to_tsquery('english', a.ts_query)
-     -- The base model's OWN text, so searching "qwen" finds a listing whose
-     -- slug says nothing about the weights it serves.
-     or b.search_vector @@ to_tsquery('english', a.ts_query)
+  -- ── The search predicate ─────────────────────────────────────────────────
+  -- "No search at all" is BOTH inputs being absent, not just the tsquery. They
+  -- are derived from the same box but they sanitize differently, and the gap
+  -- between them is reachable: `?q=--` survives the handle sanitizer as `--`
+  -- and tokenizes to nothing, so a lone `a.ts_query is null` here evaluated
+  -- true for every row and answered a search with the entire catalog.
+  where (a.ts_query is null and a.handle_fragment is null)
+     or (a.ts_query is not null
+         and (v.listing_search_vector @@ to_tsquery('english', a.ts_query)
+              -- The base model's OWN text, so searching "qwen" finds a listing
+              -- whose slug says nothing about the weights it serves.
+              or b.search_vector @@ to_tsquery('english', a.ts_query)))
      -- FR-MKT-003 requires search to cover the creator handle. It is a plain
      -- `like` on an already-narrowed set rather than the id round trip
      -- queries.ts needs, because inside one query the join is already here.
