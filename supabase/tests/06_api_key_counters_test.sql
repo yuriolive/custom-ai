@@ -2,7 +2,7 @@
 -- FR-CON-001 — api_keys.request_count / last_used_at.
 --
 -- The columns shipped with a default and no writer, so the console's "Requests"
--- and "Last used" were structurally 0/never. 20260819000200 made
+-- and "Last used" were structurally 0/never. 20260819000400 made
 -- authorize_request the single writer, with an EXACT contract:
 --
 --   request_count == count(usage_transactions where api_key_id = this key)
@@ -177,7 +177,7 @@ select is((select request_count from public.api_keys where id = :'revoked'::uuid
 -- ════════════════════════════════════════════════════════════════════════════
 -- updated_at keeps meaning "last modified by its owner".
 -- The bump is an UPDATE, so without the trigger WHEN clause added by
--- 20260819000200 it would move updated_at on every request — leaving api_keys
+-- 20260819000400 it would move updated_at on every request — leaving api_keys
 -- with two columns that both mean "last used" and none that means "last edited".
 -- ════════════════════════════════════════════════════════════════════════════
 -- Backdating updated_at requires a statement the trigger SKIPS, and the only
@@ -244,7 +244,7 @@ select is((select count(*)::int from public.v_api_key_usage_drift
             where api_key_id = :'apikey'::uuid),
           1, 'the audit view reports a stale last_used_at even when the count is right');
 
--- The backfill from 20260819000200, run verbatim: it is the repair procedure, so
+-- The backfill from 20260819000400, run verbatim: it is the repair procedure, so
 -- it has to close every one of the states above.
 update public.api_keys k
    set request_count = t.txn_count,
