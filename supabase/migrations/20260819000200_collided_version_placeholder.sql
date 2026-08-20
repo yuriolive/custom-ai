@@ -1,0 +1,44 @@
+-- ============================================================================
+-- 20260819000200_collided_version_placeholder.sql
+--
+-- A DELIBERATE NO-OP. This file exists so that the version `20260819000200`
+-- still resolves to something locally. It must never be given real statements.
+--
+-- ── What happened ───────────────────────────────────────────────────────────
+-- Two migrations landed on this version from branches that never saw each
+-- other's files: `_tool_calling` (PR #13) and `_api_key_usage_counters` (#16).
+-- `version` is the PRIMARY KEY of supabase_migrations.schema_migrations, so
+-- local `db reset` aborted with 23505 and every PR went red. Both files were
+-- renumbered out of the way, to `…000300` and `…000400`.
+--
+-- But PR #13 had already merged and DEPLOYED. The Supabase GitHub integration
+-- applied `20260819000200` (as `_tool_calling`) to project gexxzdlppbplfpfqhszf
+-- and recorded that version in its history. Renumbering both files left that
+-- recorded version pointing at no local file at all, and the CLI refuses to
+-- proceed rather than guess:
+--
+--   LegacyMigrationMissingLocalError: Remote migration versions not found in
+--   local migrations directory.
+--
+-- ── Why a placeholder instead of `migration repair` ─────────────────────────
+-- `supabase migration repair --status reverted 20260819000200` fixes one
+-- database and needs credentials to do it. Every developer with a local
+-- database from before the renumber needs the same repair, and so does every
+-- future environment restored from a backup taken in this window. A committed
+-- file fixes all of them at once, with no credential and no manual step: the
+-- version resolves, `…000300` and `…000400` apply on top, and both are written
+-- to be re-runnable over objects that already exist.
+--
+-- On a database that already recorded this version, nothing below runs at all —
+-- it is already in the history table. On a fresh database it runs and does
+-- nothing, which is correct: everything this version ever meant now lives in
+-- `20260819000300_tool_calling.sql`.
+--
+-- Keeping the file also permanently reserves the burned version, so
+-- `npm run check:migrations` rejects any future file that tries to reuse it.
+-- ============================================================================
+
+do $$
+begin
+  -- Intentionally empty. See the header before adding anything here.
+end $$;
