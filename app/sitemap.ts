@@ -33,9 +33,14 @@ export const dynamic = "force-dynamic";
  *                set of identical pages.
  *   /console/**, /studio/**   Session-only, and per-user besides.
  *
- * That leaves `/` and `/signup` as the static entries, plus one URL per public
- * model — which is the set that actually earns traffic (FR-MKT-007: the model
- * page is the addressable artifact).
+ * That leaves `/`, `/pricing` and `/signup` as the static entries, plus one URL
+ * per public model — which is the set that actually earns traffic (FR-MKT-007:
+ * the model page is the addressable artifact).
+ *
+ * THIS LIST IS HAND-MAINTAINED and nothing fails when it falls behind: a public
+ * route missing from here is simply never announced, and the omission is
+ * invisible from inside the app. `/pricing` was missed exactly that way. When a
+ * public route lands, it is added here in the same change.
  *
  * `changeFrequency` and `priority` are omitted throughout. Google has said for
  * years that it ignores both, and a fabricated `weekly` on a page that changes
@@ -58,9 +63,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: absoluteUrl("/"),
       ...(catalogUpdatedAt ? { lastModified: new Date(catalogUpdatedAt) } : {}),
     },
-    // No `lastModified`: the signup page is hand-written copy whose real change
-    // date is a deploy this route has no access to. Omitting the field is a
-    // valid sitemap and an honest one.
+    // No `lastModified` on either of these: they are hand-written copy whose
+    // real change date is a deploy this route has no access to. Omitting the
+    // field is a valid sitemap and an honest one.
+    { url: absoluteUrl("/pricing") },
     { url: absoluteUrl("/signup") },
   ];
 
