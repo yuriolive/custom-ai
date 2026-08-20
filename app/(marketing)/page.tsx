@@ -12,6 +12,7 @@ import { fetchCatalogPage } from "@/components/marketplace/queries";
 import { EMPTY_QUERY } from "@/components/marketplace/search-params";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
 import { publicEnv } from "@/lib/public-env";
+import { pageOpenGraph } from "@/lib/seo/open-graph";
 import { SUPABASE_URL } from "@/lib/supabase/public-config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,7 +54,15 @@ export const dynamic = "force-dynamic";
  * branch instead of a 500.
  */
 
-const TITLE = "Serverless inference marketplace — open models, per-token pricing";
+/**
+ * NO BRAND IN THIS STRING. `/` now sits inside the `(marketing)` group, one
+ * segment below the root layout that declares `%s | Nexus Inference`, so Next
+ * DOES apply the template here — it did not when this page was the root page and
+ * shared a segment with that layout. Spelling the name out as well would render
+ * it twice, and the descriptive half plus the appended brand has to stay under
+ * roughly 60 characters or a result truncates the name away.
+ */
+const TITLE = "Open-model inference, priced per token";
 const DESCRIPTION =
   "Call open Hugging Face models — quantized, uncensored, fine-tuned — through one " +
   "OpenAI-compatible endpoint. Per-token pricing, no hourly GPU bill. Models scale to " +
@@ -63,11 +72,11 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: "/" },
-  openGraph: {
-    title: TITLE,
-    description: DESCRIPTION,
-    type: "website",
-  },
+  // Through the helper, not a bare object: a page that declares `openGraph`
+  // REPLACES the root layout's, and the `opengraph-image.tsx` card is attached
+  // to that object — so writing this by hand silently drops the card, the site
+  // name and the locale. See `lib/seo/open-graph.ts`.
+  openGraph: pageOpenGraph({ title: TITLE, description: DESCRIPTION, path: "/" }),
 };
 
 /** How many live cards the featured section shows. Three fits the grid exactly. */

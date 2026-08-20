@@ -76,7 +76,7 @@ tools/mock-upstream/        Fake upstream SSE server, for tests and GPU-free loc
 ## Commands
 
 ```bash
-npm run check      # check:env + lint (oxlint + eslint) + typecheck across all 5 tsconfigs
+npm run check      # check:env + check:migrations + lint (oxlint + eslint) + typecheck
 npm test           # node --test across app, hf-probe, gateway, mock-upstream, keygen, adapter
 npm run dev        # Next dev server
 ```

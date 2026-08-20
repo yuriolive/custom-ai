@@ -4,7 +4,7 @@ import { StudioNav } from "@/components/studio/studio-nav";
 import { getCurrentUser } from "@/lib/supabase/server";
 
 export const metadata = {
-  title: "Creator Studio — Nexus Inference",
+  title: "Creator Studio",
 };
 
 /**

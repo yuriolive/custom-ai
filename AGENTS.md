@@ -31,7 +31,7 @@ Docs referenced there, in the order they matter: `docs/CONTRACTS.md` (frozen),
 ## 3. Before claiming a change is done
 
 ```bash
-npm run check   # env + oxlint + eslint + typecheck across all 5 tsconfigs
+npm run check   # env + migrations + oxlint + eslint + typecheck across every tsconfig
 npm test        # node --test across app, hf-probe, gateway, mock-upstream, keygen, adapter
 ```
 

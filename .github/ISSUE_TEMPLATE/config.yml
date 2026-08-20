@@ -1,0 +1,5 @@
+# Blank issues stay ON. The two forms above cover the common cases, but this repo takes
+# reports about a wire contract, a billing invariant and a GPU solver in the same tracker,
+# and a form that does not fit is a report that does not get filed. A blank issue with the
+# facts beats a bug form abandoned halfway.
+blank_issues_enabled: true
