@@ -20,7 +20,7 @@
 -- only one of them is checked.
 -- ============================================================================
 begin;
-select plan(26);
+select plan(31);
 
 -- ── The shapes, and why each is here ────────────────────────────────────────
 --   mvp_target       the seeded MVP-0 model, hybrid attention/SSM, 8k context
@@ -194,6 +194,33 @@ select ok((select bool_and(not (p->>'feasible')::boolean) from placement_sweep
 select ok((select bool_and(coalesce(p->>'blocking_reason', '') <> '')
              from placement_sweep where name = 'impossible'),
           'and every infeasible envelope still names what blocked it');
+
+-- ── A context no tier can hold ONE slot of ──────────────────────────────────
+-- The near-miss guard reads the WEIGHTS, not the request. When it read the request
+-- (`weights + overhead + slot_cost <= usable`, evaluated at the requested context), a
+-- context this large failed it on every tier, so max_context_at_this_quality came back
+-- 0 and the envelope blamed the weights — which fit fine. The Studio turns that field
+-- into a "Reduce context to N" button, so a 0 removes the remedy from the one request
+-- that needs it. 4M tokens exceeds every tier's per-slot budget while the 16.81 GiB of
+-- weights fit on almost all of them.
+create temporary view oversized_context as
+select public.resolve_placement(
+         16810714528, 16810714528, 65, 4, 256, 4000000, 30, 2::smallint, null, 16,
+         public.calc_ssm_state_bytes(65 - 16, 128, 6144, 16, 4, 2::smallint)) as p;
+
+select ok((select not (p->>'feasible')::boolean from oversized_context),
+          'a 4M-token context is infeasible');
+select cmp_ok((select (p->>'max_context_at_this_quality')::integer from oversized_context),
+              '>', 0,
+              'and the envelope still reports the largest context that WOULD fit, so the '
+              'creator gets a remedy instead of being told the weights do not fit');
+select cmp_ok((select (p->>'max_context_at_this_quality')::integer from oversized_context),
+              '<', 4000000, 'which is smaller than what was asked for');
+select ok((select p->>'blocking_reason' like 'Context of%' from oversized_context),
+          'and the reason names the context, not the weights');
+select cmp_ok((select (p->>'fastest_available_tokens_per_second')::integer
+                 from oversized_context),
+              '>', 0, 'the fastest-available figure is populated on the same path');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- The constants, and the row that stopped existing.

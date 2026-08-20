@@ -373,7 +373,20 @@ begin
     end if;
 
     -- Track the best near-misses so infeasibility messages can be specific.
-    if v_required <= v_usable then
+    --
+    -- THE GUARD IS ON THE WEIGHTS, NOT ON THE REQUEST. It used to be
+    -- `v_required <= v_usable`, which is the fit AT THE REQUESTED CONTEXT — so a
+    -- request for a context no tier can hold one slot of failed the guard on every
+    -- tier, left v_max_ctx_fit at 0, and made the envelope answer 'Weights do not fit
+    -- on any available GPU' about weights that fit comfortably. That is the one
+    -- infeasibility message with no remedy attached: the Studio turns
+    -- max_context_at_this_quality into a "Reduce context to N" button (FR-STU-004d),
+    -- and 0 removes the button on precisely the request it exists for. Asking instead
+    -- whether anything is left after weights, base overhead and the per-slot fixed
+    -- costs is the question the answer needs. Reachable today only on an architecture
+    -- whose declared ceiling is in the millions of tokens; the schema bounds
+    -- context_length by max_position_embeddings, which is why it had not been seen.
+    if v_allocatable > (v_ssm_bytes + v_slot_fixed) then
       v_fastest := greatest(v_fastest, v_tok_s);
       -- Largest context ONE slot could hold here: an advisory maximum the creator can
       -- actually deploy at, not an optimistic number that fails on submit. Same
