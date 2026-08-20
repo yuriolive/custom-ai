@@ -98,7 +98,21 @@ jobs:
             nextjs-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}-
             nextjs-${{ runner.os }}-
 
-      # oxlint first: ~50x faster than eslint, so a broken tree fails in ~1s.
+      # No longer advisory: the one-time repo-wide `npm run format` has landed, so
+      # this gate blocks. It runs before the linters because it is the cheapest
+      # check in the job and the only one a contributor fixes with a single
+      # command (`npm run format`). It is also in `npm run check`, so the failure
+      # is reachable locally rather than only here.
+      #
+      # Prettier and oxlint disagree on one construct and Prettier wins by
+      # running first: it strips the parentheses in `(a! % b!) === 0`, which
+      # oxlint then rejects under no-confusing-non-null-assertion. Keep the
+      # non-null assertion out of an equality test entirely (bind it to a const)
+      # rather than adding parentheses Prettier will remove again.
+      - name: format:check
+        run: npm run format:check
+
+      # oxlint next: ~50x faster than eslint, so a broken tree fails in ~1s.
       - name: oxlint
         run: npm run oxlint
 
@@ -130,13 +144,6 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-placeholder-not-a-real-key
           SUPABASE_URL: http://127.0.0.1:54321
           SUPABASE_ANON_KEY: ci-build-placeholder-not-a-real-key
-
-      # Advisory until the one-time repo-wide `npm run format` lands: adding the
-      # formatter and reformatting 20 files in the same change would bury every
-      # other diff. Flip continue-on-error off once that commit is in.
-      - name: format:check
-        run: npm run format:check
-        continue-on-error: true
 
   python:
     name: python (tools/modal)
