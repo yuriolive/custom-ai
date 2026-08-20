@@ -32,10 +32,12 @@
  *     and "this product is broken".
  */
 
+import { MEASURED } from "@/lib/measured";
+
 /** Timeout, in seconds, written into every generated snippet. */
 export const SNIPPET_TIMEOUT_SECONDS = 180;
 
-export type SnippetLanguage = "python" | "typescript" | "curl";
+export type SnippetLanguage = "python" | "typescript" | "curl" | "claude-code";
 
 export const SNIPPET_LANGUAGES: readonly {
   id: SnippetLanguage;
@@ -46,6 +48,7 @@ export const SNIPPET_LANGUAGES: readonly {
   { id: "python", label: "Python", grammar: "python" },
   { id: "typescript", label: "TypeScript", grammar: "typescript" },
   { id: "curl", label: "cURL", grammar: "bash" },
+  { id: "claude-code", label: "Claude Code", grammar: "bash" },
 ];
 
 export type SnippetInput = {
@@ -54,6 +57,20 @@ export type SnippetInput = {
   /** Gateway root INCLUDING the trailing `/v1`. */
   baseUrl: string;
 };
+
+/**
+ * The warm figure that goes into every generated snippet.
+ *
+ * `MEASURED.warmTtftMs`, not the phrase "well under a second" these comments used
+ * to carry. `docs/HANDOFF.md` measures warm TTFT p50 at 926 ms and records it as
+ * a MISS against NFR-CS-002's 400 ms target — "recorded as a miss, not restated
+ * to match what we measured". 926 ms is not well under a second, and a snippet a
+ * developer pastes into their editor is the last place to leave a claim they can
+ * time with a stopwatch. Read, not retyped, for the same reason the proof strip
+ * and the snippet notes read it: this is the fourth surface that made this claim
+ * and the fourth to have it wrong.
+ */
+const WARM_COMMENT = `Subsequent calls to a warm worker return their first token in about ${MEASURED.warmTtftMs} ms`;
 
 const COLD_START_COMMENT =
   "the model scales to zero, so the first call may cold-start a GPU (up to ~2 min)";
@@ -74,7 +91,7 @@ stream = client.chat.completions.create(
     messages=[{"role": "user", "content": "${PROMPT}"}],
     stream=True,
     # ${COLD_START_COMMENT}.
-    # Subsequent calls to a warm worker return their first token in well under a second.
+    # ${WARM_COMMENT}.
     timeout=${SNIPPET_TIMEOUT_SECONDS},
 )
 
@@ -91,7 +108,7 @@ const client = new OpenAI({
   baseURL: "${baseUrl}",
   apiKey: process.env.NEXUS_API_KEY, // sk-plat-... — create one in the Console
   // ${COLD_START_COMMENT}.
-  // Subsequent calls to a warm worker return their first token in well under a second.
+  // ${WARM_COMMENT}.
   timeout: ${SNIPPET_TIMEOUT_SECONDS}_000,
 });
 
@@ -122,10 +139,34 @@ curl -N ${baseUrl}/chat/completions \\
 `;
 }
 
-export function snippetFor(
-  language: SnippetLanguage,
-  input: SnippetInput,
-): string {
+/**
+ * Claude Code, and every other Anthropic-SDK client, via `POST /v1/messages`.
+ *
+ * Two details differ from the OpenAI snippets and both are load-bearing:
+ *
+ *  1. **`ANTHROPIC_BASE_URL` has NO trailing `/v1`.** The Anthropic SDK appends
+ *     `/v1/messages` itself, so reusing the OpenAI base URL here produces
+ *     `/v1/v1/messages` and a 404 that reads like the gateway is down.
+ *  2. **`ANTHROPIC_MODEL` takes the platform model id.** A model name containing
+ *     a `/` is passed straight through to the resolver; only `claude-*` names
+ *     need the operator-side `ANTHROPIC_MODEL_MAP`. Setting the small/fast model
+ *     too is not optional — Claude Code sends background turns to it, and an
+ *     unmapped `claude-*-haiku` there 404s mid-session.
+ */
+export function claudeCodeSnippet({ modelId, baseUrl }: SnippetInput): string {
+  return `# The Anthropic SDK appends /v1/messages, so the base URL drops the trailing /v1.
+export ANTHROPIC_BASE_URL="${anthropicBaseUrl(baseUrl)}"
+export ANTHROPIC_API_KEY="sk-plat-..."  # create one in the Console
+export ANTHROPIC_MODEL="${modelId}"
+# Claude Code routes background turns to a second, smaller model.
+export ANTHROPIC_SMALL_FAST_MODEL="${modelId}"
+
+# ${COLD_START_COMMENT}.
+claude
+`;
+}
+
+export function snippetFor(language: SnippetLanguage, input: SnippetInput): string {
   switch (language) {
     case "python":
       return pythonSnippet(input);
@@ -133,6 +174,8 @@ export function snippetFor(
       return typescriptSnippet(input);
     case "curl":
       return curlSnippet(input);
+    case "claude-code":
+      return claudeCodeSnippet(input);
   }
 }
 
@@ -145,4 +188,12 @@ export function snippetFor(
  */
 export function gatewayBaseUrl(supabaseUrl: string): string {
   return `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/gateway/v1`;
+}
+
+/**
+ * The same gateway, addressed the way an Anthropic client expects: WITHOUT the
+ * trailing `/v1`, which the Anthropic SDK adds itself.
+ */
+export function anthropicBaseUrl(openAiBaseUrl: string): string {
+  return openAiBaseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
 }

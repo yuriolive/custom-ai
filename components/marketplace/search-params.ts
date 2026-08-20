@@ -71,7 +71,8 @@ export function parseCatalogQuery(raw: RawSearchParams): CatalogQuery {
 
 /**
  * Serialize back to a query string. Defaults are omitted so the canonical
- * catalog URL is a bare `/` — which is also what belongs in the `<link rel=canonical>`.
+ * catalog URL is a bare `/models` — which is also what belongs in the
+ * `<link rel=canonical>`.
  */
 export function catalogQueryToSearchParams(
   query: CatalogQuery,
@@ -88,8 +89,16 @@ export function catalogQueryToSearchParams(
   return params;
 }
 
-/** `/` when nothing is set, `/?q=…` otherwise. */
-export function catalogHref(query: CatalogQuery, pathname = "/"): string {
+/**
+ * `/models` when nothing is set, `/models?q=…` otherwise.
+ *
+ * The default USED TO BE `/`, because the catalog was the front page. It is not
+ * any more (docs/UI-REDESIGN-PLAN.md §3) and the default is the whole fix: every
+ * facet, every pagination arrow and every "clear filters" link runs through here,
+ * so one wrong default would have sent all of them to the landing page — which
+ * ignores search params entirely, so the filter would have silently done nothing.
+ */
+export function catalogHref(query: CatalogQuery, pathname = "/models"): string {
   const qs = catalogQueryToSearchParams(query).toString();
   return qs ? `${pathname}?${qs}` : pathname;
 }

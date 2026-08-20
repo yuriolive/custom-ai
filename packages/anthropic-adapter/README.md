@@ -50,7 +50,8 @@ under-count to zero.** Read usage from `message_delta` only.
 Two mitigations exist:
 
 - Pass `inputTokens` in `StreamTranslatorOptions` if the caller already has an
-  estimate (the gateway does — it computes one to size the authorization hold).
+  estimate (the gateway does this: it passes the same estimate that sized the
+  authorization hold).
   It is then reported in `message_start` and used as the `message_delta` fallback
   when upstream reports nothing at all.
 - `message_delta.usage` includes `input_tokens`. Anthropic itself emits
@@ -141,6 +142,11 @@ fetched 2026-08-17):
 
 ## What a gateway still has to do
 
+**This is now done, in `supabase/functions/gateway/anthropic.ts` + `index.ts`.** The
+list below is kept as the specification that file is written against — read it as
+"what the gateway does", not "what is missing". Two answers differ from what the list
+anticipated and are called out inline: items 5 and 7.
+
 This library is pure translation. Exposing it as `POST /v1/messages` requires, on
 the gateway side:
 
@@ -162,15 +168,22 @@ the gateway side:
    requires the gateway to always request `stream: true` upstream. For a
    non-streaming `/v1/messages` call it must buffer and assemble, then use
    `translateResponse`. This library does not do the assembling.
+   *As built:* `assembleFromSse()` in `index.ts` does it once, for both routes —
+   including per-index reassembly of `tool_calls[].function.arguments`, which
+   arrive as fragments split mid-JSON.
 6. **Header flush order and keepalives.** Flush response headers before the
    upstream fetch; emit `: keepalive\n\n` every 5 s while upstream is silent
    (`docs/CONTRACTS.md` #2). SSE comment frames are ignored by `createSseDecoder`,
    so they compose safely.
 7. **Verbatim-forwarding is impossible on this path.** `docs/CONTRACTS.md` #3
    requires the OpenAI path to forward upstream bytes untouched. `/v1/messages`
-   cannot: the whole point is re-framing. Usage must therefore be read from the
-   translator (`message_delta.usage`) rather than from a tee of raw bytes, and
-   settlement still has to run outside the client-write path (#5).
+   cannot: the whole point is re-framing.
+   *As built, usage does NOT come from the translator.* The re-framing runs
+   DOWNSTREAM of the same `proxyStream` the OpenAI route uses, so the byte tee
+   still sees ordinary OpenAI chunks and settlement is byte-identical between the
+   two routes. Deriving usage from `message_delta` instead would have created a
+   second billing path to keep in step with the first — the failure mode being
+   that only one of them counts `reasoning_content`.
 8. **Error status codes.** `translateError` returns the status to use, but the
    gateway owns actually setting it, plus `retry-after` on 429 and
    `request-id`/`anthropic-*` response headers if it wants SDK parity.
