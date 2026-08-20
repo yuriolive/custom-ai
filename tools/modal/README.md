@@ -9,7 +9,7 @@ sync_rates.py     refresh prices from `modal billing rates --json` (LOCAL: needs
 app.py            the deployed Modal app: one parameterized llama.cpp class per GPU tier
 deploy.py         spec -> deployment config resolver, --dry-run, URL lookup
 measure.py        cold/warm measurement + the SSE usage analyzer
-test_measure.py   41 offline tests (unittest); end-to-end ones drive tools/mock-upstream
+test_measure.py   offline tests (unittest); end-to-end ones drive tools/mock-upstream
 test_tier_drift.py  CI-enforced: tiers.py vs the gpu_tiers state the migrations leave
 reports/          measurement JSON output (gitignored)
 ```
@@ -116,8 +116,7 @@ appear in a `NEXT_PUBLIC_*` variable, in any client bundle, in a browser-visible
 or in a log line — per `docs/CONTRACTS.md` §Environment. A proxy token in a client bundle is
 strictly worse than no auth at all: it is a published, permanent key to the GPU that also
 looks like it was secured. If a browser needs inference, it calls the gateway and the
-gateway calls Modal; the two never meet. (`docs/CONTRACTS.md` §Environment does not yet list
-these two names — its owner should add them.)
+gateway calls Modal; the two never meet.
 
 Sent as either form; both verified live against Modal 1.5.4:
 

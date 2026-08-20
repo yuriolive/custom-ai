@@ -308,7 +308,7 @@ jobs:
         # auth.users, and RLS policies reference auth.uid(). Do not add to this
         # exclusion list without checking `grep -rn 'auth\.\|storage\.' supabase/`.
 
-      # Applies all 21 migrations to a fresh database, then seed.sql
+      # Applies every migration in supabase/migrations to a fresh database, then seed.sql
       # ([db.seed] enabled, sql_paths = ["./seed.sql"]). This is also the only
       # thing in CI that proves the migrations still apply cleanly from zero.
       - name: supabase db reset
