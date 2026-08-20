@@ -33,7 +33,7 @@ export const dynamic = "force-dynamic";
  *                set of identical pages.
  *   /console/**, /studio/**   Session-only, and per-user besides.
  *
- * That leaves `/`, `/pricing`, `/legal/acceptable-use` and `/signup` as the
+ * That leaves `/`, `/pricing`, the two `/legal` pages and `/signup` as the
  * static entries, plus one URL per public model — which is the set that actually
  * earns traffic (FR-MKT-007: the model page is the addressable artifact).
  *
@@ -68,6 +68,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // field is a valid sitemap and an honest one.
     { url: absoluteUrl("/pricing") },
     { url: absoluteUrl("/legal/acceptable-use") },
+    { url: absoluteUrl("/legal/terms") },
     { url: absoluteUrl("/signup") },
   ];
 

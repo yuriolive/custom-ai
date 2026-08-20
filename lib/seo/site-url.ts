@@ -65,3 +65,33 @@ export function siteUrl(): URL {
 export function absoluteUrl(path: string): string {
   return new URL(path.startsWith("/") ? path : `/${path}`, `${siteOrigin()}/`).toString();
 }
+
+/**
+ * The bare domain an address on this site would be at, derived from the same
+ * origin everything else here uses. `siteEmailAddress("abuse")` on a deployment
+ * whose `SITE_URL` is `https://www.example.com` gives `abuse@example.com`.
+ *
+ * WHAT THIS DOES AND DOES NOT GUARANTEE. It guarantees the published address
+ * always matches the domain the site is actually served from — one place to
+ * change when the domain changes, instead of an address hardcoded in a policy
+ * page that quietly outlives it. It guarantees nothing about the mailbox
+ * existing: whoever sets `SITE_URL` to a real domain owns making `abuse@` on
+ * that domain reach a human. A published reporting address that bounces is worse
+ * than none, because it invites a report and then drops it.
+ *
+ * The port is stripped, because `abuse@localhost:3000` is not an address. In dev
+ * that yields `abuse@localhost`, which is visibly not real — the right outcome,
+ * since nothing should be reporting abuse to a laptop.
+ *
+ * A leading `www.` is stripped too. Mail is conventionally addressed at the
+ * registrable domain, and `abuse@www.example.com` is the kind of thing that
+ * works right up until the DNS is tidied.
+ */
+export function siteEmailDomain(): string {
+  return new URL(siteOrigin()).hostname.replace(/^www\./, "");
+}
+
+/** `siteEmailAddress("abuse")` → `abuse@<site domain>`. */
+export function siteEmailAddress(mailbox: string): string {
+  return `${mailbox}@${siteEmailDomain()}`;
+}

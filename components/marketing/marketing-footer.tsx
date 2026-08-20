@@ -27,6 +27,7 @@ const PRODUCT: readonly FooterLink[] = [
 ] as const;
 
 const LEGAL: readonly FooterLink[] = [
+  { href: "/legal/terms", label: "Terms of service" },
   { href: "/legal/acceptable-use", label: "Acceptable use" },
 ] as const;
 

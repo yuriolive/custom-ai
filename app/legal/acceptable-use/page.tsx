@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { MarketingContainer, Section } from "@/components/marketing/section";
 import { pageOpenGraph } from "@/lib/seo/open-graph";
+import { siteEmailAddress } from "@/lib/seo/site-url";
 
 /**
  * `/legal/acceptable-use` — the rules that bind both sides of the marketplace.
@@ -23,14 +24,6 @@ import { pageOpenGraph } from "@/lib/seo/open-graph";
  * listed as dynamic in the build output, because `SiteNav` in the root layout
  * reads the session.
  */
-
-/**
- * PLACEHOLDER — MUST BE SET BEFORE THIS PAGE IS PUBLIC. An abuse policy whose
- * reporting address does not resolve is worse than no policy: it invites a
- * report and then drops it, and "nobody told us" stops being true the moment
- * someone tries. Point this at a mailbox a human actually reads.
- */
-const ABUSE_CONTACT = "abuse@nexus-inference.example";
 
 const TITLE = "Acceptable use policy";
 const DESCRIPTION =
@@ -59,6 +52,14 @@ function Rule({ term, children }: Readonly<{ term: string; children: React.React
 }
 
 export default function AcceptableUsePage() {
+  /**
+   * Derived from the deployment's own domain rather than hardcoded, so the
+   * published address cannot outlive the domain it names. Setting `SITE_URL` to
+   * the real domain is what makes this real — and whoever does that owns making
+   * `abuse@` on it reach a human.
+   */
+  const abuseContact = siteEmailAddress("abuse");
+
   return (
     <MarketingContainer>
       <Section
@@ -186,11 +187,8 @@ export default function AcceptableUsePage() {
 
           <Rule term="Reporting something">
             Send it to{" "}
-            <a
-              className="text-accent underline underline-offset-4"
-              href={`mailto:${ABUSE_CONTACT}`}
-            >
-              {ABUSE_CONTACT}
+            <a className="text-accent underline underline-offset-4" href={`mailto:${abuseContact}`}>
+              {abuseContact}
             </a>
             . Include the model id and, where you have it, the request id returned with the response
             — that id is how one specific request gets found. Reports about a model itself rather
