@@ -56,6 +56,15 @@ To resume: check out the branch, re-read the **frozen** "Frontend / auth contrac
 - **MFU is a guessed 0.75.** Tier selection and $0.85/hr rest on it — A10 vs L40S flips on this constant.
 - **`active_weights_bytes`** equals total weights. Correct for this dense model; diverges only for MoE.
 - No Stripe by decision. Wallet balance and ledger read fine without it.
+- **A local database created before the `20260819000200` collision was fixed has a stale
+  migration history.** Both colliding files were renumbered (`_tool_calling` → `…000300`,
+  `_api_key_usage_counters` → `…000400`), so `supabase migration up` stops with
+  `LegacyMigrationMissingLocalError` on the orphan `20260819000200` row. That is the intended
+  outcome — leaving either file at `…000200` would have made the CLI *skip* it and silently
+  omit its schema. Fix with `supabase db reset`, or `supabase migration repair --local
+  --status reverted 20260819000200` followed by `supabase migration up`; both files are
+  guarded (`if not exists` / `drop … if exists`), so re-applying them over existing objects
+  is a no-op.
 
 ## The lesson this session kept teaching
 

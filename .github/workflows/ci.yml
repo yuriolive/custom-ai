@@ -261,6 +261,29 @@ jobs:
         with:
           persist-credentials: false
 
+      # `version` is the PRIMARY KEY of supabase_migrations.schema_migrations, so
+      # two migration files sharing a numeric prefix is not a naming nit: the
+      # second INSERT raises 23505 and `db reset` aborts partway through, which
+      # takes this job — and therefore every open PR — red for a reason that has
+      # nothing to do with the PR. It has happened twice (0348c2d moved
+      # tool_calling off a collision with gpu_tiers_modal_catalog; it then
+      # collided again with api_key_usage_counters one number along), because two
+      # branches that never see each other's files cannot detect it themselves.
+      # Runs before `npm ci` and the ~1.5 GB image pull so the third time fails
+      # in a second with a message that names the files.
+      - name: check for duplicate migration version prefixes
+        run: |
+          dupes=$(ls supabase/migrations | grep -oE '^[0-9]+' | sort | uniq -d)
+          if [ -n "$dupes" ]; then
+            for v in $dupes; do
+              # Unquoted: word-splitting collapses the file list onto one line,
+              # which is what ::error:: needs to render as a single annotation.
+              echo "::error::duplicate migration version $v:" $(ls supabase/migrations/${v}_*)
+            done
+            exit 1
+          fi
+          echo "no duplicate migration version prefixes"
+
       # The CLI comes from the repo's own devDependency, NOT an ad-hoc
       # `npx supabase@<version>`. Three surfaces used to disagree: CI pinned
       # 2.114.0, the developer shell had scoop's 2.54.11, and the repo needed
