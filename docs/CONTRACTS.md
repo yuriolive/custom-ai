@@ -215,6 +215,41 @@ Two consequences that are contract, not detail:
   the `provider` query parameter of `/authorize` — and it is commented as such at the one
   place it appears (`app/(auth)/actions.ts`). Do not add a second one elsewhere.
 
+- **`session.provider_token` is not a credential this platform holds.** It exists on the
+  response to the code exchange and nowhere afterwards — it does not survive a session
+  refresh. Anything that needs it must read it inside `app/auth/callback/route.ts` and
+  persist **derived facts**, never the token. `lib/hf/link.ts` is the one caller: it reads
+  `https://huggingface.co/oauth/userinfo` once and writes the creator's HF username and
+  org usernames to `public.hf_identities`. The token is never stored and never logged.
+- **The Hugging Face Custom Provider needs the `read-memberships` scope** (on the HF OAuth
+  app *and* in the Supabase provider config) for org membership to be visible at all.
+  Without it the userinfo response simply omits the list — no error — and every creator
+  reads as belonging to no orgs. That costs badges; it never grants one. The stored
+  `memberships_readable` flag is what separates "in no orgs" from "never allowed to look".
+
+### The `official` badge
+
+A listing is **official** when the Hugging Face account behind its creator owns the repo
+the listing serves — the owner of `custom_models.hf_repo_slug`, or the publisher segment of
+`base_models.slug` once the listing is grouped. The rule lives in exactly one place,
+`public.listing_is_official(public.custom_models)` (migration 20260820004000), exposed to
+the catalog as a PostgREST computed column. There is deliberately no TypeScript copy of it.
+
+Everything else is a **third-party host**. That is the normal state of a marketplace, it is
+rendered as a peer of `official` rather than as a warning, and it is the default.
+
+Three limits are contract, not styling:
+
+1. The badge **never gates the right to list.** No policy, CHECK or RPC on the publish path
+   reads it.
+2. The badge **never feeds a price, a rank or a payout.** HF OAuth proves control of an
+   account, not authorship of weights — an org member can publish a repo they did not
+   train. `supabase/tests/08_official_badge_test.sql` holds the tripwires.
+3. `hf_identities` has **no client write policy**, and must not grow one. Every column is
+   an assertion about an account on another service; a creator who could write `orgs` could
+   wear a lab's badge. `anon` cannot read the table at all — the badge is public, the org
+   list is not.
+
 Error copy lives in `lib/supabase/auth-errors.ts` and follows one rule now that there are
 two providers: the OAuth **start** path knows which button was pressed and may name it;
 the **callback** path does not — GoTrue's error redirect carries only `error` /

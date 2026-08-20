@@ -4,6 +4,7 @@ import { Card, Chip, Table } from "@heroui/react";
 import Link from "next/link";
 
 import { formatCreditValue } from "@/lib/format";
+import { provenanceNote } from "@/lib/marketplace/provenance";
 
 import {
   formatCompact,
@@ -15,6 +16,7 @@ import {
   qualityLabel,
   qualityNote,
 } from "./format";
+import { ProvenanceChip } from "./provenance";
 import { appHref } from "./routes";
 import { catalogHref, EMPTY_QUERY, withCatalogQuery } from "./search-params";
 import { SnippetTabs } from "./snippet-tabs";
@@ -75,6 +77,7 @@ export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: 
           </Chip>
           <Chip variant="soft">{qualityChipLabel(model.qualityTier)}</Chip>
           {model.quantTag ? <Chip variant="soft">{model.quantTag}</Chip> : null}
+          <ProvenanceChip isOfficial={model.isOfficial} />
         </div>
       </header>
 
@@ -95,6 +98,22 @@ export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: 
           <p className="text-muted max-w-3xl text-sm whitespace-pre-line">{model.description}</p>
         </section>
       ) : null}
+
+      {/* Provenance sits between the description and the price, which is where a
+          reader who has decided they want the model asks who is selling it —
+          and, deliberately, BEFORE they see what it costs. The badge must not
+          look like part of the pricing rationale, because it is forbidden from
+          being part of it: it never feeds a price, a rank or a payout (#30).
+
+          The heading names the state rather than the topic ("Official" /
+          "Third-party host"), so the page reads the same way the pill does and a
+          reader is never left to infer which one they got. */}
+      <section aria-labelledby="provenance" className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold" id="provenance">
+          {model.isOfficial ? "Official" : "Third-party host"}
+        </h2>
+        <p className="text-muted max-w-3xl text-sm">{provenanceNote(model.isOfficial)}</p>
+      </section>
 
       <section aria-labelledby="pricing" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold" id="pricing">

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { recordHuggingFaceIdentity } from "@/lib/hf/link";
 import {
   CALLBACK_EXCHANGE_FAILED,
   describeAuthError,
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     const failure = describeAuthError(error, "callback");
@@ -57,6 +58,17 @@ export async function GET(request: NextRequest) {
       )}`,
     );
   }
+
+  // THE ONE MOMENT the platform can learn a creator's Hugging Face identity.
+  // `data.session.provider_token` is on this response and on nothing afterwards
+  // — it does not survive a refresh (#23) — so the org list behind the `official`
+  // badge (#30) is read here or not at all. Awaited rather than fired and
+  // forgotten: the serverless invocation ends with this response, and work still
+  // running when it does is work that may simply not happen.
+  //
+  // `recordHuggingFaceIdentity` cannot throw and does nothing for a non-HF
+  // session, which is what keeps this line out of the sign-in failure surface.
+  if (data.session) await recordHuggingFaceIdentity(data.session);
 
   return NextResponse.redirect(`${origin}${next}`);
 }

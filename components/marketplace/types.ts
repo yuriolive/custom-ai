@@ -89,6 +89,21 @@ export type CatalogModel = {
   p95TtftMs: number | null;
   createdAt: string;
   readyAt: string | null;
+  /**
+   * True when the Hugging Face account behind this creator owns the upstream
+   * repository the listing serves — its `hf_repo_slug` owner, or the publisher
+   * of the base model it is grouped to (FR/#30). Decided in SQL by
+   * `public.listing_is_official`; this is the projection of that boolean.
+   *
+   * `false` IS THE NEUTRAL STATE, not a demerit. Third-party hosting is the
+   * normal case in a working marketplace, and the UI renders the two as peers.
+   *
+   * It says nothing about the weights. Hugging Face OAuth proves control of an
+   * ACCOUNT — an org member can publish a repo they did not train — so this must
+   * never reach a price, a sort key or a payout. #29 owns the gate that governs
+   * earning, and it reads different columns on purpose.
+   */
+  isOfficial: boolean;
 };
 
 /** Normalized catalog query, parsed from URL search params. */

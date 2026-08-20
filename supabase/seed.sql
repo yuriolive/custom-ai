@@ -326,3 +326,31 @@ update public.custom_models
          'at', now(),
          'note', 'seeded by supabase/seed.sql, not resolved by the #25 cascade')
  where id = '00000000-0000-0000-0000-0000000000c1';
+
+-- ── The seeded creator's Hugging Face identity (#30) ────────────────────────
+-- In production this row is written by ONE thing: `/auth/callback`, holding an
+-- access token the Hub issued seconds earlier (lib/hf/link.ts). There is no
+-- client write policy and no "link me" RPC, because a creator who could write
+-- `orgs` could type `qwen` into it and wear a lab's badge.
+--
+-- Seeded here so a local stack has the interesting state rather than the empty
+-- one: `hf_repo_slug` is `JonathanColetti/…` and this username is
+-- `jonathancoletti`, so the seeded listing renders as `official` and the badge
+-- is visible without a hosted Supabase project and a real HF sign-in — neither
+-- of which a local stack can have (custom providers are dashboard-only).
+--
+-- `memberships_readable` is false and `orgs` is empty on purpose. That is what a
+-- sign-in looks like when the `read-memberships` scope was never granted, which
+-- is the DEFAULT state of a freshly configured provider — so the fixture
+-- exercises the badge earned by a personal namespace, which is the common case,
+-- rather than the org case that needs a scope somebody has to remember to add.
+insert into public.hf_identities (
+  user_id, hf_sub, username, orgs, memberships_readable
+) values (
+  '00000000-0000-0000-0000-0000000000a1',
+  'seed-not-a-real-hf-subject',
+  'jonathancoletti',
+  '{}',
+  false
+)
+on conflict (user_id) do nothing;
