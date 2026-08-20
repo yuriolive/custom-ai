@@ -14,8 +14,8 @@
  */
 
 import {
-  anthropicErrorEvent,
   AnthropicAdapterError,
+  anthropicErrorEvent,
   AnthropicStreamTranslator,
   createSseDecoder,
   formatSseEvent,
@@ -193,9 +193,10 @@ export function anthropicErrorResponse(err: unknown, requestId: string): Respons
     });
   }
 
-  const ge = err instanceof GatewayError
-    ? err
-    : new GatewayError("internal_error", "The server encountered an internal error. Please retry.");
+  const ge = err instanceof GatewayError ? err : new GatewayError(
+    "internal_error",
+    "The server encountered an internal error. Please retry.",
+  );
 
   const translated = translateGatewayEnvelope(ge.toEnvelope().error, ge.status);
   return new Response(JSON.stringify(translated.body), {

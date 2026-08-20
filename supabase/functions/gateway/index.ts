@@ -968,12 +968,18 @@ export function scanUpstreamStream(raw: string): ScannedStream {
     const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
     if (!choice) continue;
     const delta = choice.delta as
-      | { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; tool_calls?: unknown }
+      | {
+        content?: unknown;
+        reasoning_content?: unknown;
+        reasoning?: unknown;
+        tool_calls?: unknown;
+      }
       | undefined;
     if (typeof delta?.content === "string") out.content += delta.content;
     // Some servers spell it `reasoning`; both are the same billed output.
-    if (typeof delta?.reasoning_content === "string") out.reasoningContent += delta.reasoning_content;
-    else if (typeof delta?.reasoning === "string") out.reasoningContent += delta.reasoning;
+    if (typeof delta?.reasoning_content === "string") {
+      out.reasoningContent += delta.reasoning_content;
+    } else if (typeof delta?.reasoning === "string") out.reasoningContent += delta.reasoning;
     foldToolCallDeltas(delta?.tool_calls, out.toolCalls);
     if (typeof choice.finish_reason === "string") out.finishReason = choice.finish_reason;
     if (typeof choice.stop_reason === "string") out.stopReason = choice.stop_reason;

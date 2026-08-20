@@ -232,7 +232,11 @@ test("toAnthropicSse emits the full event sequence and forwards keepalives", asy
   const start = events.find((e) => e.name === "message_start")!;
   assert.equal(start.data.message.id, "msg_test");
   assert.equal(start.data.message.model, PLATFORM_MODEL);
-  assert.equal(start.data.message.usage.input_tokens, 9, "the hold estimate seeds message_start");
+  assert.equal(
+    start.data.message.usage.input_tokens,
+    9,
+    "the hold estimate seeds message_start",
+  );
 
   const delta = events.find((e) => e.name === "message_delta")!;
   assert.equal(delta.data.delta.stop_reason, "end_turn");
@@ -270,7 +274,9 @@ test("frames split across chunk boundaries are reassembled", async () => {
       const enc = new TextEncoder();
       // Split mid-JSON, which is what a real socket does.
       controller.enqueue(enc.encode('data: {"id":"c1","choices":[{"index":0,"delta":{"con'));
-      controller.enqueue(enc.encode('tent":"Hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+      controller.enqueue(
+        enc.encode('tent":"Hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),
+      );
       controller.close();
     },
   });
@@ -309,7 +315,9 @@ function modelRow(over: Partial<RawModelRow> = {}): RawModelRow {
 interface Harness {
   deps: GatewayDeps;
   rpcCalls: Array<{ name: string; args: Record<string, unknown> }>;
-  upstreamCalls: Array<{ url: string; init: RequestInit & { headers: Record<string, string> } }>;
+  upstreamCalls: Array<
+    { url: string; init: RequestInit & { headers: Record<string, string> } }
+  >;
 }
 
 const CATALOG = [
