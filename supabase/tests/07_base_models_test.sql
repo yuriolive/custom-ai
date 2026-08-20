@@ -82,10 +82,17 @@ select is(
 -- message about dimensions that names neither place.
 -- ════════════════════════════════════════════════════════════════════════════
 select is(public.embedding_dimension(), 384, 'embedding_dimension() is gte-small''s 384');
+-- The schema prefix is stripped before comparing, because format_type() omits it
+-- whenever the type is visible in the current search_path — and whether
+-- `extensions` is on that path is a property of the SERVER, not of this schema.
+-- It is on supabase/postgres and off a stock Postgres, so asserting the
+-- qualified string passes locally and fails in CI (it did, once). The dimension
+-- is what this test is about; where the type lives is 20260820000100's business.
 select is(
-  (select format_type(atttypid, atttypmod) from pg_attribute
+  (select regexp_replace(format_type(atttypid, atttypmod), '^.*\.', '')
+     from pg_attribute
     where attrelid = 'public.base_models'::regclass and attname = 'embedding'),
-  'extensions.vector(' || public.embedding_dimension() || ')',
+  'vector(' || public.embedding_dimension() || ')',
   'base_models.embedding is exactly embedding_dimension() wide');
 
 -- ════════════════════════════════════════════════════════════════════════════
