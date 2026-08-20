@@ -40,12 +40,39 @@ export const dynamic = "force-dynamic";
 /** Cold start can take ~100 s; give the whole turn generous headroom. */
 export const maxDuration = 300;
 
-const bodySchema = z
-  .object({
-    messages: z.array(z.unknown()),
-    model: z.string().min(1),
-  })
-  .strict();
+/**
+ * Tolerant of the transport's own envelope, intolerant of inference parameters.
+ *
+ * The AI SDK's `DefaultChatTransport` posts more than what the client asked it
+ * to: a conversation `id`, a `trigger`, a `messageId`. A `.strict()` schema
+ * rejects the whole request over those, which is what "Malformed chat request
+ * body" meant here — the surface could not send a single message.
+ *
+ * Passing them through is not the same as accepting anything: the parameters
+ * this route refuses to take (FR-CHAT-001) are refused BY NAME below, with
+ * their own code, so a client that starts sending them fails loudly instead of
+ * having them silently dropped.
+ */
+const bodySchema = z.looseObject({
+  messages: z.array(z.unknown()),
+  model: z.string().min(1),
+});
+
+/**
+ * Inference parameters, which this surface does not have and does not accept.
+ * The playground is where those live.
+ */
+const REJECTED_PARAMETERS = [
+  "temperature",
+  "top_p",
+  "topP",
+  "max_tokens",
+  "maxTokens",
+  "maxOutputTokens",
+  "system",
+  "systemPrompt",
+  "tools",
+] as const;
 
 /** OpenAI error envelope, byte-identical to the gateway's (CONTRACTS.md). */
 function errorResponse(
@@ -78,6 +105,16 @@ export async function POST(req: Request) {
     parsed = bodySchema.parse(await req.json());
   } catch {
     return errorResponse(400, "invalid_request_body", "Malformed chat request body.");
+  }
+
+  const offending = REJECTED_PARAMETERS.filter((key) => key in parsed);
+  if (offending.length > 0) {
+    return errorResponse(
+      400,
+      "parameters_not_supported",
+      `The chat does not take inference parameters (${offending.join(", ")}). ` +
+        "Use /v1/chat/completions through the gateway, or the playground.",
+    );
   }
 
   const modelId = normalizeModelId(parsed.model);

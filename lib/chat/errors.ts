@@ -72,6 +72,21 @@ export function parseGatewayErrorCode(body: string): string | null {
   }
 }
 
+/**
+ * An upstream message is only shown when it reads as a sentence.
+ *
+ * Transport failures arrive as prose worth showing ("socket hang up"); rejected
+ * requests arrive as the OpenAI envelope, verbatim. The second is noise to
+ * everyone who is not holding the API docs.
+ */
+function humanFallback(fallbackMessage: string | undefined): string {
+  const trimmed = fallbackMessage?.trim();
+  if (!trimmed || trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("<")) {
+    return "The gateway did not return a response.";
+  }
+  return trimmed;
+}
+
 const WALLET_ACTION: ChatErrorAction = { label: "Add funds", href: "/console/wallet" };
 const CATALOG_ACTION: ChatErrorAction = { label: "Browse models", href: "/" };
 
@@ -161,6 +176,29 @@ export function presentChatError(
         retryable: false,
       };
 
+    case "parameters_not_supported":
+    case "invalid_request_body":
+      return {
+        code,
+        title: "This chat could not send that",
+        description:
+          "The request was rejected before it reached a model, which is a bug on our side rather " +
+          "than anything you did. Reload the page and try again; nothing was charged.",
+        action: null,
+        retryable: false,
+      };
+
+    case "chat_session_unavailable":
+      return {
+        code,
+        title: "Could not start a chat session",
+        description:
+          "Your session credential could not be created. Try again in a moment — nothing was " +
+          "charged, and your conversation is untouched.",
+        action: null,
+        retryable: true,
+      };
+
     case "invalid_model_format":
       return {
         code,
@@ -176,12 +214,15 @@ export function presentChatError(
       return {
         code: code ?? "unknown",
         title: "The reply did not come through",
-        // Not "still in the composer": chat clears the box on send and puts the
-        // message in the transcript, so that sentence would be a lie the user
-        // can see on screen.
+        // Two rules here. Not "still in the composer": chat clears the box on
+        // send and puts the message in the transcript, so that sentence would
+        // be a lie the user can see on screen. And never echo a raw error
+        // envelope — an unrecognised code usually arrives WITH the JSON body as
+        // its message, and pasting `{"error":{"message":...}}` into a chat
+        // window is how a product tells someone it has given up on them.
         description:
-          (fallbackMessage?.trim() || "The gateway did not return a response.") +
-          " Your message is still in the conversation — send it again to retry.",
+          `${humanFallback(fallbackMessage)} Your message is still in the conversation — send it ` +
+          "again to retry.",
         action: null,
         retryable: true,
       };

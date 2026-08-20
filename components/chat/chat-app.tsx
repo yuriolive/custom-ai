@@ -1,13 +1,14 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { Alert, Button, Dropdown } from "@heroui/react";
+import { Alert, AlertDialog, Button, Dropdown } from "@heroui/react";
 import { DefaultChatTransport } from "ai";
 import type { Route } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
+import { EllipsisIcon, PlusIcon, TrashIcon } from "@/components/chat/icons";
 import { ModelFooterNote, ModelPicker } from "@/components/chat/model-picker";
 import { Transcript, messageText } from "@/components/chat/transcript";
 import { ColdStartNotice } from "@/components/cold-start-notice";
@@ -17,6 +18,7 @@ import {
   clearThreads,
   createThread,
   loadThreads,
+  removeThread,
   saveThreads,
   titleFromText,
   upsertThread,
@@ -96,6 +98,7 @@ export function ChatApp({
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [dismissedUnavailable, setDismissedUnavailable] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
   /**
    * Which model produced which assistant message.
@@ -115,9 +118,7 @@ export function ChatApp({
   );
   const selectedModel = modelId ? (modelsById.get(modelId) ?? null) : null;
 
-  const [transport] = useState(
-    () => new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" }),
-  );
+  const [transport] = useState(() => new DefaultChatTransport<ChatUIMessage>({ api: "/api/chat" }));
   const { messages, sendMessage, regenerate, status, stop, error, clearError, setMessages } =
     useChat<ChatUIMessage>({ transport });
 
@@ -150,9 +151,7 @@ export function ChatApp({
         // a list whose entries rename themselves as a conversation goes on is
         // impossible to navigate.
         title:
-          existing && existing.title !== "New chat"
-            ? existing.title
-            : titleFromText(firstUserText),
+          existing && existing.title !== "New chat" ? existing.title : titleFromText(firstUserText),
         updatedAt: Date.now(),
         messages: stored,
       };
@@ -202,11 +201,29 @@ export function ChatApp({
     [clearError, setMessages, stop],
   );
 
+  /**
+   * Deleting the thread you are reading also clears the transcript.
+   *
+   * Leaving the messages on screen after their conversation is gone would show
+   * something the user just erased, and the next settled turn would silently
+   * write it back under a new id.
+   */
+  const deleteThread = useCallback(
+    (id: string) => {
+      setThreads((current) => saveThreads(window.localStorage, removeThread(current, id)));
+      if (id === threadId) startNewChat();
+    },
+    [startNewChat, threadId],
+  );
+
   const deleteAll = useCallback(() => {
     clearThreads(window.localStorage);
     setThreads([]);
+    setConfirmDeleteAll(false);
     startNewChat();
   }, [startNewChat]);
+
+  const requestDeleteAll = useCallback(() => setConfirmDeleteAll(true), []);
 
   const submit = useCallback(() => {
     const text = input.trim();
@@ -341,10 +358,48 @@ export function ChatApp({
   );
 
   return (
-    <div className="flex h-[calc(100dvh-9rem)] min-h-[32rem] gap-8">
+    // The height is the app shell's, spelled out: `(app)/layout.tsx` is a
+    // min-h-dvh column whose <main> carries h-14 of nav above it and py-8 of
+    // padding around it — 3.5rem + 4rem. Subtracting it is what lets the
+    // transcript own the scrolling instead of the page.
+    <div className="flex h-[calc(100dvh-7.5rem-1px)] min-h-[32rem] gap-8">
+      {/* Deleting one conversation is a click, because it is one conversation
+          and the row it sits on says which. Deleting every conversation in the
+          browser is not recoverable and gets asked about. Mounted only while
+          open, like every dialog in this app that actually closes. */}
+      {confirmDeleteAll ? (
+        <AlertDialog isOpen onOpenChange={(open) => !open && setConfirmDeleteAll(false)}>
+          <AlertDialog.Backdrop>
+            <AlertDialog.Container size="md">
+              <AlertDialog.Dialog>
+                <AlertDialog.Header>
+                  <AlertDialog.Icon status="danger" />
+                  <AlertDialog.Heading>Delete every conversation?</AlertDialog.Heading>
+                </AlertDialog.Header>
+                <AlertDialog.Body>
+                  <p className="text-muted text-sm leading-6">
+                    All {threads.length} conversations in this browser are removed. They are stored
+                    nowhere else, so this cannot be undone.
+                  </p>
+                </AlertDialog.Body>
+                <AlertDialog.Footer>
+                  <Button variant="ghost" onPress={() => setConfirmDeleteAll(false)}>
+                    Cancel
+                  </Button>
+                  <Button variant="danger" onPress={deleteAll}>
+                    Delete all
+                  </Button>
+                </AlertDialog.Footer>
+              </AlertDialog.Dialog>
+            </AlertDialog.Container>
+          </AlertDialog.Backdrop>
+        </AlertDialog>
+      ) : null}
+
       <ThreadRail
         activeId={threadId}
-        onDeleteAll={deleteAll}
+        onDelete={deleteThread}
+        onDeleteAll={requestDeleteAll}
         onNewChat={startNewChat}
         onOpen={openThread}
         threads={threads}
@@ -357,7 +412,8 @@ export function ChatApp({
           <div className="flex items-center gap-2 lg:hidden">
             <ThreadMenu
               activeId={threadId}
-              onDeleteAll={deleteAll}
+              onDelete={deleteThread}
+              onDeleteAll={requestDeleteAll}
               onNewChat={startNewChat}
               onOpen={openThread}
               threads={threads}
@@ -408,19 +464,21 @@ export function ChatApp({
 }
 
 /**
- * Openers, as a compact row rather than four full-width slabs.
+ * Openers, as a 2x2 grid.
  *
- * They scroll sideways below `sm` instead of stacking: four stacked buttons
- * push the composer off a phone screen, which costs more than the fourth
- * suggestion is worth.
+ * Not a horizontal scroller: at this column width a row of four cards is always
+ * one-and-a-bit cards too wide, so it renders a permanent scrollbar and a card
+ * sliced down the middle — which reads as a layout bug rather than as an
+ * invitation to scroll. Two columns fit whole at every width this column takes,
+ * phone included.
  */
 function Suggestions({ onSeed }: Readonly<{ onSeed: (prompt: string) => void }>) {
   return (
-    <ul className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+    <ul className="grid grid-cols-2 gap-2">
       {SUGGESTIONS.map((suggestion) => (
-        <li key={suggestion.title} className="snap-start">
+        <li key={suggestion.title}>
           <button
-            className="border-border bg-surface hover:border-muted flex h-full w-56 flex-col gap-0.5 rounded-xl border px-3 py-2 text-left transition-colors"
+            className="border-border bg-surface hover:border-muted flex h-full w-full flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors"
             onClick={() => onSeed(suggestion.prompt)}
             type="button"
           >
@@ -435,6 +493,7 @@ function Suggestions({ onSeed }: Readonly<{ onSeed: (prompt: string) => void }>)
 
 type RailProps = {
   activeId: string;
+  onDelete: (id: string) => void;
   onDeleteAll: () => void;
   onNewChat: () => void;
   onOpen: (thread: ChatThread) => void;
@@ -444,6 +503,7 @@ type RailProps = {
 /** Desktop history rail. Hidden below `lg`, where `ThreadMenu` takes over. */
 function ThreadRail({
   activeId,
+  onDelete,
   onDeleteAll,
   onNewChat,
   onOpen,
@@ -451,37 +511,79 @@ function ThreadRail({
 }: Readonly<RailProps>) {
   return (
     <aside className="hidden w-56 shrink-0 flex-col gap-4 lg:flex">
-      <button
-        className="border-border hover:border-muted flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
-        onClick={onNewChat}
-        type="button"
-      >
+      {/* `w-full`: HeroUI's Button sizes to its content, so in a 224px rail it
+          rendered as a 109px stub floating at the top of the column. */}
+      <Button className="w-full justify-start" size="sm" variant="outline" onPress={onNewChat}>
+        <PlusIcon className="size-4" />
         New chat
-      </button>
+      </Button>
 
       <nav aria-label="Conversation history" className="flex min-h-0 flex-1 flex-col gap-1.5">
-        <span className="text-muted px-1 text-xs font-medium tracking-wide uppercase">
-          Conversations
-        </span>
+        {/* List-level actions belong ON the list header, next to what they act
+            on. "Delete all" used to sit at the bottom of the rail under a
+            privacy footnote, which is where a footnote goes and not where a
+            control that erases every conversation goes. */}
+        <div className="flex items-center justify-between gap-2 pr-1 pl-1">
+          <span className="text-muted text-xs font-medium tracking-wide uppercase">
+            Conversations
+          </span>
+
+          {threads.length > 0 ? (
+            <Dropdown>
+              <Dropdown.Trigger
+                aria-label="Conversation list actions"
+                className="text-muted hover:text-foreground rounded p-0.5 transition-colors"
+              >
+                <EllipsisIcon className="size-4" />
+              </Dropdown.Trigger>
+              <Dropdown.Popover placement="bottom end">
+                <Dropdown.Menu
+                  aria-label="Conversation list actions"
+                  onAction={() => onDeleteAll()}
+                >
+                  <Dropdown.Item id="delete-all">Delete all conversations</Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
+          ) : null}
+        </div>
 
         {threads.length === 0 ? (
           <p className="text-muted px-1 text-xs leading-5">
             Nothing here yet. Conversations you start are listed in this column.
           </p>
         ) : (
-          <ul className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
+          // No negative margin on this list: `-mx-1` made it 8px wider than the
+          // 224px rail and hung a horizontal scrollbar under it.
+          <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
             {threads.map((thread) => (
-              <li key={thread.id}>
+              <li
+                key={thread.id}
+                className={`group/row flex items-center rounded-md transition-colors ${
+                  thread.id === activeId ? "bg-surface" : "hover:bg-surface"
+                }`}
+              >
                 <button
-                  className={`w-full truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                    thread.id === activeId
-                      ? "bg-surface text-foreground"
-                      : "text-muted hover:bg-surface hover:text-foreground"
+                  className={`min-w-0 flex-1 truncate px-2 py-1.5 text-left text-sm ${
+                    thread.id === activeId ? "text-foreground" : "text-muted"
                   }`}
                   onClick={() => onOpen(thread)}
                   type="button"
                 >
                   {thread.title}
+                </button>
+
+                {/* Revealed on hover and on keyboard focus. Always-visible bins
+                    down the side of a list turn every row into a dare; a bin
+                    that only appears on hover and never on focus is unreachable
+                    without a mouse. */}
+                <button
+                  aria-label={`Delete “${thread.title}”`}
+                  className="text-muted hover:text-danger mr-1 shrink-0 rounded p-1 opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+                  onClick={() => onDelete(thread.id)}
+                  type="button"
+                >
+                  <TrashIcon className="size-3.5" />
                 </button>
               </li>
             ))}
@@ -489,20 +591,11 @@ function ThreadRail({
         )}
       </nav>
 
-      <div className="border-border flex flex-col gap-2 border-t pt-3">
-        <p className="text-muted text-xs leading-5">
-          Kept in this browser only. The platform stores no copy.
-        </p>
-        {threads.length > 0 ? (
-          <button
-            className="text-muted hover:text-foreground self-start text-xs underline-offset-2 transition-colors hover:underline"
-            onClick={onDeleteAll}
-            type="button"
-          >
-            Delete all conversations
-          </button>
-        ) : null}
-      </div>
+      {/* A footnote, and only a footnote. It explains where the list lives; it
+          is not a place to hang controls. */}
+      <p className="border-border text-muted border-t pt-3 text-xs leading-5">
+        Kept in this browser only. The platform stores no copy.
+      </p>
     </aside>
   );
 }
@@ -510,6 +603,7 @@ function ThreadRail({
 /** The same history, as a menu, for viewports too narrow for the rail. */
 function ThreadMenu({
   activeId,
+  onDelete,
   onDeleteAll,
   onNewChat,
   onOpen,
@@ -527,9 +621,14 @@ function ThreadMenu({
         <Dropdown.Menu
           aria-label="Conversations"
           onAction={(key) => {
-            if (key === "new") return onNewChat();
-            if (key === "clear") return onDeleteAll();
-            const thread = threads.find((t) => t.id === key);
+            const action = String(key);
+            if (action === "new") return onNewChat();
+            if (action === "clear") return onDeleteAll();
+            // A menu row cannot carry its own bin. Rather than double the list
+            // with a delete row per conversation, the touch user gets the one
+            // that matters: delete the conversation they are reading.
+            if (action === "delete-current") return onDelete(activeId);
+            const thread = threads.find((t) => t.id === action);
             if (thread) onOpen(thread);
           }}
         >
@@ -539,6 +638,9 @@ function ThreadMenu({
               {thread.id === activeId ? `• ${thread.title}` : thread.title}
             </Dropdown.Item>
           ))}
+          {threads.some((thread) => thread.id === activeId) ? (
+            <Dropdown.Item id="delete-current">Delete this chat</Dropdown.Item>
+          ) : null}
           {threads.length > 0 ? <Dropdown.Item id="clear">Delete all</Dropdown.Item> : null}
         </Dropdown.Menu>
       </Dropdown.Popover>

@@ -138,7 +138,7 @@ export function ModelPicker({
                     </span>
                   </div>
 
-                  <ul className="-mx-1 max-h-[min(26rem,60dvh)] overflow-y-auto px-1">
+                  <ul className="max-h-[min(26rem,60dvh)] overflow-y-auto">
                     {results.length === 0 ? (
                       <li className="text-muted px-2 py-6 text-center text-sm">
                         Nothing matches “{query.trim()}”.

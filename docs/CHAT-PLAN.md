@@ -351,10 +351,18 @@ the footer of a page that failed to load.
 `DialogTrigger`, which pairs [trigger, overlay] children; with no trigger child the root
 treats the backdrop as its trigger and never gets an overlay to unmount, so
 `isOpen={false}` does nothing and the dialog ignores Escape, an outside click and its own
-row presses alike. Measured, not assumed. The palette is mounted only while open, which
-is what the working dialogs in `model-dialogs.tsx` already do. **`CreateKeyDialog` in
-`components/console/key-dialogs.tsx` uses the always-mounted shape and is likely to have
-the same defect** — reported, not fixed here.
+row presses alike. Measured in a browser, not assumed. Every dialog here is therefore
+mounted only while open, which is what the working dialogs in `model-dialogs.tsx` already
+do. **`CreateKeyDialog` in `components/console/key-dialogs.tsx` and the Add-funds dialog
+in `top-up-dialog.tsx` both use the always-mounted shape and are likely to have the same
+defect** — reported, not fixed here.
+
+**The rail's list-level actions live on the list header.** "Delete all" spent a version
+at the bottom of the rail, under the privacy footnote, styled as a link. That is where a
+footnote goes, not where the control that erases every conversation goes. It is now in an
+overflow menu on the "Conversations" header — adjacent to what it acts on — and behind a
+confirm dialog, while deleting a single conversation is a bin on its own row, revealed on
+hover and on keyboard focus.
 
 ### Verified
 

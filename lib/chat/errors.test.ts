@@ -98,6 +98,43 @@ describe("presentChatError", () => {
     assert.match(presented.description, /gateway did not return a response/);
   });
 
+  it("never pastes a raw error envelope at the user", () => {
+    // An unrecognised code arrives WITH the JSON body as its message. Echoing
+    // `{"error":{"message":…}}` into a chat window is how a product tells
+    // someone it has given up on them.
+    const envelope =
+      '{"error":{"message":"Malformed chat request body.","type":"invalid_request_error","param":null,"code":"invalid_request_body"}}';
+    const presented = presentChatError("something_new", envelope);
+    assert.equal(presented.description.includes("{"), false);
+    assert.match(presented.description, /gateway did not return a response/);
+  });
+
+  it("does not echo an HTML error page either", () => {
+    const presented = presentChatError(null, "<html><body>502 Bad Gateway</body></html>");
+    assert.equal(presented.description.includes("<"), false);
+  });
+
+  it("says the message survived in the conversation, not in the composer", () => {
+    // Chat clears the box on send, so "still in the composer" would be a lie
+    // the user can see on screen.
+    const presented = presentChatError(null, "socket hang up");
+    assert.equal(/composer/i.test(presented.description), false);
+    assert.match(presented.description, /still in the conversation/);
+  });
+
+  it("has a sentence for the codes this route raises itself", () => {
+    for (const code of [
+      "invalid_request_body",
+      "parameters_not_supported",
+      "chat_session_unavailable",
+    ]) {
+      const presented = presentChatError(code);
+      assert.equal(presented.code, code);
+      assert.ok(presented.title.length > 0);
+      assert.equal(presented.description.includes("{"), false);
+    }
+  });
+
   it("keeps the code it was handed, for the UI to branch on", () => {
     assert.equal(presentChatError("model_not_found").code, "model_not_found");
     assert.equal(presentChatError(null).code, "unknown");

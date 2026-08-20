@@ -95,6 +95,12 @@ export function upsertThread(threads: ChatThread[], thread: ChatThread): ChatThr
   return sortThreads([thread, ...without]);
 }
 
+/** Drop one thread. Returns the array unchanged when nothing matched. */
+export function removeThread(threads: ChatThread[], id: string): ChatThread[] {
+  const next = threads.filter((thread) => thread.id !== id);
+  return next.length === threads.length ? threads : sortThreads(next);
+}
+
 /**
  * Trim to the budget: newest `MAX_THREADS`, and the tail of each thread's
  * messages.

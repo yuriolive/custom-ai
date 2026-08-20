@@ -20,6 +20,7 @@ import {
   MAX_MESSAGES_PER_THREAD,
   MAX_THREADS,
   pruneThreads,
+  removeThread,
   saveThreads,
   sortThreads,
   titleFromText,
@@ -104,6 +105,25 @@ describe("sortThreads / upsertThread", () => {
     assert.equal(after.length, 2);
     assert.equal(after[0]?.id, "a");
     assert.equal(after[0]?.title, "renamed");
+  });
+});
+
+describe("removeThread", () => {
+  it("drops the named thread and keeps the rest newest-first", () => {
+    const after = removeThread([thread("a", 1), thread("b", 3), thread("c", 2)], "b");
+    assert.deepEqual(
+      after.map((t) => t.id),
+      ["c", "a"],
+    );
+  });
+
+  it("returns the array untouched when the id is not there", () => {
+    const before = [thread("a", 1)];
+    assert.equal(removeThread(before, "nope"), before);
+  });
+
+  it("can empty the list", () => {
+    assert.deepEqual(removeThread([thread("a", 1)], "a"), []);
   });
 });
 
