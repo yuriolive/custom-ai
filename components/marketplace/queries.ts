@@ -35,14 +35,18 @@ import { CONTEXT_STEPS, priceRungs, qualityRungs, qualityTier, SPEED_STEPS } fro
 import { handleFragment, toPrefixTsQuery } from "./search-query.ts";
 import { PAGE_SIZE } from "./search-params";
 import type {
+  BaseModelInfo,
   CatalogCounts,
   CatalogGroup,
   CatalogGroupPage,
   CatalogModel,
   CatalogQuery,
+  CommercialHosting,
   ModelCategory,
+  ModelOffer,
+  ModelPage,
 } from "./types";
-import { MODEL_CATEGORIES } from "./types";
+import { COMMERCIAL_HOSTING, MODEL_CATEGORIES } from "./types";
 
 /**
  * Allow-listed projection. `creator_public` is a SECURITY DEFINER view whose
@@ -509,4 +513,281 @@ export async function fetchCatalogGroups(
     counts: mapCounts(result),
     catalogIsEmpty,
   };
+}
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * THE MODEL PAGE (#27)
+ *
+ * `fetchModelByHandleAndSlug` above returns ONE LISTING. This returns the MODEL
+ * behind that listing's URL: the listing itself, the base model it serves, that
+ * model's parent, and every visible listing of the same model as an offer row.
+ *
+ * The two rules at the head of this file apply verbatim, and both are why this
+ * is an RPC:
+ *
+ *  1. **All filtering is server-side.** The offer set is "every visible listing
+ *      of this base model", and the visibility predicate that defines "visible"
+ *      is not expressible in a PostgREST filter over an embedded relation. Doing
+ *      it in two round trips would also break the comparison: the offer table's
+ *      rows are only comparable inside one snapshot.
+ *  2. **The projection is the security boundary.** The RPC's return is one
+ *      `jsonb_build_object` with an explicit key list, and nothing
+ *      hardware-shaped is on it. `mapModelPage` below re-narrows it, so a key
+ *      added to the RPC does not reach the RSC payload until someone adds it
+ *      here too.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+
+/** The RPC's `listing` object, exactly as the migration builds it. */
+type ModelPageListingRow = {
+  id: string;
+  creator_handle: string;
+  creator_display_name: string | null;
+  slug: string;
+  display_name: string;
+  description: string | null;
+  measured_tokens_per_second: number | null;
+  context_length: number;
+  context_verified: boolean;
+  quant_tag: string | null;
+  price_prompt_micro: number;
+  price_completion_micro: number;
+  total_requests: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  p50_ttft_ms: number | null;
+  p95_ttft_ms: number | null;
+  created_at: string;
+  ready_at: string | null;
+};
+
+/** The RPC's `offers[]` element. */
+type OfferRow = {
+  listing_id: string;
+  creator_handle: string;
+  creator_display_name: string | null;
+  slug: string;
+  display_name: string;
+  quant_tag: string | null;
+  context_length: number;
+  context_verified: boolean;
+  measured_tokens_per_second: number | null;
+  p50_ttft_ms: number | null;
+  price_prompt_micro: number;
+  price_completion_micro: number;
+  total_requests: number;
+  total_completion_tokens: number;
+  created_at: string;
+  ready_at: string | null;
+};
+
+type BaseModelRow = {
+  id: string;
+  slug: string;
+  display_name: string;
+  summary: string | null;
+  family: string | null;
+  parameter_count: number | null;
+  use_cases: string[] | null;
+  parent_id: string | null;
+  license_id: string | null;
+  license_name: string | null;
+  license_url: string | null;
+  license_version: string | null;
+  commercial_hosting: string;
+};
+
+type ParentRow = {
+  id: string;
+  slug: string;
+  display_name: string;
+  family: string | null;
+  parameter_count: number | null;
+  listing_count: number;
+};
+
+type ModelPageResult = {
+  listing: ModelPageListingRow;
+  model: BaseModelRow | null;
+  parent: ParentRow | null;
+  offers: OfferRow[] | null;
+  offer_total: number;
+};
+
+/**
+ * Anything outside the enum becomes `unknown`.
+ *
+ * The database enum already constrains it, so this only fires if the two lists
+ * drift — and `unknown` is the right side to fail towards: it is the value whose
+ * copy says the platform has not checked, which is exactly true of a posture we
+ * failed to recognise. Falling back to `allowed` would print a permission nobody
+ * granted.
+ */
+function toCommercialHosting(raw: string | null | undefined): CommercialHosting {
+  return (COMMERCIAL_HOSTING as readonly string[]).includes(raw ?? "")
+    ? (raw as CommercialHosting)
+    : "unknown";
+}
+
+function toOffer(row: OfferRow): ModelOffer {
+  return {
+    listingId: row.listing_id,
+    creatorHandle: row.creator_handle,
+    creatorDisplayName: row.creator_display_name,
+    slug: row.slug,
+    // The platform model id, built from THIS LISTING — the same construction as
+    // `toCatalogModel` and `mapGroup`, and never from the base model's slug,
+    // which looks like an id and resolves to nothing (see `ModelOffer.modelId`).
+    modelId: `${row.creator_handle}/${row.slug}`,
+    displayName: row.display_name,
+    quantTag: row.quant_tag,
+    qualityTier: qualityTier(row.quant_tag),
+    contextLength: row.context_length,
+    contextVerified: row.context_verified,
+    measuredTokensPerSecond: row.measured_tokens_per_second,
+    p50TtftMs: row.p50_ttft_ms,
+    pricePromptMicroPerMtoken: row.price_prompt_micro,
+    priceCompletionMicroPerMtoken: row.price_completion_micro,
+    totalRequests: row.total_requests,
+    totalCompletionTokens: row.total_completion_tokens,
+    createdAt: row.created_at,
+    readyAt: row.ready_at,
+  };
+}
+
+/**
+ * The RPC envelope → `ModelPage`, or null.
+ *
+ * Exported so `model-page.test.ts` can assert the narrowing without a database:
+ * the mapper is where a key the RPC grew would leak into the RSC payload, and
+ * where the model id could silently become the base model's slug.
+ */
+export function mapModelPage(result: ModelPageResult | null): ModelPage | null {
+  // A missing handle means no addressable `creator/slug` id, which is the same
+  // reason the catalog drops such a row rather than linking to a 404. The RPC's
+  // inner join on `creator_public` already guarantees it; this is the
+  // type-level echo.
+  if (!result?.listing?.creator_handle || !result.listing.slug) return null;
+
+  const row = result.listing;
+  const listing: CatalogModel = {
+    id: row.id,
+    creatorHandle: row.creator_handle,
+    creatorDisplayName: row.creator_display_name,
+    slug: row.slug,
+    modelId: `${row.creator_handle}/${row.slug}`,
+    displayName: row.display_name,
+    description: row.description,
+    measuredTokensPerSecond: row.measured_tokens_per_second,
+    contextLength: row.context_length,
+    contextVerified: row.context_verified,
+    quantTag: row.quant_tag,
+    qualityTier: qualityTier(row.quant_tag),
+    pricePromptMicroPerMtoken: row.price_prompt_micro,
+    priceCompletionMicroPerMtoken: row.price_completion_micro,
+    totalRequests: row.total_requests,
+    totalPromptTokens: row.total_prompt_tokens,
+    totalCompletionTokens: row.total_completion_tokens,
+    p50TtftMs: row.p50_ttft_ms,
+    p95TtftMs: row.p95_ttft_ms,
+    createdAt: row.created_at,
+    readyAt: row.ready_at,
+  };
+
+  const base = result.model;
+  const model: BaseModelInfo | null = base
+    ? {
+        id: base.id,
+        slug: base.slug,
+        displayName: base.display_name,
+        summary: base.summary,
+        family: base.family,
+        parameterCount: base.parameter_count,
+        categories: toCategories(base.use_cases),
+        parentId: base.parent_id,
+        licenseId: base.license_id,
+        licenseName: base.license_name,
+        licenseUrl: base.license_url,
+        licenseVersion: base.license_version,
+        commercialHosting: toCommercialHosting(base.commercial_hosting),
+      }
+    : null;
+
+  const offers = (result.offers ?? []).map(toOffer);
+
+  return {
+    listing,
+    model,
+    // Only read when the model claims a parent, so a stray row cannot invent a
+    // lineage — `lineageOf` enforces the same order and this is belt and braces.
+    parent: result.parent
+      ? {
+          id: result.parent.id,
+          slug: result.parent.slug,
+          displayName: result.parent.display_name,
+          family: result.parent.family,
+          parameterCount: result.parent.parameter_count,
+          listingCount: result.parent.listing_count,
+        }
+      : null,
+    offers,
+    // `offers.length` is the floor, not the answer: the two differ above the
+    // RPC's cap, and the page says so when they do. A `Math.max` rather than a
+    // bare read, because a total below the rows returned would be a count that
+    // contradicts the table under it.
+    offerTotal: Math.max(result.offer_total ?? 0, offers.length),
+  };
+}
+
+/**
+ * How many offer rows the page asks for.
+ *
+ * Matches the RPC's own default and is passed explicitly anyway, so the number
+ * the UI reasons about ("showing 100 of 137") is a number in this file rather
+ * than a default in SQL. There is no offer pagination: at a catalog size where a
+ * model with more than a hundred listings does not exist, a cap that never fires
+ * plus an honest count of what it would have dropped is the right trade.
+ */
+export const MODEL_PAGE_OFFER_LIMIT = 100;
+
+/**
+ * The whole model page in one round trip, or `null` for a 404.
+ *
+ * `null` covers "does not exist", "not public", "not ready" and "creator
+ * suspended" identically, exactly as `fetchModelByHandleAndSlug` does and for
+ * the same reason: telling an anonymous visitor which of those it was would leak
+ * the existence of private models (CONTRACTS.md §Gateway wire contract).
+ *
+ * An RPC error is a 404 too, and that is a deliberate difference from the
+ * catalog, which degrades to an empty grid. A model page cannot degrade: with no
+ * listing there is nothing to render, and a half-page showing a title over an
+ * empty offer table would read as "nobody serves this model" — a false statement
+ * about a model somebody does serve.
+ */
+export async function fetchModelPage(
+  supabase: SupabaseClient,
+  creatorHandle: string,
+  slug: string,
+): Promise<ModelPage | null> {
+  const { data, error } = await supabase.rpc("model_page", {
+    p_creator: creatorHandle,
+    p_slug: slug,
+    p_offer_limit: MODEL_PAGE_OFFER_LIMIT,
+  });
+
+  if (error) {
+    // Every field logged, for the reason `fetchCatalogGroups` gives: a TRANSPORT
+    // failure arrives as a PostgrestError with an undefined `message`, so
+    // `{ message }` alone prints a bare `{}`.
+    console.error("model page query failed", {
+      message: error.message ?? "(none — likely a transport failure)",
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
+    return null;
+  }
+
+  return mapModelPage(data as ModelPageResult | null);
 }

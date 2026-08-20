@@ -9,9 +9,9 @@ import {
   qualityLabel,
 } from "@/components/marketplace/format";
 import { ModelDetail } from "@/components/marketplace/model-detail";
-import { fetchModelByHandleAndSlug } from "@/components/marketplace/queries";
+import { fetchModelPage } from "@/components/marketplace/queries";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
-import type { CatalogModel } from "@/components/marketplace/types";
+import type { ModelPage } from "@/components/marketplace/types";
 import { JsonLdScript } from "@/components/seo/json-ld-script";
 import { buildModelApplication, buildModelBreadcrumbs } from "@/lib/seo/json-ld";
 import { pageOpenGraph } from "@/lib/seo/open-graph";
@@ -29,6 +29,13 @@ import { createClient } from "@/lib/supabase/server";
  *
  * A Server Component, so the metadata below is real HTML in the first response
  * rather than something a crawler or a Slack unfurl has to run JavaScript to see.
+ *
+ * SINCE #27 THE PAGE IS A MODEL, not a deployment: `fetchModelPage` returns the
+ * base model behind this listing, its lineage, and every visible listing of the
+ * same model as an offer row. The URL is still the LISTING's addressable id, and
+ * deliberately so — it is what keeps the string a developer shares and the string
+ * they pass as `model` identical (CONTRACTS.md, top) — so the metadata below
+ * still describes this listing's numbers and this listing's price.
  */
 
 type Params = { creator: string; slug: string };
@@ -54,26 +61,31 @@ async function readParams(params: Promise<Params>): Promise<Params> {
  * the `params` promise, whose identity is not guaranteed to be shared between the
  * two calls — without that, the page would issue the same query twice.
  */
-const getModel = cache(async (creator: string, slug: string): Promise<CatalogModel | null> => {
+const getModel = cache(async (creator: string, slug: string): Promise<ModelPage | null> => {
   const supabase = await createClient();
-  return fetchModelByHandleAndSlug(supabase, creator, slug);
+  return fetchModelPage(supabase, creator, slug);
 });
 
-async function loadModel(params: Promise<Params>): Promise<CatalogModel | null> {
+async function loadModel(params: Promise<Params>): Promise<ModelPage | null> {
   const { creator, slug } = await readParams(params);
   return getModel(creator, slug);
 }
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { creator, slug } = await readParams(params);
-  const model = await loadModel(params);
+  const page = await loadModel(params);
 
-  if (!model) {
+  if (!page) {
     return {
       title: `${creator}/${slug} — not found`,
       robots: { index: false, follow: false },
     };
   }
+
+  // The LISTING, not the model: the title has to carry the string someone
+  // searches for and then pastes as `model`, and a model display name is
+  // neither. Everything in this function is `page.listing`'s for that reason.
+  const model = page.listing;
 
   // "API" AND "PRICING" ARE IN THE TITLE ON PURPOSE, and they are the whole
   // reason this line is not just the model id and its numbers. The query a
@@ -116,14 +128,14 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   };
 }
 
-export default async function ModelPage({ params }: { params: Promise<Params> }) {
-  const model = await loadModel(params);
+export default async function ModelDetailPage({ params }: { params: Promise<Params> }) {
+  const page = await loadModel(params);
 
   // One 404 for "no such model", "private", "not ready" and "creator
   // suspended". Distinguishing them would tell an anonymous visitor that a
   // private model exists — the same reason the gateway answers 404 and not 403
   // (CONTRACTS.md §Gateway wire contract).
-  if (!model) notFound();
+  if (!page) notFound();
 
   return (
     <>
@@ -131,10 +143,13 @@ export default async function ModelPage({ params }: { params: Promise<Params> })
           purchasable thing. Rendered here rather than in `ModelDetail` because
           that component is client-side (HeroUI v3), and JSON-LD has to be in the
           HTML a crawler receives. */}
-      <JsonLdScript node={buildModelApplication(model)} />
-      <JsonLdScript node={buildModelBreadcrumbs(model)} />
+      {/* Built from the LISTING, which is the thing with a price. A model-level
+          `AggregateOffer` over `page.offers` would describe something that is not
+          purchasable at any single id, and the id is what the markup is for. */}
+      <JsonLdScript node={buildModelApplication(page.listing)} />
+      <JsonLdScript node={buildModelBreadcrumbs(page.listing)} />
 
-      <ModelDetail baseUrl={gatewayBaseUrl(SUPABASE_URL)} model={model} />
+      <ModelDetail baseUrl={gatewayBaseUrl(SUPABASE_URL)} page={page} />
     </>
   );
 }
