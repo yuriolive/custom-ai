@@ -285,6 +285,17 @@ export type DeployRequest = {
    * there rather than trusted over the repo's own metadata.
    */
   baseModelChoice?: BaseModelChoice;
+  /**
+   * The licence text the creator was shown and accepted, identified the way
+   * `base_models` identifies it: `license_version` where the card declares one,
+   * the licence id otherwise (#29).
+   *
+   * Absent means "not accepted", which is the only safe reading of a missing
+   * field. It is CHECKED rather than trusted — the pipeline publishes only if it
+   * names the licence actually in force for the resolved weights — so a client
+   * that invents one gets a private listing and a sentence explaining why.
+   */
+  licenseAckVersion?: string;
 };
 
 export type ModelStatus =
@@ -324,6 +335,18 @@ export type MyModelRow = {
   provisioningError: string | null;
   createdAt: string;
   readyAt: string | null;
+  /** The governing verdict for the weights this listing serves (#29). */
+  licenseHosting: "allowed" | "conditional" | "prohibited" | "unknown";
+  /** The licence text in force, which an acknowledgement has to name. */
+  licenseTermsVersion: string | null;
+  /**
+   * Why this listing cannot be public, or null if it can. Computed from the
+   * same predicate as `custom_models_public_needs_license`, so the page can say
+   * a sentence instead of showing the creator a constraint violation.
+   */
+  licenseHold: { message: string; hint: string } | null;
+  /** Sitting in the operator review queue: the creator asked and we have not answered. */
+  licenseAwaitingReview: boolean;
 };
 
 /** The provisioning stepper's stages, in order (FR-STU-007). */

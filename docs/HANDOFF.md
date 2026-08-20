@@ -13,9 +13,20 @@ State at the end of the first build session. Read this first tomorrow.
 
 Billing checked against real rows: `ceil(53×0.5)+ceil(42×1.5) = 90` micro-USD, platform `18`, creator `72` — exact. One `wallet_ledger` row per transaction, `v_balance_drift` returns zero rows, and a client that hung up mid-stream was still billed its full 400 tokens.
 
-**Tests:** 390 node across 6 test groups (389 pass, 1 skipped) · 289 pgTAP · 48 Python.
+**Tests:** 400 node across 6 test groups (399 pass, 1 skipped) · 372 pgTAP · 48 Python.
 CI runs all of them. Node re-measured 2026-08-20 (it had drifted from 336, then gained the
-base-model identity, licence and model-card suites of #25); Python 2026-08-19. The pgTAP figure is the sum of the `plan()` declarations in `supabase/tests/`.
+base-model identity, licence and model-card suites of #25, then the publish gate of #29);
+Python 2026-08-19.
+
+**pgTAP no longer needs Docker to run**, which is worth knowing before the next schema change
+takes the figure on trust again. The suite was executed for #29 against a Postgres 16 built
+from the distro packages, with pgTAP and pgvector compiled from source and a ~40-line
+`bootstrap.sql` standing in for what Supabase supplies (the `anon`/`authenticated`/
+`service_role` roles, an `auth.users` table, `auth.uid()`); `supabase_vault`, `pg_cron` and the
+`supabase_realtime` publication are already optional in the migrations and warn rather than
+fail. `05_concurrency_test.sql` runs too, unchanged, once the database is named `postgres` and
+`db` resolves to the host — that is the connection string its dblink sessions use. All 372
+assertions pass there, so the figure above is measured and not summed.
 
 ## Branches
 

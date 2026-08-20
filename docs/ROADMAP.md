@@ -148,6 +148,7 @@ tier (~149 tok/s predicted on H100) **and** always-warm. That combination is a p
 | **Supabase Branching** | Removes production service-role key from preview environments. Threshold: the first real user. |
 | **One-time `prettier` + `deno fmt` pass** | Both `format:check` steps are advisory; the repo has never been formatted. Do it as its own commit so it buries nothing. |
 | **`active_weights_bytes` for MoE** | Correct for this dense model; needs the tensor-info section for MoE, which is outside the header range window. |
+| **Licence review queue is unstaffed** | `public.license_review_queue` (#29) collects listings whose weights have no established terms and whose creator asked to publish. Nothing reads it: the operator page is #31, and no review window has been committed to. A queue nobody reads is a rejection with extra steps, and the creator's listing is private in the meantime. Two questions above it are counsel's, not engineering's: whether `unknown` should block the DEPLOY rather than only the listing, and whether hosted inference is "distribution" under the Llama and Gemma licences — which decides whether the notice belongs in the API response metadata as well as on the model page. |
 
 ---
 

@@ -126,6 +126,16 @@ export function MyModelsTable({
       setPending("visibility");
       setPageError(null);
 
+      // The licence gate (#29) is a CHECK, so PATCHing this anyway would come
+      // back as the text of a constraint violation. The same predicate is
+      // already on the row, so the answer is available before the round trip —
+      // and the reason with it.
+      if (model.visibility === "private" && model.licenseHold) {
+        setPending(null);
+        setPageError(`${model.licenseHold.message} ${model.licenseHold.hint}`);
+        return;
+      }
+
       const { error } = await supabase
         .from("custom_models")
         .update({ visibility: model.visibility === "public" ? "private" : "public" })
@@ -133,7 +143,13 @@ export function MyModelsTable({
 
       setPending(null);
       if (error) {
-        setPageError(error.message);
+        // A licence classified between this page loading and the press: rare,
+        // and the constraint name is not something to show anybody.
+        setPageError(
+          error.message.includes("custom_models_public_needs_license")
+            ? "This model's licence no longer permits a public listing. Reload to see its current terms."
+            : error.message,
+        );
         return;
       }
       await reload();
@@ -239,6 +255,17 @@ export function MyModelsTable({
                         {model.remediationHint && model.status !== "ready" ? (
                           <span className="text-muted line-clamp-2 max-w-md text-xs">
                             {model.remediationHint}
+                          </span>
+                        ) : null}
+                        {/* #29: a listing the licence gate holds back is working
+                            and callable, and the creator asked for a public one.
+                            The reason belongs on the row, next to the word
+                            "private" that is the only other evidence of it. */}
+                        {model.visibility === "private" && model.licenseHold ? (
+                          <span className="text-muted max-w-md text-xs">
+                            {model.licenseAwaitingReview
+                              ? "Not listed: queued for licence review."
+                              : `Not listed: ${model.licenseHold.message}`}
                           </span>
                         ) : null}
                       </div>

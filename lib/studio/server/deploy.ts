@@ -18,13 +18,22 @@ import "server-only";
  * the reason: the Studio preview and the deploy path must call one solver, and
  * a placement accepted from a client would be a creator-supplied throughput
  * claim wearing the platform's badge. The preview's numbers are a preview.
+ *
+ * VISIBILITY IS NOT AN INPUT EITHER, since #29. The row is born `private` and
+ * `isPublic` is a REQUEST; the licence gate grants it in the same statement that
+ * writes `ready`, or holds it and says which of §5.1's four cases the listing is
+ * in. A held listing is a working deployment that is not in the catalog — never
+ * a failed one, because "we cannot establish what these weights permit" is not
+ * something the creator did wrong.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { CommercialHosting } from "@nexus/hf-probe";
 import { resolveToolSupport } from "@nexus/hf-probe";
 import { resolveBaseModel } from "./base-model";
 
+import { evaluateLicenseGate, type LicenseHold } from "../license";
 import { toPlacement } from "../placement";
 import type { DeployRequest, Placement, ProbeSuccess, StudioVariant } from "../types";
 import { probeForStudio, redact } from "./probe";
@@ -38,8 +47,36 @@ import { buildUpstreamRef, readUpstreamConfig, smokeTest } from "./upstream";
  */
 export type DeployStage = "validating" | "provisioning" | "smoke_testing";
 
+/**
+ * What the licence gate did with this listing (#29, §5.1).
+ *
+ * Reported on SUCCESS, not as a failure: a listing the gate holds back is a
+ * working, callable, billed deployment — it is simply not in the catalog. The
+ * creator asked for two things and got one, and this is the half they did not
+ * get, in the shape the form renders.
+ */
+export interface LicenseGateOutcome {
+  hosting: CommercialHosting;
+  /** The licence text in force, as `base_models` identifies it. */
+  termsVersion: string | null;
+  published: boolean;
+  /** Null when nothing was held: the creator either got public or never asked. */
+  hold: LicenseHold | null;
+  message: string | null;
+  hint: string | null;
+  /** True while the listing sits in the operator review queue. */
+  awaitingReview: boolean;
+}
+
 export type DeployOutcome =
-  | { ok: true; modelId: string; slug: string; measuredTokensPerSecond: number }
+  | {
+      ok: true;
+      modelId: string;
+      slug: string;
+      measuredTokensPerSecond: number;
+      visibility: "public" | "private";
+      license: LicenseGateOutcome;
+    }
   | {
       ok: false;
       code: string;
@@ -333,10 +370,25 @@ export async function runDeployment(
       // listing is its own card until somebody resolves it.
       base_model_id: baseModel.baseModelId,
       base_model_match: baseModel.match,
-      visibility: request.isPublic ? "public" : "private",
+      // PRIVATE AT BIRTH, whatever was asked for (#29). Two reasons, and the
+      // second is the load-bearing one:
+      //
+      //   1. Nothing should be in the catalog while it is still validating.
+      //   2. Whether it may be public at all is not knowable until the row
+      //      exists: `license_hosting` is written by a trigger from the base
+      //      model resolved above, so the verdict is read BACK off the insert
+      //      rather than computed a second time here. Inserting `public`
+      //      optimistically would fail the whole deployment on a constraint
+      //      violation for something that is not an error — a listing whose
+      //      licence needs a human is still a working listing.
+      visibility: "private",
+      // The request the gate may have to hold. `license_review_queue` is
+      // exactly this column plus an unknown verdict, which is what keeps the
+      // queue to creators who are actually waiting on us.
+      license_public_requested_at: request.isPublic ? new Date().toISOString() : null,
       status: "validating",
     })
-    .select("id")
+    .select("id, license_hosting, license_terms_version")
     .single();
 
   if (insertError || !inserted) {
@@ -360,6 +412,18 @@ export async function runDeployment(
   }
 
   const modelId = inserted.id as string;
+
+  // The verdict, as the DATABASE computed it — the strictest reading over the
+  // resolved base model and its ancestors, which no amount of reading the
+  // repository's own card would tell us. `license_governing` is the only
+  // definition of it and this is the same value the CHECK will be applied to.
+  const licenseGate = evaluateLicenseGate({
+    hosting: (inserted.license_hosting ?? "unknown") as CommercialHosting,
+    termsVersion: (inserted.license_terms_version ?? null) as string | null,
+    wantsPublic: request.isPublic,
+    acknowledgedVersion: request.licenseAckVersion ?? null,
+  });
+
   // Where an unexpected throw happened, for the stepper's marker.
   let stage: DeployStage = "validating";
 
@@ -451,7 +515,28 @@ export async function runDeployment(
     const measured = Math.max(1, Math.round(smoke.tokensPerSecond));
     const missedTarget = measured < request.targetTokensPerSecond * 0.9;
 
+    // Publication happens HERE and nowhere earlier: in the same statement that
+    // makes the model callable, so a listing is never in the catalog without a
+    // measured speed, and never public without the acknowledgement the CHECK
+    // will look for on the same row version.
+    const publishPatch = licenseGate.publish
+      ? {
+          visibility: "public",
+          license_public_requested_at: null,
+          ...(licenseGate.ackVersion
+            ? {
+                license_ack_at: new Date().toISOString(),
+                // The version the PLATFORM established, never the string the
+                // client sent — `evaluateLicenseGate` only returns one when the
+                // two already agree.
+                license_ack_version: licenseGate.ackVersion,
+              }
+            : {}),
+        }
+      : {};
+
     await setStatus(admin, modelId, {
+      ...publishPatch,
       status: "ready",
       measured_tokens_per_second: measured,
       ready_at: new Date().toISOString(),
@@ -466,7 +551,24 @@ export async function runDeployment(
         : null,
     });
 
-    return { ok: true, modelId, slug, measuredTokensPerSecond: measured };
+    return {
+      ok: true,
+      modelId,
+      slug,
+      measuredTokensPerSecond: measured,
+      visibility: licenseGate.publish ? "public" : "private",
+      license: {
+        hosting: (inserted.license_hosting ?? "unknown") as CommercialHosting,
+        termsVersion: (inserted.license_terms_version ?? null) as string | null,
+        published: licenseGate.publish,
+        hold: licenseGate.hold,
+        message: licenseGate.message,
+        hint: licenseGate.hint,
+        // The queue holds requests the OPERATOR can resolve. A conditional
+        // licence waiting on the creator's acknowledgement is not one of them.
+        awaitingReview: licenseGate.hold === "terms_unknown",
+      },
+    };
   } catch (cause) {
     return await failModel(
       admin,

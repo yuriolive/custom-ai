@@ -65,12 +65,16 @@ select ok(exists (select 1 from pg_class where relname = 'base_models_use_cases_
 -- facet untestable locally, so the fixture link is an assertion, not a nicety.
 select isnt((select base_model_id from public.custom_models where id = :'model'::uuid),
             null, 'the seeded listing points at a base model');
+-- The seeded verdict moved from `unknown` to `allowed` when the licence gate
+-- landed (#29): `unknown` may not be `public`, and MVP-0's acceptance fixture
+-- has to be callable by somebody other than its creator. seed.sql says at
+-- length why that is an operator decision rather than an invented licence id.
 select is(
   (select b.commercial_hosting::text from public.base_models b
      join public.custom_models m on m.base_model_id = b.id
     where m.id = :'model'::uuid),
-  'unknown',
-  'and its licence is honestly `unknown` — the value that must never auto-publish');
+  'allowed',
+  'and the fixture establishes its terms, because the gate will not publish it otherwise');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 2. The dimension is ONE constant
@@ -201,9 +205,13 @@ select is((select parent_id from public.base_models
             where id = '00000000-0000-0000-0000-0000000000f2'),
           null, 'and its parent_id is nulled, not dangling');
 
--- Put the parent back for the visibility section below.
-insert into public.base_models (id, slug, display_name, family, use_cases)
-values (:'bm_qwen', 'qwen/qwen3-8b', 'Qwen3 8B', 'qwen3', array['code','reasoning']);
+-- Put the parent back for the visibility section below, licence included: §7
+-- repoints the seeded PUBLIC listing at this row, and since #29 a public
+-- listing whose weights have no established terms is unrepresentable.
+insert into public.base_models (id, slug, display_name, family, use_cases,
+                                license_id, commercial_hosting)
+values (:'bm_qwen', 'qwen/qwen3-8b', 'Qwen3 8B', 'qwen3', array['code','reasoning'],
+        'apache-2.0', 'allowed');
 update public.base_models set parent_id = :'bm_qwen'::uuid where id = :'bm_child'::uuid;
 
 -- ── The generated FTS vector actually indexes what it claims to ────────────
@@ -227,7 +235,11 @@ select ok(
 create function pg_temp.mk_listing(
   p_id uuid, p_user uuid, p_slug text, p_repo text,
   p_quant text default null, p_family text default null,
-  p_visibility public.model_visibility default 'public',
+  -- PRIVATE by default since #29. Every caller below that does not name a
+  -- visibility is testing the duplicate-variant index, which does not care —
+  -- while `public` now requires established licence terms, which those callers
+  -- have no reason to set up.
+  p_visibility public.model_visibility default 'private',
   p_status public.model_status default 'ready',
   p_base uuid default null
 ) returns uuid language sql as $$
@@ -425,6 +437,12 @@ select pg_temp.mk_listing(:'l1'::uuid, :'creator'::uuid, 'internal-bot', 'acme/i
 \set bm_orphan_parent '00000000-0000-0000-0000-0000000000f4'
 insert into public.base_models (id, slug, display_name)
 values (:'bm_orphan_parent', 'meta/llama-3.1-8b', 'Llama 3.1 8B');
+-- The licence gate is not what this section is testing, but it applies anyway:
+-- the child's own terms have to be established before a listing of it can be
+-- public, and `unknown` on the parent defers to them (#29).
+update public.base_models
+   set license_id = 'apache-2.0', commercial_hosting = 'allowed'
+ where id = :'bm_child'::uuid;
 update public.base_models set parent_id = :'bm_orphan_parent'::uuid where id = :'bm_child'::uuid;
 select pg_temp.mk_listing(:'l2'::uuid, :'creator'::uuid, 'llama-ft', 'someone/llama-ft',
                           null, null, 'public', 'ready', :'bm_child'::uuid);

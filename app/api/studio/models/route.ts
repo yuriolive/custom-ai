@@ -104,6 +104,10 @@ function parseBody(raw: unknown): { ok: true; value: DeployRequest } | { ok: fal
 
   const hfToken = typeof b.hfToken === "string" ? b.hfToken.trim() : "";
   const baseModelChoice = parseBaseModelChoice(b.baseModelChoice);
+  // 100 is `custom_models.license_ack_version`'s own CHECK. Not an error when
+  // it is absent or unusable: absent means "not accepted", which is the only
+  // safe reading, and the deployment the creator actually asked for still runs.
+  const licenseAckVersion = text("licenseAckVersion", 100, false);
 
   return {
     ok: true,
@@ -118,8 +122,18 @@ function parseBody(raw: unknown): { ok: true; value: DeployRequest } | { ok: fal
       targetTokensPerSecond,
       pricePromptMicro,
       priceCompletionMicro,
+      // Still defaults to PUBLIC, and that default is now safe rather than
+      // assumed: since #29 the row is inserted private whatever this says, and
+      // `isPublic` is a REQUEST that the licence gate either grants at the end
+      // of the pipeline or holds. A body that omits the field asks to be listed;
+      // it does not get listed on weights whose terms are unestablished.
       isPublic: b.isPublic !== false,
       ...(baseModelChoice ? { baseModelChoice } : {}),
+      // The licence text the creator accepted, if they were asked. Checked
+      // against the resolved weights' own terms server-side, so an invented
+      // value cannot publish anything — it produces a private listing and a
+      // sentence saying the acknowledgement named the wrong document.
+      ...(licenseAckVersion ? { licenseAckVersion } : {}),
     },
   };
 }
