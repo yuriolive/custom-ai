@@ -18,9 +18,13 @@ import { signInAction } from "@/app/(auth)/actions";
 import { initialAuthFormState } from "@/app/(auth)/form-state";
 import { AuthAlert } from "@/components/auth/auth-alert";
 import { GitHubButton } from "@/components/auth/github-button";
+import { HuggingFaceButton } from "@/components/auth/huggingface-button";
 
 /**
- * Sign-in surface. GitHub first (primary), email + password second.
+ * Sign-in surface. GitHub, then Hugging Face, then email + password.
+ *
+ * All three are equal in weight and none of them is the accent — that belongs
+ * to the email submit (DESIGN.md §3.7). Order is precedence, not emphasis.
  *
  * All HeroUI, so the whole file is behind `"use client"` (§4.1.0); the page
  * that renders it is a Server Component and passes plain props down.
@@ -28,10 +32,16 @@ import { GitHubButton } from "@/components/auth/github-button";
 export function LoginForm({
   next,
   initialError,
+  isLocalSupabase,
 }: {
   next: string;
   /** Message forwarded by /auth/callback via `?authError=` (a code, mapped server-side). */
   initialError?: string | null;
+  /**
+   * True when pointed at a local stack, which cannot have a Supabase Custom
+   * Provider — so Hugging Face is omitted rather than offered and refused.
+   */
+  isLocalSupabase: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(signInAction, initialAuthFormState);
 
@@ -64,7 +74,10 @@ export function LoginForm({
           />
         ) : null}
 
-        <GitHubButton next={next} />
+        <div className="flex flex-col gap-3">
+          <GitHubButton next={next} />
+          {isLocalSupabase ? null : <HuggingFaceButton next={next} />}
+        </div>
 
         <div className="flex items-center gap-3">
           <Separator className="flex-1" />

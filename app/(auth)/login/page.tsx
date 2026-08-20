@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { messageForQueryCode } from "@/lib/supabase/auth-errors";
+import { isLocalSupabase } from "@/lib/supabase/is-local";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
 
 export const metadata: Metadata = {
@@ -26,5 +27,5 @@ export default async function LoginPage({
   // never renders attacker-supplied text from a query string.
   const initialError = messageForQueryCode(params.authError);
 
-  return <LoginForm initialError={initialError} next={next} />;
+  return <LoginForm initialError={initialError} isLocalSupabase={isLocalSupabase()} next={next} />;
 }

@@ -1,12 +1,15 @@
 "use server";
 
+import type { Provider } from "@supabase/supabase-js";
 import type { Route } from "next";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import type { AuthFormState } from "@/app/(auth)/form-state";
-import { describeAuthError } from "@/lib/supabase/auth-errors";
+import type { OAuthProviderLabel } from "@/lib/supabase/auth-errors";
+import { describeAuthError, oauthUnavailableMessage } from "@/lib/supabase/auth-errors";
+import { INBUCKET_URL, isLocalSupabase } from "@/lib/supabase/is-local";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
 import { createClient } from "@/lib/supabase/server";
 
@@ -18,14 +21,6 @@ import { createClient } from "@/lib/supabase/server";
  * (no flash of signed-out UI), `revalidatePath` refreshes the session-aware nav
  * in the same round trip, and the form keeps working with JavaScript disabled.
  */
-
-/** Local Supabase has no SMTP; confirmation mail lands in Inbucket. */
-const isLocalSupabase = (): boolean =>
-  /(^|\/\/)(127\.0\.0\.1|localhost)(:|$)/.test(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  );
-
-const INBUCKET_URL = "http://localhost:54324";
 
 function readCredentials(formData: FormData) {
   return {
@@ -164,11 +159,22 @@ export async function signUpAction(
 }
 
 // ---------------------------------------------------------------------------
-// GitHub OAuth
+// OAuth / OIDC
 // ---------------------------------------------------------------------------
 
-export async function signInWithGitHubAction(
-  _prev: AuthFormState,
+/**
+ * Start an OAuth flow and leave the app for the provider.
+ *
+ * Shared by both providers because the bodies are otherwise identical, and an
+ * identical-but-separately-maintained pair is how the error copy on one path
+ * ends up naming the other provider.
+ *
+ * Never returns on success: `redirect` throws NEXT_REDIRECT, which Next.js
+ * unwinds into a 303. The returned state is the failure path only.
+ */
+async function beginOAuth(
+  provider: Provider,
+  label: OAuthProviderLabel,
   formData: FormData,
 ): Promise<AuthFormState> {
   const next = safeNextPath(String(formData.get("next") ?? "")) ?? SIGNED_IN_HOME;
@@ -176,27 +182,57 @@ export async function signInWithGitHubAction(
   const origin = await requestOrigin();
 
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "github",
+    provider,
     options: {
       redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 
   if (error) {
-    const failure = describeAuthError(error, "oauth");
+    const failure = describeAuthError(error, "oauth", label);
     return { status: "error", message: failure.message };
   }
   if (!data.url) {
+    return { status: "error", message: oauthUnavailableMessage(label) };
+  }
+
+  // Leaves the app for the provider; the PKCE verifier cookie set above travels
+  // with the browser and is consumed by /auth/callback on the way back.
+  redirect(data.url as Route);
+}
+
+export async function signInWithGitHubAction(
+  _prev: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  return beginOAuth("github", "GitHub", formData);
+}
+
+export async function signInWithHuggingFaceAction(
+  _prev: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  // Custom providers exist only on a hosted project: they are configured in the
+  // dashboard and the CLI has no `[auth.external.custom.*]` key, so a local
+  // stack can only answer `provider_disabled`. The button is not rendered
+  // locally (see lib/supabase/is-local.ts) — this guard is for the Server
+  // Action itself, which is a POST endpoint and reachable without it.
+  if (isLocalSupabase()) {
     return {
       status: "error",
       message:
-        "GitHub sign-in isn't configured on this deployment — no authorization URL was returned. Use email and password instead.",
+        "Hugging Face sign-in needs a hosted Supabase project — custom providers can't be configured on a local stack. Use GitHub, or email and password.",
     };
   }
 
-  // Leaves the app for github.com; the PKCE verifier cookie set above travels
-  // with the browser and is consumed by /auth/callback on the way back.
-  redirect(data.url as Route);
+  // `Provider` in @supabase/auth-js is a closed union of the built-in providers
+  // and has no `custom:${string}` member, so a custom provider cannot be typed
+  // without this cast. It is safe: auth-js only interpolates the string into
+  // the `provider` query parameter of GET /authorize — it never switches on the
+  // value, and GoTrue resolves `custom:huggingface` against the Custom Provider
+  // registered in the dashboard. Widening the union upstream is the real fix;
+  // until then, this is the escape hatch and not an oversight.
+  return beginOAuth("custom:huggingface" as Provider, "Hugging Face", formData);
 }
 
 // ---------------------------------------------------------------------------

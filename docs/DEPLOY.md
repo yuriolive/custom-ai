@@ -99,6 +99,48 @@ URL Configuration**: Site URL and Redirect URLs, both pointing at the Vercel dom
 Left as-is, every confirmation email points at localhost and nobody can complete a
 sign-up.
 
+### 2c. Sign-in providers — both are dashboard-only, and one is invisible locally
+
+The login and sign-up pages offer GitHub, Hugging Face and email. Neither OAuth provider
+is configured from this repo, and the integration does not deploy Auth config, so both are
+hand-set in the dashboard.
+
+**GitHub** — Dashboard → Authentication → Providers → GitHub. Client ID and secret from a
+GitHub OAuth app whose callback is `https://<project-ref>.supabase.co/auth/v1/callback`.
+
+**Hugging Face** — Dashboard → Authentication → **Custom Providers**. HF is a
+standards-compliant OIDC issuer, so auto-discovery does the rest; values verified against
+`curl -s https://huggingface.co/.well-known/openid-configuration`:
+
+| Field | Value |
+|---|---|
+| Provider Identifier | `huggingface` — the app calls it as `custom:huggingface` |
+| Configuration Method | Auto-discovery |
+| Issuer URL | `https://huggingface.co` |
+| Discovery URL | leave empty; the standard `/.well-known/openid-configuration` path works |
+| Scopes | `openid, profile, email` |
+| Allow users without email | off — the `email` scope covers it |
+| Callback URL | `https://<project-ref>.supabase.co/auth/v1/callback` |
+
+Two constraints come out of that discovery document and are the two ways this setup
+fails:
+
+- `token_endpoint_auth_methods_supported` is `["client_secret_basic", "client_secret_post"]`,
+  so **the HF OAuth app must be created WITH a client secret.** HF also offers secret-less
+  public apps; one of those cannot complete the token exchange and there is no error copy
+  that will explain why.
+- HF relaxes port matching only for `http` loopback redirect URIs (RFC 8252 §7.3). The
+  `https` Supabase callback must be registered **component for component** — a trailing
+  slash is a different URI.
+
+`code_challenge_methods_supported` is `["S256"]`, which matches the PKCE Supabase enables
+by default; nothing to set.
+
+**There is nothing to configure for a local stack.** Custom providers are dashboard-only —
+the CLI has no `[auth.external.custom.*]` key — so `supabase start` can never serve
+`custom:huggingface`. The app knows this and omits the Hugging Face button when
+`NEXT_PUBLIC_SUPABASE_URL` points at localhost; local sign-in is email + GitHub.
+
 ---
 
 ## 3. Merge to `main`
@@ -285,5 +327,6 @@ After the first deploy, confirm `select count(*) from api_keys` returns 0.
 | **No Creator Studio** | Models can only be added by SQL, so the marketplace ships with no supply side. Biggest functional gap. |
 | **Stripe needs operator setup** | Code is shipped, but until `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `SITE_URL` are set in Vercel and the `/api/stripe/webhook` endpoint is registered in the Stripe dashboard, Add funds fails and wallets can only be funded by SQL `credit_wallet` calls. |
 | **GitHub OAuth unconfigured** | The sign-in button fails with `provider is not enabled`. Email/password works. |
+| **Hugging Face custom provider unconfigured** | The "Continue with Hugging Face" button fails the same way (step 2c). Needs an HF OAuth app **with a client secret**; a secret-less public app cannot complete the token exchange. |
 | **Warm TTFT ~926 ms** vs the 400 ms SLO | Measured miss, unresolved. |
 | **MFU is a guessed 0.75** (measured ~0.79) | Decides A10 vs L40S and $0.85/hr. |
