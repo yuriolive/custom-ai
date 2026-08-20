@@ -81,6 +81,17 @@ upstream, which cannot prove an agent loop completes at 14 tok/s.
 - **MFU is a guessed 0.75.** Tier selection and $0.85/hr rest on it — A10 vs L40S flips on this constant.
 - **`active_weights_bytes`** equals total weights. Correct for this dense model; diverges only for MoE.
 - No Stripe by decision. Wallet balance and ledger read fine without it.
+- **A permanent llama-server load failure does not yet reach `custom_models`.** The Modal
+  worker now classifies the failure, refuses the next cold start of the same
+  `(gpu, image, repo, file, ctx, parallel)` tuple from a sentinel on the weights Volume, and
+  prints one greppable `[serve] LOAD-FAILURE {json}` line — so the money stops. Taking the
+  row out of `ready` with the reason still needs a channel that does not put a service-role
+  key inside a container that executes creator-supplied weights (issue #36 step 5, bean
+  `ca-abmv`'s follow-up).
+- **`parallel=91` with `ctx_size=8192` asked for a 46 GiB KV cache** on a card that did not
+  have it — the placement/escalation path produced the bad parameter set
+  (`lib/studio/server/deploy.ts:351`, `:401`). The worker now dies cheaply and loudly on it;
+  nothing yet stops it being produced.
 - **`20260819000200` is a burned migration version.** Two files collided on it (see
   `20260819000200_collided_version_placeholder.sql`); both were renumbered to `…000300` and
   `…000400`, and a no-op placeholder holds the original version so that databases which

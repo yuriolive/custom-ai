@@ -41,7 +41,7 @@ money change that does not touch it is incomplete.
 Python worker (stdlib `unittest`, not pytest — pytest is not installed):
 
 ```bash
-cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift
+cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift test_supervisor
 ```
 
 ## 4. Two rules that are cheap to break silently

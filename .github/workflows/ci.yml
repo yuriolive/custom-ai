@@ -176,7 +176,7 @@ jobs:
       # tools/modal/sync_rates.py --check, which is local-only by design.
       - name: test
         working-directory: tools/modal
-        run: uv run --locked python -m unittest test_measure test_tier_drift -v
+        run: uv run --locked python -m unittest test_measure test_tier_drift test_supervisor -v
 
       # --no-build: install ruff from its published wheel only. A source
       # distribution would run its build backend, i.e. arbitrary code, in the job.

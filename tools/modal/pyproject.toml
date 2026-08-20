@@ -5,9 +5,11 @@ description = "Modal serverless llama.cpp deployment, capacity solver, and cold-
 requires-python = ">=3.13"
 
 # Intentionally EMPTY. The test suite and the capacity solver are stdlib-only:
-# test_measure.py imports measure.py and tiers.py, neither of which touches a
-# third-party package. Only app.py imports `modal`, and app.py is never imported
-# by the tests — so CI runs the full 41-test suite with nothing installed.
+# test_measure.py imports measure.py and tiers.py, and test_supervisor.py imports
+# supervisor.py — none of which touches a third-party package. Only app.py imports
+# `modal`, and app.py is never imported by the tests, so CI runs the whole suite
+# with nothing installed. That constraint is WHY the llama-server supervision lives
+# in supervisor.py rather than in app.py: code app.py owns cannot be tested here.
 dependencies = []
 
 [dependency-groups]
