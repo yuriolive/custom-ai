@@ -1,14 +1,31 @@
 # `gateway` — OpenAI-compatible inference gateway (Supabase Edge Function, Deno)
 
 Request-handling half of the gateway. Owns `index.ts`, `auth.ts`, `resolve.ts`, `errors.ts`,
-`deno.json`. `stream.ts` and `usage.ts` are owned by another agent and are consumed against the
-frozen interface below.
+`anthropic.ts`, `deno.json`. `stream.ts` and `usage.ts` are owned by another agent and are
+consumed against the frozen interface below.
 
 ```
-POST /v1/chat/completions   OpenAI Chat Completions, byte-compatible
-GET  /v1/models             OpenAI-shaped catalog (public + caller's own private)
-OPTIONS *                   CORS preflight
+POST /v1/chat/completions       OpenAI Chat Completions, byte-compatible
+POST /v1/messages               Anthropic Messages API (PRD §4.6) — Claude Code speaks this
+POST /v1/messages/count_tokens  Anthropic token estimate; Claude Code calls it before anything
+GET  /v1/models                 catalog (public + caller's own private), OpenAI- or Anthropic-shaped
+OPTIONS *                       CORS preflight
 ```
+
+Both wire formats run the SAME pipeline: `runInference()` in `index.ts` is auth → resolve →
+tool-capability → `authorize_request` → upstream → `proxyStream` → settle, and the two routes
+differ only in how they parse the request and frame the response. `/v1/messages` translates in
+with `packages/anthropic-adapter`, runs that pipeline, and re-frames the proxied OpenAI SSE into
+Anthropic events DOWNSTREAM of `proxyStream` — so keepalives, timeouts, disconnect survival and
+the usage tee are the ones already proven on the OpenAI route, and billing reads OpenAI bytes,
+never the translator.
+
+`GET /v1/models` picks its shape from the request headers: `x-api-key` or `anthropic-version`
+gets `{data:[{type:"model",…}],has_more}`, anything else gets `{object:"list",data:[…]}`.
+
+Auth on the Anthropic routes is `x-api-key: sk-plat-…`, falling back to `Authorization: Bearer`.
+Same key table, same hash, same permissions — the envelope is all that differs, and no
+Anthropic-issued key is ever accepted.
 
 Deployed path is `/functions/v1/gateway/v1/…`; the router matches on the `/v1/…` suffix so both
 forms work.

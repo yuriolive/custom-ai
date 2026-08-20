@@ -37,7 +37,7 @@ export type ApiKeyRow = {
    * failed or expired. NOT a count of HTTP calls; see `last_used_at`.
    *
    * Both columns are reconciled by `v_api_key_usage_drift`
-   * (supabase/migrations/20260819000200_api_key_usage_counters.sql), which is the
+   * (supabase/migrations/20260819000400_api_key_usage_counters.sql), which is the
    * authority on their semantics.
    */
   request_count: number;

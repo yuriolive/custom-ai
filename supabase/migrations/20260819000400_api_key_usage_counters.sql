@@ -1,5 +1,5 @@
 -- ============================================================================
--- 20260819000200_api_key_usage_counters.sql   (FR-CON-001)
+-- 20260819000400_api_key_usage_counters.sql   (FR-CON-001)
 --
 -- Gives api_keys.request_count / last_used_at a WRITER. Until this migration
 -- nothing in the repo ever UPDATEd either column — five call sites read them,
@@ -296,7 +296,7 @@ comment on function public.gateway_resolve(text, text, text) is
   'the gateway owns the HTTP mapping. Deliberately does NOT filter revoked keys '
   'or non-ready/private models — see the migration header before adding a WHERE. '
   'Also does not bump api_keys.request_count / last_used_at: authorize_request '
-  'owns those (20260819000200), off this hot path.';
+  'owns those (20260819000400), off this hot path.';
 
 -- ── Reconciliation, same contract as v_balance_drift: MUST return zero rows ──
 -- The counters are an exact projection of usage_transactions, so any row here is

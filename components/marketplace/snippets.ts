@@ -37,7 +37,7 @@ import { MEASURED } from "@/lib/measured";
 /** Timeout, in seconds, written into every generated snippet. */
 export const SNIPPET_TIMEOUT_SECONDS = 180;
 
-export type SnippetLanguage = "python" | "typescript" | "curl";
+export type SnippetLanguage = "python" | "typescript" | "curl" | "claude-code";
 
 export const SNIPPET_LANGUAGES: readonly {
   id: SnippetLanguage;
@@ -48,6 +48,7 @@ export const SNIPPET_LANGUAGES: readonly {
   { id: "python", label: "Python", grammar: "python" },
   { id: "typescript", label: "TypeScript", grammar: "typescript" },
   { id: "curl", label: "cURL", grammar: "bash" },
+  { id: "claude-code", label: "Claude Code", grammar: "bash" },
 ];
 
 export type SnippetInput = {
@@ -138,6 +139,33 @@ curl -N ${baseUrl}/chat/completions \\
 `;
 }
 
+/**
+ * Claude Code, and every other Anthropic-SDK client, via `POST /v1/messages`.
+ *
+ * Two details differ from the OpenAI snippets and both are load-bearing:
+ *
+ *  1. **`ANTHROPIC_BASE_URL` has NO trailing `/v1`.** The Anthropic SDK appends
+ *     `/v1/messages` itself, so reusing the OpenAI base URL here produces
+ *     `/v1/v1/messages` and a 404 that reads like the gateway is down.
+ *  2. **`ANTHROPIC_MODEL` takes the platform model id.** A model name containing
+ *     a `/` is passed straight through to the resolver; only `claude-*` names
+ *     need the operator-side `ANTHROPIC_MODEL_MAP`. Setting the small/fast model
+ *     too is not optional — Claude Code sends background turns to it, and an
+ *     unmapped `claude-*-haiku` there 404s mid-session.
+ */
+export function claudeCodeSnippet({ modelId, baseUrl }: SnippetInput): string {
+  return `# The Anthropic SDK appends /v1/messages, so the base URL drops the trailing /v1.
+export ANTHROPIC_BASE_URL="${anthropicBaseUrl(baseUrl)}"
+export ANTHROPIC_API_KEY="sk-plat-..."  # create one in the Console
+export ANTHROPIC_MODEL="${modelId}"
+# Claude Code routes background turns to a second, smaller model.
+export ANTHROPIC_SMALL_FAST_MODEL="${modelId}"
+
+# ${COLD_START_COMMENT}.
+claude
+`;
+}
+
 export function snippetFor(language: SnippetLanguage, input: SnippetInput): string {
   switch (language) {
     case "python":
@@ -146,6 +174,8 @@ export function snippetFor(language: SnippetLanguage, input: SnippetInput): stri
       return typescriptSnippet(input);
     case "curl":
       return curlSnippet(input);
+    case "claude-code":
+      return claudeCodeSnippet(input);
   }
 }
 
@@ -158,4 +188,12 @@ export function snippetFor(language: SnippetLanguage, input: SnippetInput): stri
  */
 export function gatewayBaseUrl(supabaseUrl: string): string {
   return `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/gateway/v1`;
+}
+
+/**
+ * The same gateway, addressed the way an Anthropic client expects: WITHOUT the
+ * trailing `/v1`, which the Anthropic SDK adds itself.
+ */
+export function anthropicBaseUrl(openAiBaseUrl: string): string {
+  return openAiBaseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
 }

@@ -494,8 +494,7 @@
    `--muted` at 14px, and `--muted` is chosen for its contrast against a SOLID
    `--surface-secondary`. Let the page show through too far and that contrast is
    against whatever happens to be scrolling past instead — which on this page
-   includes whatever gradient wash is scrolling past. 62% fill plus a 20px blur
-   keeps the measured
+   includes the accent-filled CTA. 72% fill plus a 20px blur keeps the measured
    ratio inside a couple of points of the solid case, because the blur flattens
    what shows through into an average rather than leaving edges under the text.
 
@@ -504,10 +503,19 @@
    than leaving 38% of a moving background under small muted type.
    -------------------------------------------------------------------------- */
 @layer components {
+  /* THE SATURATION BOOST IS GONE AND THE FILL IS HIGHER, and both were a fix.
+     `saturate(160%)` was here to keep the blur from washing a scrolling gradient
+     into grey. It does that, but it also AMPLIFIES anything saturated passing
+     underneath — and on the landing page the thing passing underneath the nav is
+     the accent-filled "Get an API key" pill, which sits directly below it. Blurred
+     and then saturated, that pill smeared a bright green streak across the inside
+     of the nav, right behind the wordmark. 115% keeps the wash from going grey
+     without turning one solid element into a stain, and 72% fill suppresses what
+     is left of it. */
   .glass {
-    background: color-mix(in oklab, var(--surface-secondary) 62%, transparent);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    backdrop-filter: blur(20px) saturate(160%);
+    background: color-mix(in oklab, var(--surface-secondary) 72%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(115%);
+    backdrop-filter: blur(20px) saturate(115%);
     /* A 1px inner highlight along the top edge. This is what separates glass
        from "a semi-transparent box": real glass catches light on the near edge,
        and without it a blurred panel reads as a rendering artifact. Derived from
