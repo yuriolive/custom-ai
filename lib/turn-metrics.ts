@@ -71,10 +71,10 @@ export function createTurnMeter(startedAt: number): TurnMeter {
         return {
           promptTokens: inputTokens,
           completionTokens: completion,
-          // TODO(gateway): populate from the settlement response once
-          // deduct_token_cost surfaces cost_micro_usd through the gateway.
-          // Until then the surfaces estimate it from the model's own prices and
-          // say that they are estimating.
+          // Null until the gateway surfaces `cost_micro_usd` from
+          // deduct_token_cost to its callers. Until it does, the chat estimates
+          // the figure from the model's own published prices and says so; the
+          // authoritative charge is on /console/usage.
           costMicroUsd: null,
           ttftMs,
           tokensPerSecond:

@@ -42,11 +42,11 @@ export function estimateTurnMicroUsd(
 function TurnFooter({
   metrics,
   model,
-}: {
+}: Readonly<{
   metrics: TurnMetrics | undefined;
   model: CatalogModel | null;
-}) {
-  if (!metrics || metrics.completionTokens == null) return null;
+}>) {
+  if (metrics?.completionTokens == null) return null;
 
   const estimate = estimateTurnMicroUsd(metrics, model);
   const tokens = (metrics.promptTokens ?? 0) + (metrics.completionTokens ?? 0);
@@ -75,12 +75,12 @@ export function Transcript({
   messages,
   isStreaming,
   modelForMessage,
-}: {
+}: Readonly<{
   messages: ChatUIMessage[];
   isStreaming: boolean;
   /** The model that produced a given assistant message — threads may switch. */
   modelForMessage: (messageId: string) => CatalogModel | null;
-}) {
+}>) {
   const lastIndex = messages.length - 1;
 
   return (

@@ -14,9 +14,16 @@
  * transcript visibly reflows when the closing fence lands.
  */
 
+/**
+ * `id` is the 0-based line the segment starts on, not its position in the
+ * array. React keys have to survive a segment being appended ahead of them
+ * mid-stream, and a line number does while an array index does not: when the
+ * closing fence lands and a trailing prose segment appears, every earlier
+ * segment keeps the id it already had.
+ */
 export type Segment =
-  | { type: "text"; text: string }
-  | { type: "code"; code: string; language: string | null; closed: boolean };
+  | { type: "text"; id: number; text: string }
+  | { type: "code"; id: number; code: string; language: string | null; closed: boolean };
 
 const FENCE_RE = /^[ \t]*```([^\n`]*)$/u;
 
@@ -29,21 +36,24 @@ export function splitSegments(input: string): Segment[] {
   let buffer: string[] = [];
   let codeLanguage: string | null = null;
   let inCode = false;
+  /** Line the segment being accumulated starts on — see `Segment.id`. */
+  let start = 0;
 
   const flushText = () => {
     if (buffer.length === 0) return;
     const text = buffer.join("\n");
     buffer = [];
     // Whitespace-only runs between two fences are separators, not content.
-    if (text.trim().length > 0) segments.push({ type: "text", text });
+    if (text.trim().length > 0) segments.push({ type: "text", id: start, text });
   };
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const fence = FENCE_RE.exec(line);
 
     if (fence && !inCode) {
       flushText();
       inCode = true;
+      start = index;
       const info = (fence[1] ?? "").trim();
       codeLanguage = info.length > 0 ? info.split(/\s+/u)[0]! : null;
       continue;
@@ -52,6 +62,7 @@ export function splitSegments(input: string): Segment[] {
     if (fence && inCode) {
       segments.push({
         type: "code",
+        id: start,
         code: buffer.join("\n"),
         language: codeLanguage,
         closed: true,
@@ -62,12 +73,14 @@ export function splitSegments(input: string): Segment[] {
       continue;
     }
 
+    if (buffer.length === 0 && !inCode) start = index;
     buffer.push(line);
   }
 
   if (inCode) {
     segments.push({
       type: "code",
+      id: start,
       code: buffer.join("\n"),
       language: codeLanguage,
       closed: false,

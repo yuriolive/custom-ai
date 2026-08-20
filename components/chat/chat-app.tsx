@@ -70,12 +70,12 @@ export function ChatApp({
   models,
   initialModelId,
   unavailableModelId,
-}: {
+}: Readonly<{
   models: CatalogModel[];
   initialModelId: string | null;
   /** A `?model=` that is not on the public catalog. Shown, never 404'd. */
   unavailableModelId: string | null;
-}) {
+}>) {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [threadId, setThreadId] = useState<string>(() => newId());
   const [modelId, setModelId] = useState<string | null>(initialModelId);
@@ -400,10 +400,10 @@ export function ChatApp({
 function EmptyState({
   modelName,
   onSeed,
-}: {
+}: Readonly<{
   modelName: string | null;
   onSeed: (prompt: string) => void;
-}) {
+}>) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 py-10 text-center">
       <div className="flex flex-col gap-2">
@@ -447,7 +447,7 @@ type RailProps = {
 };
 
 /** Desktop history rail. Hidden below `lg`, where `ThreadMenu` takes over. */
-function ThreadRail({ activeId, onDeleteAll, onNewChat, onOpen, threads }: RailProps) {
+function ThreadRail({ activeId, onDeleteAll, onNewChat, onOpen, threads }: Readonly<RailProps>) {
   return (
     <aside className="hidden w-60 shrink-0 flex-col gap-3 lg:flex">
       <Button size="sm" variant="outline" onPress={onNewChat}>
@@ -495,7 +495,7 @@ function ThreadRail({ activeId, onDeleteAll, onNewChat, onOpen, threads }: RailP
 }
 
 /** The same history, as a menu, for viewports too narrow for the rail. */
-function ThreadMenu({ activeId, onDeleteAll, onNewChat, onOpen, threads }: RailProps) {
+function ThreadMenu({ activeId, onDeleteAll, onNewChat, onOpen, threads }: Readonly<RailProps>) {
   return (
     <Dropdown>
       <Dropdown.Trigger

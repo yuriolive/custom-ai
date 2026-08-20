@@ -15,21 +15,21 @@ import { splitSegments } from "@/lib/chat/segments";
  * thing plain text genuinely ruins, and because a snippet nobody can copy is
  * not much of an answer. Everything else Markdown does degrades acceptably.
  */
-export function MessageBody({ text }: { text: string }) {
+export function MessageBody({ text }: Readonly<{ text: string }>) {
   const segments = splitSegments(text);
 
   if (segments.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-3">
-      {segments.map((segment, index) =>
+      {segments.map((segment) =>
         segment.type === "text" ? (
-          <p key={index} className="text-sm leading-6 whitespace-pre-wrap">
+          <p key={segment.id} className="text-sm leading-6 whitespace-pre-wrap">
             {segment.text}
           </p>
         ) : (
           <figure
-            key={index}
+            key={segment.id}
             className="border-border bg-background overflow-hidden rounded-lg border"
           >
             <figcaption className="border-border bg-surface flex items-center justify-between gap-2 border-b px-3 py-1.5">

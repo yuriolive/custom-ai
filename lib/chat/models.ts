@@ -49,16 +49,24 @@ export function normalizeModelId(raw: string | null | undefined): string | null 
  * or a speed for a row it cannot read.
  */
 export function defaultModel(models: CatalogModel[]): CatalogModel | null {
-  if (models.length === 0) return null;
+  // Seeded from the first element rather than reduced without an initial value:
+  // a no-seed reduce throws on an empty array, and this one is called with
+  // whatever the catalog query returned.
+  let best: CatalogModel | null = null;
 
-  return models.reduce((best, candidate) => {
-    if (candidate.totalRequests !== best.totalRequests) {
-      return candidate.totalRequests > best.totalRequests ? candidate : best;
+  for (const candidate of models) {
+    if (best === null || candidate.totalRequests > best.totalRequests) {
+      best = candidate;
+      continue;
     }
     // Deterministic tie-break, so the default does not flip between renders on
     // a catalog where nothing has been called yet.
-    return candidate.modelId < best.modelId ? candidate : best;
-  });
+    if (candidate.totalRequests === best.totalRequests && candidate.modelId < best.modelId) {
+      best = candidate;
+    }
+  }
+
+  return best;
 }
 
 export type InitialModelChoice = {

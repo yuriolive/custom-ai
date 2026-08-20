@@ -15,17 +15,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * The state change is announced: a purely visual change on the control the user
  * just pressed is invisible to a screen reader.
  */
+type CopyState = "idle" | "copied" | "failed";
+
+const BUTTON_LABEL: Record<CopyState, string> = {
+  idle: "Copy",
+  copied: "Copied",
+  failed: "Copy failed",
+};
+
 export function CopyButton({
   className,
   label,
   text,
-}: {
+}: Readonly<{
   className?: string;
   /** What is being copied, for the assistive announcement. */
   label: string;
   text: string;
-}) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+}>) {
+  const [state, setState] = useState<CopyState>("idle");
   const timer = useRef<number | null>(null);
 
   useEffect(
@@ -55,10 +63,10 @@ export function CopyButton({
         variant="ghost"
         onPress={() => void copy()}
       >
-        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
+        {BUTTON_LABEL[state]}
       </Button>
       <span aria-live="polite" className="sr-only">
-        {state === "copied" ? `${label} copied` : state === "failed" ? "Copy failed" : ""}
+        {state === "idle" ? "" : `${label}: ${BUTTON_LABEL[state]}`}
       </span>
     </>
   );

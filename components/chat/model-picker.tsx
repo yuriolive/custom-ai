@@ -23,11 +23,11 @@ export function ModelPicker({
   models,
   onSelect,
   selectedId,
-}: {
+}: Readonly<{
   models: CatalogModel[];
   onSelect: (modelId: string) => void;
   selectedId: string | null;
-}) {
+}>) {
   const selected = models.find((model) => model.modelId === selectedId) ?? null;
 
   return (

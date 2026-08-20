@@ -30,7 +30,9 @@ export const metadata: Metadata = {
 
 type SearchParams = Promise<{ model?: string | string[] }>;
 
-export default async function ChatPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function ChatPage({
+  searchParams,
+}: Readonly<{ searchParams: SearchParams }>) {
   const supabase = await createClient();
   const models = await fetchChatModels(supabase);
 
