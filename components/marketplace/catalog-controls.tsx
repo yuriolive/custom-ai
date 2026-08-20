@@ -16,20 +16,21 @@ import { buttonVariants } from "@heroui/styles";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { formatContext, priceBandLabel, qualityLabel, qualityNote } from "./format";
+import {
+  CONTEXT_STEPS,
+  formatContext,
+  priceBandLabel,
+  qualityLabel,
+  qualityNote,
+  SPEED_STEPS,
+} from "./format";
 import { appHref } from "./routes";
 import { catalogHref, withCatalogQuery } from "./search-params";
-import type { CatalogQuery, CatalogSort, PriceBand, QualityTier } from "./types";
+import type { CatalogCounts, CatalogQuery, CatalogSort, PriceBand, QualityTier } from "./types";
 import { CATALOG_SORTS, PRICE_BANDS, QUALITY_TIERS } from "./types";
 
 /** Debounce for the search box (FR-MKT-003). */
 const SEARCH_DEBOUNCE_MS = 300;
-
-/** The rungs offered for "at least this fast". */
-const SPEED_STEPS = [20, 40, 60, 90, 120] as const;
-
-/** The rungs offered for "at least this much context". */
-const CONTEXT_STEPS = [8_192, 32_768, 128_000, 200_000, 1_000_000] as const;
 
 const SORT_LABEL: Readonly<Record<CatalogSort, string>> = {
   newest: "Newest",
@@ -41,7 +42,19 @@ const SORT_LABEL: Readonly<Record<CatalogSort, string>> = {
 
 const ANY = "__any__";
 
-type Option = { key: string; label: string; note?: string };
+type Option = {
+  key: string;
+  label: string;
+  note?: string;
+  /**
+   * Groups this rung would still return, with THIS facet excluded from the count
+   * (see `CatalogCounts`). Undefined on the `Any …` rows on purpose: their honest
+   * count is "the total with this facet cleared", which is not one of the numbers
+   * the RPC returns, and a plausible-looking wrong number on the clear affordance
+   * is worse than no number.
+   */
+  count?: number;
+};
 
 /** The eyebrow role, used for every facet heading and the sort label. */
 const EYEBROW = "text-muted text-[0.6875rem] font-medium tracking-[0.08em] uppercase";
@@ -111,26 +124,36 @@ function activeFacets(query: CatalogQuery): { label: string }[] {
  */
 export function CatalogFacetRail({
   query,
-  creators = [],
+  counts,
 }: {
   query: CatalogQuery;
   /**
-   * Creator handles present in the catalog. The Creator facet only appears when
-   * there is more than one to choose between — a single-option filter is a
-   * control that cannot change anything.
+   * Group counts per rung, from the same `catalog_grouped` call that returned the
+   * rows. Optional so the rail still renders while the grid is suspended: it
+   * lives OUTSIDE the Suspense boundary (see `CatalogControls`), so on a filter
+   * change it is on screen with last render's counts, and undefined counts are
+   * better than stale ones being asserted.
    */
-  creators?: readonly string[];
+  counts?: CatalogCounts;
 }) {
   const go = useCatalogNav(query);
   const active = activeFacets(query);
 
   const speedOptions: Option[] = [
     { key: ANY, label: "Any speed" },
-    ...SPEED_STEPS.map((n) => ({ key: String(n), label: `${n}+ tok/s` })),
+    ...SPEED_STEPS.map((n) => ({
+      key: String(n),
+      label: `${n}+ tok/s`,
+      count: counts?.speed[String(n)],
+    })),
   ];
   const contextOptions: Option[] = [
     { key: ANY, label: "Any context" },
-    ...CONTEXT_STEPS.map((n) => ({ key: String(n), label: `${formatContext(n)}+` })),
+    ...CONTEXT_STEPS.map((n) => ({
+      key: String(n),
+      label: `${formatContext(n)}+`,
+      count: counts?.context[String(n)],
+    })),
   ];
   const qualityOptions: Option[] = [
     { key: ANY, label: "Any quality" },
@@ -141,15 +164,34 @@ export function CatalogFacetRail({
       // precision" reads as marketing unless it says what it costs and does
       // not cost. The rest of the ladder is self-describing at this size.
       note: tier === "full" ? qualityNote(tier) : undefined,
+      count: counts?.quality[tier],
     })),
   ];
   const priceOptions: Option[] = [
     { key: ANY, label: "Any price" },
-    ...PRICE_BANDS.map((band) => ({ key: band, label: priceBandLabel(band) })),
+    ...PRICE_BANDS.map((band) => ({
+      key: band,
+      label: priceBandLabel(band),
+      count: counts?.price[band],
+    })),
   ];
+  // THE RUNG LIST IS DATA. The creator facet offers the handles the RPC counted,
+  // so a handle can never appear on the rail without rows behind it — and the
+  // page no longer has to run a second query to populate it.
+  //
+  // `localeCompare`, not a bare `toSorted()`. The default comparator sorts by
+  // UTF-16 code unit, which puts `-` (U+002D) ahead of every digit and letter —
+  // so `a-lice` would sort before `alice` in a rail a visitor reads as
+  // alphabetical. Handles are `^[a-z0-9][a-z0-9-]{1,38}$`, so the hyphen is a
+  // legal interior character and that ordering is reachable, not theoretical.
+  const creators = Object.keys(counts?.creator ?? {}).toSorted((a, b) => a.localeCompare(b));
   const creatorOptions: Option[] = [
     { key: ANY, label: "Any creator" },
-    ...creators.map((handle) => ({ key: handle, label: `@${handle}` })),
+    ...creators.map((handle) => ({
+      key: handle,
+      label: `@${handle}`,
+      count: counts?.creator[handle],
+    })),
   ];
 
   // Shown when there is a real choice, and also when a creator filter is already
@@ -203,23 +245,20 @@ export function CatalogFacetRail({
 }
 
 /**
- * Search, sort, and the rail — the default composition, so the page keeps
- * working unchanged while the two-column layout is built elsewhere.
+ * Search and sort — and NOTHING THAT NEEDS A COUNT.
  *
- * THIS WHOLE THING LIVES OUTSIDE THE CATALOG'S `<Suspense>` BOUNDARY on purpose.
- * Inside it, every debounced keystroke would remount the search box as the
- * boundary re-suspends, throwing away the caret and the focus ring mid-word.
- * The result count therefore lives with the results, not here. Moving this
- * component inside the boundary — including by moving the rail into a
- * suspended column — reintroduces that bug.
+ * THIS LIVES OUTSIDE THE CATALOG'S `<Suspense>` BOUNDARY on purpose. Inside it,
+ * every debounced keystroke would remount the search box as the boundary
+ * re-suspends, throwing away the caret and the focus ring mid-word. Moving this
+ * component inside the boundary reintroduces that bug.
+ *
+ * The facet rail USED to live here too, and moved to `CatalogFacets` below when
+ * the rail gained counts (#26). It had to: a count that is right has to come from
+ * the same query as the rows, so the rail belongs on the results side of the
+ * boundary. Sort and search need no count, so they stay out here, which is what
+ * keeps the caret.
  */
-export function CatalogControls({
-  query,
-  creators = [],
-}: {
-  query: CatalogQuery;
-  creators?: readonly string[];
-}) {
+export function CatalogControls({ query }: { query: CatalogQuery }) {
   const go = useCatalogNav(query);
   const [text, setText] = useState(query.q);
   const debounce = useRef<number | null>(null);
@@ -250,10 +289,8 @@ export function CatalogControls({
     label: SORT_LABEL[sort],
   }));
 
-  const active = activeFacets(query);
-
   return (
-    <section aria-label="Search and filter models" className="flex flex-col gap-4">
+    <section aria-label="Search and sort models" className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <SearchField
           aria-label="Search models by name, slug, description or creator"
@@ -297,7 +334,30 @@ export function CatalogControls({
           </Select>
         </div>
       </div>
+    </section>
+  );
+}
 
+/**
+ * The facet rail, in both of its placements — a Drawer below `lg:`, a real column
+ * above it — plus the active-filter chips.
+ *
+ * THIS LIVES INSIDE THE CATALOG'S `<Suspense>` BOUNDARY, which is the opposite of
+ * where the rail used to be, and the counts are the reason: a rung count has to
+ * come from the same `catalog_grouped` call as the rows or it is a number the grid
+ * below it contradicts. Nothing here holds a caret, so re-suspending it costs a
+ * flicker rather than a lost keystroke.
+ *
+ * One consequence worth knowing: a boundary re-suspend remounts this, so a
+ * `Disclosure` the visitor expanded but did not set collapses on the next filter
+ * change. `defaultExpanded={value !== ANY}` means the facet they just USED stays
+ * open, which is the one that matters.
+ */
+export function CatalogFacets({ query, counts }: { query: CatalogQuery; counts?: CatalogCounts }) {
+  const active = activeFacets(query);
+
+  return (
+    <>
       {/* Below `lg:` the rail cannot hold a column of its own, so it moves into
           a Drawer behind a counted trigger. The count is the number of active
           facets, which is the only thing a collapsed rail still has to report.
@@ -329,7 +389,7 @@ export function CatalogControls({
                   {/* The same rail, not a second implementation of it. Selecting
                       a value navigates and leaves the drawer open, which is
                       right: filtering is usually more than one decision. */}
-                  <CatalogFacetRail creators={creators} query={query} />
+                  <CatalogFacetRail counts={counts} query={query} />
                 </Drawer.Body>
               </Drawer.Dialog>
             </Drawer.Content>
@@ -343,13 +403,17 @@ export function CatalogControls({
         ))}
       </div>
 
-      {/* The default desktop placement: a real rail, capped so it does not
-          stretch to the grid's full width. A future page layout can drop
-          `CatalogControls` in favour of `CatalogFacetRail` in its own column. */}
-      <div className="hidden max-w-[220px] lg:block">
-        <CatalogFacetRail creators={creators} query={query} />
+      {/* Above `lg:` the rail is a real column (UI-REDESIGN-PLAN §6): the page
+          wraps this fragment in `lg:grid-cols-[220px_1fr]`, and because the
+          mobile row above is `display:none` at that width it drops out of the
+          grid entirely rather than claiming a cell. `sticky top-*` is
+          deliberately absent — the rail is shorter than the grid at every real
+          catalog size, and a sticky element that never needs to stick is a
+          scroll-jank source for nothing. */}
+      <div className="hidden lg:block">
+        <CatalogFacetRail counts={counts} query={query} />
       </div>
-    </section>
+    </>
   );
 }
 
@@ -404,7 +468,19 @@ function Facet({
                   <Radio.Control>
                     <Radio.Indicator />
                   </Radio.Control>
-                  <Label>{option.label}</Label>
+                  {/* The count sits INSIDE the <Label>, not beside it: HeroUI's
+                      radio row lays out `Radio.Content` as control-then-label,
+                      and a third child there lands under the label rather than
+                      at the end of the row. `ms-auto` pushes it to the right
+                      edge of the label's own box, which is the full row width. */}
+                  <Label className="flex w-full items-baseline gap-2">
+                    <span>{option.label}</span>
+                    {option.count !== undefined ? (
+                      <span className="text-muted ms-auto text-xs tabular-nums">
+                        {option.count}
+                      </span>
+                    ) : null}
+                  </Label>
                 </Radio.Content>
                 {/* A sibling of `Radio.Content`, per HeroUI's radio structure —
                     the stylesheet indents `[data-slot="description"]` to line up

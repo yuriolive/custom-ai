@@ -31,9 +31,18 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { PRICE_BAND_MAX_MICRO, qualityTier, tagsForTier } from "./format";
+import { CONTEXT_STEPS, priceRungs, qualityRungs, qualityTier, SPEED_STEPS } from "./format";
+import { handleFragment, toPrefixTsQuery } from "./search-query.ts";
 import { PAGE_SIZE } from "./search-params";
-import type { CatalogModel, CatalogPage, CatalogQuery } from "./types";
+import type {
+  CatalogCounts,
+  CatalogGroup,
+  CatalogGroupPage,
+  CatalogModel,
+  CatalogQuery,
+  ModelCategory,
+} from "./types";
+import { MODEL_CATEGORIES } from "./types";
 
 /**
  * Allow-listed projection. `creator_public` is a SECURITY DEFINER view whose
@@ -116,196 +125,6 @@ function toCatalogModel(row: CatalogRow): CatalogModel | null {
 }
 
 /**
- * Free text → a prefix `tsquery`, safe to interpolate into a PostgREST filter.
- *
- * Prefix matching (`token:*`) rather than plain `to_tsquery`, because this is a
- * search-as-you-type box: "qwen" must match `qwen3.8` on the fourth keystroke,
- * not only once the whole lexeme is typed.
- *
- * The character class is the load-bearing part. Dots and hyphens are KEPT,
- * because `to_tsvector` emits `qwen3.8` and `qwen3.8-27b-uncensored-gguf` as
- * single lexemes — splitting the user's `qwen3.8` into `qwen3` and `8` turns a
- * hit into a miss, since `8:*` prefixes nothing in that vector. Everything else
- * is dropped, which keeps the value legal inside a PostgREST `or=(…)` tree and
- * makes a malformed `to_tsquery` — a 500 on the front page — unreachable.
- */
-export function toPrefixTsQuery(text: string): string | null {
-  const tokens = text
-    .toLowerCase()
-    .replace(/[^a-z0-9._/-]+/g, " ")
-    .split(" ")
-    .map((token) => token.replace(/^[._/-]+/, "").replace(/[._/-]+$/, ""))
-    // At least one alphanumeric: `to_tsquery('english', '-:*')` is a syntax error.
-    .filter((token) => /[a-z0-9]/.test(token))
-    .slice(0, 8);
-
-  return tokens.length > 0 ? tokens.map((token) => `${token}:*`).join("&") : null;
-}
-
-/** Handle-shaped fragment for an `ilike`. Strips `%`, `_`, `,` and `*`. */
-function handleFragment(text: string): string | null {
-  const fragment = text.toLowerCase().replace(/[^a-z0-9-]+/g, "");
-  return fragment.length >= 2 ? fragment : null;
-}
-
-/**
- * Creator ids whose handle contains the search fragment.
- *
- * FR-MKT-003 requires search to cover the creator handle, but `search_vector`
- * lives on `custom_models` while the handle lives on `profiles` — and PostgREST
- * rejects an embedded column inside a top-level `or=(…)` outright
- * (`PGRST100: failed to parse logic tree`). So the handle match is resolved to
- * ids first and folded into the same `or` as `user_id.in.(…)`, which keeps the
- * whole search one indexed server-side query instead of two merged in JS.
- */
-async function creatorIdsMatching(supabase: SupabaseClient, text: string): Promise<string[]> {
-  const fragment = handleFragment(text);
-  if (!fragment) return [];
-
-  const { data, error } = await supabase
-    .from("creator_public")
-    .select("id")
-    .ilike("handle", `%${fragment}%`)
-    .limit(50);
-
-  // A failure here degrades search to "models only" rather than 500-ing the
-  // front page: the visitor still gets results, just not handle hits.
-  if (error || !data) return [];
-  return (data as { id: string }[]).map((row) => row.id);
-}
-
-/** `ORDER BY` for each sort (FR-MKT-010). */
-function orderColumns(sort: CatalogQuery["sort"]): { column: string; ascending: boolean }[] {
-  switch (sort) {
-    case "speed":
-      return [{ column: "measured_tokens_per_second", ascending: false }];
-    case "tokens":
-      // "Tokens served" is output tokens — what the GPU actually produced.
-      return [{ column: "total_completion_tokens", ascending: false }];
-    case "price":
-      return [{ column: "price_completion_micro_usd_per_mtoken", ascending: true }];
-    case "latency":
-      // A model with no measured TTFT yet sorts LAST rather than first: an
-      // unmeasured model is not the fastest one.
-      return [{ column: "p50_ttft_ms", ascending: true }];
-    case "newest":
-      return [{ column: "created_at", ascending: false }];
-  }
-}
-
-/**
- * One page of the catalog, plus the total and the "is the catalog empty at all"
- * flag that separates FR-MKT-011's two states.
- */
-export async function fetchCatalogPage(
-  supabase: SupabaseClient,
-  query: CatalogQuery,
-): Promise<CatalogPage> {
-  const from = (query.page - 1) * PAGE_SIZE;
-
-  let builder = supabase
-    .from("custom_models")
-    .select(CATALOG_COLUMNS, { count: "exact" })
-    .eq("visibility", "public")
-    .eq("status", "ready")
-    .is("deleted_at", null);
-
-  if (query.minSpeed != null) {
-    builder = builder.gte("measured_tokens_per_second", query.minSpeed);
-  }
-  if (query.minContext != null) {
-    builder = builder.gte("context_length", query.minContext);
-  }
-
-  if (query.quality === "full") {
-    // The unquantized reference is `variant_quant_tag IS NULL`; an `IN` list
-    // cannot express it (see types.ts).
-    builder = builder.is("variant_quant_tag", null);
-  } else if (query.quality) {
-    builder = builder.in("variant_quant_tag", tagsForTier(query.quality));
-  }
-
-  if (query.price) {
-    // Banded on the COMPLETION price: it is the side of the bill that scales
-    // with what the model actually generates.
-    const column = "price_completion_micro_usd_per_mtoken";
-    if (query.price === "budget") {
-      builder = builder.lte(column, PRICE_BAND_MAX_MICRO.budget);
-    } else if (query.price === "standard") {
-      builder = builder
-        .gt(column, PRICE_BAND_MAX_MICRO.budget)
-        .lte(column, PRICE_BAND_MAX_MICRO.standard);
-    } else {
-      builder = builder.gt(column, PRICE_BAND_MAX_MICRO.standard);
-    }
-  }
-
-  if (query.creator) {
-    // Embedded-column filters ARE accepted outside a logic tree, so the creator
-    // facet stays one indexed join rather than a handle→id round trip.
-    builder = builder.eq("creator_public.handle", query.creator);
-  }
-
-  const tsQuery = toPrefixTsQuery(query.q);
-  if (tsQuery) {
-    const creatorIds = await creatorIdsMatching(supabase, query.q);
-    builder =
-      creatorIds.length > 0
-        ? builder.or(`search_vector.fts(english).${tsQuery},user_id.in.(${creatorIds.join(",")})`)
-        : builder.textSearch("search_vector", tsQuery, { config: "english" });
-  }
-
-  let ordered = builder;
-  for (const spec of orderColumns(query.sort)) {
-    ordered = ordered.order(spec.column, {
-      ascending: spec.ascending,
-      nullsFirst: false,
-    });
-  }
-  // Deterministic tiebreak. Without it, two models with equal speed can swap
-  // places between page 1 and page 2, and one of them is never shown at all.
-  ordered = ordered.order("id", { ascending: true });
-
-  const [pageResult, catalogIsEmpty] = await Promise.all([
-    ordered.range(from, from + PAGE_SIZE - 1),
-    isCatalogEmpty(supabase),
-  ]);
-
-  // Degrade, do not throw. A catalog read failing is a reason to show the empty
-  // state, not to 500 the front door — the homepage is the one page that must
-  // survive the database being briefly unreachable. `isCatalogEmpty` already
-  // takes this stance (it claims non-empty on error so the copy stays sensible).
-  if (pageResult.error) {
-    // LOG EVERY FIELD, not just `message`. A PostgREST error carries `message`,
-    // but a TRANSPORT failure — Supabase unreachable, DNS, a refused connection
-    // to a local stack that is not running — arrives as a `PostgrestError` whose
-    // `message` is undefined, so `{ message: … }` printed a bare `{}` and said
-    // nothing about a failure whose cause was one line away. `code`, `details`
-    // and `hint` are what separate "the database is down" from "the query is
-    // wrong", and that is the whole question when this fires.
-    console.error("catalog page query failed", {
-      message: pageResult.error.message ?? "(none — likely a transport failure)",
-      code: pageResult.error.code,
-      details: pageResult.error.details,
-      hint: pageResult.error.hint,
-    });
-    return { models: [], total: 0, page: query.page, pageSize: PAGE_SIZE, catalogIsEmpty };
-  }
-
-  const models = ((pageResult.data ?? []) as unknown as CatalogRow[])
-    .map(toCatalogModel)
-    .filter((model): model is CatalogModel => model !== null);
-
-  return {
-    models,
-    total: pageResult.count ?? models.length,
-    page: query.page,
-    pageSize: PAGE_SIZE,
-    catalogIsEmpty,
-  };
-}
-
-/**
  * True when there is no public+ready model at all.
  *
  * `head: true`, so this costs a COUNT over the partial catalog index and
@@ -319,7 +138,13 @@ export async function isCatalogEmpty(supabase: SupabaseClient): Promise<boolean>
     .select("id", { count: "exact", head: true })
     .eq("visibility", "public")
     .eq("status", "ready")
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    // `suspended_at is null` matches the visibility block in `catalog_grouped`
+    // and the RLS policy in 20260820000100: an operator-suspended listing leaves
+    // the public catalog. Explicit here for the same reason as the three
+    // predicates above it — `custom_models_select_own` ORs a creator's own rows
+    // back in, in any status.
+    .is("suspended_at", null);
 
   // On error, claim the catalog is not empty: the zero-results copy ("try
   // clearing a filter") is a safer thing to show than "nobody has published
@@ -348,6 +173,12 @@ export async function fetchModelByHandleAndSlug(
     .eq("visibility", "public")
     .eq("status", "ready")
     .is("deleted_at", null)
+    // `suspended_at is null` matches the visibility block in `catalog_grouped`
+    // and the RLS policy in 20260820000100: an operator-suspended listing leaves
+    // the public catalog. Explicit here for the same reason as the three
+    // predicates above it — `custom_models_select_own` ORs a creator's own rows
+    // back in, in any status.
+    .is("suspended_at", null)
     .eq("slug", slug)
     .eq("creator_public.handle", creatorHandle)
     .maybeSingle();
@@ -406,6 +237,10 @@ export async function fetchSitemapModels(
     .eq("visibility", "public")
     .eq("status", "ready")
     .is("deleted_at", null)
+    // A suspended listing must leave the sitemap too, and this is the one query
+    // whose result is served verbatim to strangers: leaving it in would keep
+    // pointing crawlers at a URL that now 404s.
+    .is("suspended_at", null)
     .order("updated_at", { ascending: false })
     .limit(limit);
 
@@ -430,4 +265,248 @@ export async function fetchSitemapModels(
   }
 
   return models;
+}
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * THE GROUPED CATALOG (#26)
+ *
+ * `fetchCatalogPage` above returns DEPLOYMENTS. This returns MODELS: one row per
+ * base model, aggregated over the listings that serve it.
+ *
+ * The two rules at the head of this file apply verbatim, and one of them is why
+ * this is an RPC rather than a PostgREST query:
+ *
+ *  1. **All filtering is server-side.** Grouping is filtering — a client that
+ *      fetched listings and grouped them in JavaScript would have to fetch EVERY
+ *      public listing to know how many groups exist, which is both the payload
+ *      this rule exists to prevent and a total in the UI that would be a lie.
+ *      PostgREST cannot express `GROUP BY` with a per-group representative row,
+ *      so the whole thing lives in `catalog_grouped` (20260820001000).
+ *  2. **The projection is the security boundary.** The RPC's return is one
+ *      `jsonb_build_object` with an explicit key list, and nothing
+ *      hardware-shaped is on it. `mapGroup` below re-narrows it into
+ *      `CatalogGroup`, so a key added to the RPC does not reach the RSC payload
+ *      until someone adds it here too.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+
+/** The RPC's `groups[]` element, exactly as the migration builds it. */
+type GroupRow = {
+  group_key: string;
+  base_model_id: string | null;
+  base_slug: string | null;
+  display_name: string;
+  description: string | null;
+  family: string | null;
+  parameter_count: number | null;
+  use_cases: string[] | null;
+  listing_count: number;
+  creator_count: number;
+  best_tokens_per_second: number | null;
+  best_context_length: number;
+  best_context_verified: boolean;
+  total_requests: number;
+  total_completion_tokens: number;
+  listing_id: string;
+  creator_handle: string;
+  creator_display_name: string | null;
+  slug: string;
+  quant_tag: string | null;
+  price_prompt_micro: number;
+  price_completion_micro: number;
+  quoted_tokens_per_second: number | null;
+  quoted_context_length: number;
+  p50_ttft_ms: number | null;
+  created_at: string;
+  ready_at: string | null;
+};
+
+type GroupedResult = {
+  total: number;
+  page_size: number;
+  offset: number;
+  groups: GroupRow[];
+  categories: { all: number; by_key: Record<string, number> };
+  facets: {
+    speed: Record<string, number>;
+    context: Record<string, number>;
+    quality: Record<string, number>;
+    price: Record<string, number>;
+    creator: Record<string, number>;
+  };
+};
+
+/** Every count the RPC can return is a non-negative integer or it is not a count. */
+function countMap(raw: Record<string, unknown> | null | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw ?? {})) {
+    if (typeof value === "number" && Number.isInteger(value) && value >= 0) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Drop anything outside the closed vocabulary.
+ *
+ * The database CHECK already enforces it, so this only fires if the two lists
+ * drift — and the failure it prevents is a chip labelled `undefined`, because
+ * `categoryLabel` is a total function over `ModelCategory` and nothing else.
+ */
+function toCategories(raw: string[] | null): ModelCategory[] {
+  const allowed = new Set<string>(MODEL_CATEGORIES);
+  return (raw ?? []).filter((value): value is ModelCategory => allowed.has(value));
+}
+
+function mapGroup(row: GroupRow): CatalogGroup | null {
+  // A group with no addressable listing cannot be linked to or called, so it is
+  // not a card. The RPC's inner join on `creator_public` already guarantees the
+  // handle, and this is the type-level echo of that.
+  if (!row.creator_handle || !row.slug) return null;
+
+  return {
+    groupKey: row.group_key,
+    baseModelId: row.base_model_id,
+    baseSlug: row.base_slug,
+    displayName: row.display_name,
+    description: row.description,
+    family: row.family,
+    parameterCount: row.parameter_count,
+    categories: toCategories(row.use_cases),
+
+    listingCount: row.listing_count,
+    creatorCount: row.creator_count,
+    bestTokensPerSecond: row.best_tokens_per_second,
+    bestContextLength: row.best_context_length,
+    bestContextVerified: row.best_context_verified,
+    totalRequests: row.total_requests,
+    totalCompletionTokens: row.total_completion_tokens,
+
+    listingId: row.listing_id,
+    creatorHandle: row.creator_handle,
+    creatorDisplayName: row.creator_display_name,
+    slug: row.slug,
+    // The ONE place the platform model id is constructed on this path, and it is
+    // built from the QUOTED LISTING — never from `base_slug`, which looks like an
+    // id and resolves to nothing (see `CatalogGroup.modelId`).
+    modelId: `${row.creator_handle}/${row.slug}`,
+    quantTag: row.quant_tag,
+    qualityTier: qualityTier(row.quant_tag),
+    fromPricePromptMicroPerMtoken: row.price_prompt_micro,
+    fromPriceCompletionMicroPerMtoken: row.price_completion_micro,
+    p50TtftMs: row.p50_ttft_ms,
+    createdAt: row.created_at,
+    readyAt: row.ready_at,
+  };
+}
+
+function mapCounts(result: GroupedResult | null): CatalogCounts {
+  const categories = countMap(result?.categories?.by_key);
+  const kept: Partial<Record<ModelCategory, number>> = {};
+  for (const category of MODEL_CATEGORIES) {
+    if (categories[category] !== undefined) kept[category] = categories[category];
+  }
+
+  return {
+    all: result?.categories?.all ?? 0,
+    categories: kept,
+    speed: countMap(result?.facets?.speed),
+    context: countMap(result?.facets?.context),
+    quality: countMap(result?.facets?.quality),
+    price: countMap(result?.facets?.price),
+    creator: countMap(result?.facets?.creator),
+  };
+}
+
+const EMPTY_COUNTS: CatalogCounts = {
+  all: 0,
+  categories: {},
+  speed: {},
+  context: {},
+  quality: {},
+  price: {},
+  creator: {},
+};
+
+/**
+ * One page of the grouped catalog, plus every count the tabs and the rail need.
+ *
+ * ONE round trip, and that is a correctness requirement rather than a
+ * performance one: the tab counts have to match the rows the tab returns, and two
+ * queries can disagree — a listing goes `ready` between them and the page says
+ * `Code 11` above eleven rows and one blank space. `catalog_grouped` computes
+ * both from the same filtered set in the same snapshot.
+ *
+ * The rail's DEFINITION travels with the call (`qualityRungs()`, `priceRungs()`,
+ * the two step arrays). The database does not hold a second copy of the quality
+ * ladder — see `qualityRungs` for why that matters.
+ */
+export async function fetchCatalogGroups(
+  supabase: SupabaseClient,
+  query: CatalogQuery,
+): Promise<CatalogGroupPage> {
+  const [rpcResult, catalogIsEmpty] = await Promise.all([
+    supabase.rpc("catalog_grouped", {
+      // Tokenized here, not in SQL: `toPrefixTsQuery` is the one place the
+      // search-as-you-type behaviour is defined, and the RPC re-validates the
+      // shape so a hand-edited `?q=` cannot raise 42601 on the front page.
+      p_ts_query: toPrefixTsQuery(query.q),
+      // The creator-handle arm of search (FR-MKT-003). Sent independently of
+      // `p_ts_query`, because the two sanitize differently and the gap is
+      // reachable: `?q=--` yields no tsquery tokens but a legal handle fragment,
+      // and the RPC treats "no search" as BOTH being absent rather than as the
+      // tsquery alone being absent.
+      p_handle_fragment: query.q ? handleFragment(query.q) : null,
+      p_min_speed: query.minSpeed,
+      p_min_context: query.minContext,
+      p_quality_key: query.quality,
+      p_price_key: query.price,
+      p_creator: query.creator,
+      p_category: query.category,
+      p_sort: query.sort,
+      p_limit: PAGE_SIZE,
+      p_offset: (query.page - 1) * PAGE_SIZE,
+      p_speed_steps: [...SPEED_STEPS],
+      p_context_steps: [...CONTEXT_STEPS],
+      p_quality_rungs: qualityRungs(),
+      p_price_rungs: priceRungs(),
+    }),
+    isCatalogEmpty(supabase),
+  ]);
+
+  // Degrade, do not throw — the same stance as `fetchCatalogPage`, for the same
+  // reason: the catalog is the front door and a brief database outage should show
+  // the empty state, not a 500. Every field of the error is logged because a
+  // TRANSPORT failure arrives as a PostgrestError with an undefined `message`,
+  // so `{ message }` alone prints a bare `{}`.
+  if (rpcResult.error) {
+    console.error("grouped catalog query failed", {
+      message: rpcResult.error.message ?? "(none — likely a transport failure)",
+      code: rpcResult.error.code,
+      details: rpcResult.error.details,
+      hint: rpcResult.error.hint,
+    });
+    return {
+      groups: [],
+      total: 0,
+      page: query.page,
+      pageSize: PAGE_SIZE,
+      counts: EMPTY_COUNTS,
+      catalogIsEmpty,
+    };
+  }
+
+  const result = rpcResult.data as GroupedResult | null;
+  const groups = (result?.groups ?? [])
+    .map(mapGroup)
+    .filter((group): group is CatalogGroup => group !== null);
+
+  return {
+    groups,
+    total: result?.total ?? groups.length,
+    page: query.page,
+    pageSize: PAGE_SIZE,
+    counts: mapCounts(result),
+    catalogIsEmpty,
+  };
 }

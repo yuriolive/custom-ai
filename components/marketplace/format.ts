@@ -4,11 +4,19 @@
  * Pure and dependency-free, so the same functions run in the Server Component
  * that fetches and in the `"use client"` component that renders. Nothing here
  * touches the database or a secret.
+ *
+ * THE IMPORTS BELOW ARE RELATIVE AND CARRY THEIR `.ts` EXTENSIONS, unlike the
+ * `@/…` specifiers used elsewhere in `components/`. That is what makes this
+ * module loadable by `node --test`, which resolves neither the `@/` path alias
+ * (a tsconfig fiction the bundler implements) nor an extensionless specifier.
+ * `lib/seo/json-ld.ts` spells its imports the same way and for the same reason;
+ * `format.test.ts` next door is the thing that would otherwise be unwritable.
  */
 
-import { formatMicroUsd } from "@/lib/format";
+import { formatMicroUsd } from "../../lib/format.ts";
 
-import type { PriceBand, QualityTier } from "./types";
+import type { ModelCategory, PriceBand, QualityTier } from "./types.ts";
+import { QUALITY_TIERS } from "./types.ts";
 
 /**
  * Quantization tag → quality tier, from the ladder in PRD §4.3.3.3.
@@ -183,4 +191,133 @@ export function formatLatency(ms: number | null): string {
 export function formatSpeedValue(tokensPerSecond: number | null): string {
   if (tokensPerSecond == null) return "—";
   return String(Math.round(tokensPerSecond));
+}
+
+/**
+ * The rungs the Speed facet offers, and the rungs whose counts the RPC returns.
+ *
+ * They live here rather than in `catalog-controls.tsx` because two places need
+ * the same list: the rail that renders the rungs, and `queries.ts`, which sends
+ * them to `catalog_grouped` so the counts come back keyed by the same values.
+ * Two copies would drift into a rail with a rung that has no count and a count
+ * for a rung nobody can click.
+ */
+export const SPEED_STEPS = [20, 40, 60, 90, 120] as const;
+
+/** The rungs the Context facet offers. Same reasoning as `SPEED_STEPS`. */
+export const CONTEXT_STEPS = [8_192, 32_768, 128_000, 200_000, 1_000_000] as const;
+
+/** One rung of the quality ladder, as `catalog_grouped` consumes it. */
+export type QualityRung = {
+  key: QualityTier;
+  tags: string[];
+  /** True when the rung also matches a NULL tag. Only `full` does. */
+  native?: boolean;
+};
+
+/**
+ * The whole quality ladder, in the shape `catalog_grouped(p_quality_rungs)`
+ * expects.
+ *
+ * THE LADDER IS DEFINED ONCE, HERE. The RPC takes it as a parameter rather than
+ * restating `TIER_BY_TAG` in SQL, because a second copy of these constants is
+ * the exact failure CLAUDE.md documents for the two GPU tier catalogs: a change
+ * landing in one silently makes the two disagree, and the symptom is a facet
+ * whose count and whose rows come from different definitions of `balanced`.
+ *
+ * `native` on `full` is a widening, and a deliberate one. The old direct query
+ * filtered `full` as `variant_quant_tag IS NULL` only, so a listing explicitly
+ * tagged `F16` — native precision, spelled out — failed the "full precision"
+ * filter. Both now match: NULL means the tag was never recorded, `F16` means it
+ * was, and they describe the same weights.
+ */
+export function qualityRungs(): QualityRung[] {
+  return QUALITY_TIERS.map((tier) => ({
+    key: tier,
+    tags: tagsForTier(tier),
+    native: tier === "full" ? true : undefined,
+  }));
+}
+
+/** One price band, as `catalog_grouped(p_price_rungs)` expects it. */
+export type PriceRung = {
+  key: PriceBand;
+  /** EXCLUSIVE lower bound in micro-USD per 1M completion tokens. */
+  min?: number;
+  /** INCLUSIVE upper bound. */
+  max?: number;
+};
+
+/**
+ * The three price bands, boundaries and all, in the RPC's shape.
+ *
+ * The bounds are half-open the same way `fetchCatalogPage` has always banded
+ * them — `> min` and `<= max` — so a model sitting exactly on $0.50 is budget in
+ * both the count and the rows. Flipping either side would put it in two bands or
+ * in none, and the visible symptom is a band count that does not add up to the
+ * total.
+ */
+export function priceRungs(): PriceRung[] {
+  return [
+    { key: "budget", max: PRICE_BAND_MAX_MICRO.budget },
+    { key: "standard", min: PRICE_BAND_MAX_MICRO.budget, max: PRICE_BAND_MAX_MICRO.standard },
+    { key: "premium", min: PRICE_BAND_MAX_MICRO.standard },
+  ];
+}
+
+/** Category labels for the tabs. Short — the tab strip has to fit at 375px. */
+const CATEGORY_LABEL: Readonly<Record<ModelCategory, string>> = {
+  code: "Code",
+  reasoning: "Reasoning",
+  chat: "Chat",
+  "tool-use": "Tools",
+  vision: "Vision",
+  "long-context": "Long context",
+  multilingual: "Multilingual",
+  math: "Math",
+  roleplay: "Roleplay",
+  uncensored: "Uncensored",
+  summarization: "Summarization",
+  embeddings: "Embeddings",
+};
+
+export function categoryLabel(category: ModelCategory): string {
+  return CATEGORY_LABEL[category];
+}
+
+/**
+ * Who published the WEIGHTS, from `base_models.slug`.
+ *
+ * The slug is `publisher/name`, and the first segment is the upstream publisher —
+ * an unrelated namespace to the platform creator handle in the second half of a
+ * model id. Returning it separately is what lets the card say
+ * "weights by qwen · served by alice": without that line, a creator who did
+ * nothing but run a deploy reads as the author of the model.
+ *
+ * Null when nothing has been resolved yet. There is no honest fallback: the
+ * platform genuinely does not know who published the weights until #25's
+ * cascade runs, and guessing from the creator's handle would print the very
+ * claim this line exists to stop.
+ */
+export function weightsPublisher(baseSlug: string | null): string | null {
+  if (!baseSlug) return null;
+  const publisher = baseSlug.split("/")[0]?.trim();
+  return publisher ? publisher : null;
+}
+
+/** `1 listing` / `3 listings`. */
+export function formatListingCount(count: number): string {
+  return count === 1 ? "1 listing" : `${count} listings`;
+}
+
+/**
+ * "served by alice", or "served by alice +2" when the group spans creators.
+ *
+ * The named handle is the one the card QUOTES, so it matches the model id below
+ * it. The overflow count is deliberately a count and not a list: the other
+ * creators' listings are not the ones this card is pricing, and naming them
+ * would imply the figures above apply to all of them.
+ */
+export function formatServedBy(creatorHandle: string, creatorCount: number): string {
+  return creatorCount > 1 ? `${creatorHandle} +${creatorCount - 1}` : creatorHandle;
 }

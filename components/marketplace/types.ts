@@ -23,14 +23,7 @@
  * tier of its own rather than the top of `maximum`: filtering it needs an
  * `IS NULL` predicate, not an `IN` list.
  */
-export const QUALITY_TIERS = [
-  "minimum",
-  "reduced",
-  "balanced",
-  "high",
-  "maximum",
-  "full",
-] as const;
+export const QUALITY_TIERS = ["minimum", "reduced", "balanced", "high", "maximum", "full"] as const;
 
 export type QualityTier = (typeof QUALITY_TIERS)[number];
 
@@ -38,14 +31,38 @@ export type QualityTier = (typeof QUALITY_TIERS)[number];
 export const PRICE_BANDS = ["budget", "standard", "premium"] as const;
 export type PriceBand = (typeof PRICE_BANDS)[number];
 
-/** FR-MKT-010. */
-export const CATALOG_SORTS = [
-  "newest",
-  "speed",
-  "tokens",
-  "price",
-  "latency",
+/**
+ * The `use_cases` vocabulary from `base_models` (migration 20260820000100),
+ * which is a CLOSED set enforced by a CHECK constraint — an open vocabulary
+ * would split one facet three ways the first time someone typed "coding".
+ *
+ * The ORDER is the tab order, and it is fixed rather than sorted by count. A
+ * count-sorted tab strip reorders itself every time a filter changes, so the tab
+ * a visitor is reaching for moves under the cursor; a fixed order costs one
+ * scan and never does that. It runs roughly most- to least-shopped-for.
+ *
+ * Must stay a subset of the constraint's list, or a tab silently returns zero
+ * rows for a category no row can ever hold.
+ */
+export const MODEL_CATEGORIES = [
+  "code",
+  "reasoning",
+  "chat",
+  "tool-use",
+  "vision",
+  "long-context",
+  "multilingual",
+  "math",
+  "roleplay",
+  "uncensored",
+  "summarization",
+  "embeddings",
 ] as const;
+
+export type ModelCategory = (typeof MODEL_CATEGORIES)[number];
+
+/** FR-MKT-010. */
+export const CATALOG_SORTS = ["newest", "speed", "tokens", "price", "latency"] as const;
 export type CatalogSort = (typeof CATALOG_SORTS)[number];
 
 /** One catalog entry. Every field is safe to render to an anonymous visitor. */
@@ -102,19 +119,132 @@ export type CatalogQuery = {
   quality: QualityTier | null;
   price: PriceBand | null;
   creator: string | null;
+  /**
+   * The selected category tab, or null for `All`.
+   *
+   * Not part of the facet rail: it reads on the group's `use_cases`, which is a
+   * property of the MODEL, while every rail facet reads on a listing. Filtering
+   * a group by a listing-shaped facet narrows what the card quotes; filtering by
+   * category removes the card.
+   */
+  category: ModelCategory | null;
   sort: CatalogSort;
   /** 1-based. */
   page: number;
 };
 
-export type CatalogPage = {
-  models: CatalogModel[];
-  /** Total rows matching the filters, across all pages. */
+/**
+ * ONE CATALOG CARD: a model, aggregated over its ready, public, unsuspended
+ * listings (#26).
+ *
+ * The card used to be a `CatalogModel`, i.e. a DEPLOYMENT, and that was the
+ * defect: six quantizations of one model drew six unrelated cards, and the
+ * quality facet deleted cards instead of picking a variant inside one.
+ *
+ * The fields split into three groups and mixing them up is the whole risk here:
+ *
+ *  1. **The model.** `displayName`, `description`, `categories`, `baseSlug` —
+ *     from `base_models`, or from the single listing when nothing has been
+ *     resolved yet (`baseModelId === null`).
+ *  2. **Best cases over the matching listings.** `best*`, and they are
+ *     labelled as best cases everywhere they are rendered. An unlabelled max
+ *     reads as a promise the median listing does not keep.
+ *  3. **The QUOTED listing** — `modelId`, `slug`, `creatorHandle`, the two
+ *     prices, `qualityTier`. This is one real listing: the cheapest one that
+ *     matches the active filters. It is what the card links to and what the copy
+ *     button puts on the clipboard, so the `from` price is a price the visitor
+ *     can actually pay on the page the card opens.
+ *
+ * NO HARDWARE IS REPRESENTABLE HERE, exactly as in `CatalogModel`: no
+ * `gpu_tier_id`, no predicted throughput, no GPU name, not as a field and not as
+ * a label (FR-MKT-002).
+ */
+export type CatalogGroup = {
+  /** Stable identity for a React key. A base model id, or `listing:<uuid>`. */
+  groupKey: string;
+  /** Null until #25's resolution cascade attaches a base model. */
+  baseModelId: string | null;
+  /**
+   * `publisher/name` on `base_models`. NOT a platform model id and NOT a Hugging
+   * Face repo path — see `weightsPublisher` in format.ts for the one thing it is
+   * used for.
+   */
+  baseSlug: string | null;
+  displayName: string;
+  description: string | null;
+  family: string | null;
+  parameterCount: number | null;
+  categories: ModelCategory[];
+
+  /** How many listings this card speaks for, after filtering. */
+  listingCount: number;
+  /** How many distinct creators serve them. Drives the provenance line. */
+  creatorCount: number;
+  bestTokensPerSecond: number | null;
+  bestContextLength: number;
+  /** Verified flag OF THE LISTING that reaches `bestContextLength`. */
+  bestContextVerified: boolean;
+  totalRequests: number;
+  totalCompletionTokens: number;
+
+  /** The quoted listing's row id. */
+  listingId: string;
+  creatorHandle: string;
+  creatorDisplayName: string | null;
+  slug: string;
+  /**
+   * The id a caller passes as `model`, built from the QUOTED LISTING —
+   * `creator-handle/model-slug`, lowercase.
+   *
+   * NOT `baseSlug`. `baseSlug` looks like an id (`qwen/qwen3-8b`) and resolves
+   * to nothing: it is a weights publisher and a model name, not a platform
+   * handle and a listing slug (CONTRACTS.md, top). Copying it would be a 404.
+   */
+  modelId: string;
+  quantTag: string | null;
+  qualityTier: QualityTier;
+  /** micro-USD per 1M tokens, from the quoted listing. Integers (CONTRACTS.md §Money). */
+  fromPricePromptMicroPerMtoken: number;
+  fromPriceCompletionMicroPerMtoken: number;
+  p50TtftMs: number | null;
+  createdAt: string;
+  readyAt: string | null;
+};
+
+/**
+ * The counts the tabs and the rail render, all from the same filtered set as the
+ * rows — which is the only way a tab that says `Code 11` can be trusted above a
+ * grid of 11.
+ *
+ * Every count is a GROUP count, and every one is computed with its own dimension
+ * excluded: the number beside `120+ tok/s` answers "how many models would I
+ * still have if I asked for this too". A rail whose counts include its own
+ * active filter reports the thing you already chose and zero for everything
+ * else, and goes dead after one click.
+ */
+export type CatalogCounts = {
+  /** The `All` tab: groups matching every facet except the category. */
+  all: number;
+  /** Sparse on purpose — a category with no rows has no tab, not a zero tab. */
+  categories: Partial<Record<ModelCategory, number>>;
+  /** Keyed by the rung value as a string, e.g. `"90"`. */
+  speed: Record<string, number>;
+  context: Record<string, number>;
+  quality: Partial<Record<QualityTier, number>>;
+  price: Partial<Record<PriceBand, number>>;
+  /** Keyed by creator handle. The rail offers the handles actually in the catalog. */
+  creator: Record<string, number>;
+};
+
+export type CatalogGroupPage = {
+  groups: CatalogGroup[];
+  /** Total GROUPS matching the filters, across all pages. */
   total: number;
   page: number;
   pageSize: number;
+  counts: CatalogCounts;
   /**
-   * True when the catalog holds no public+ready models at all, regardless of
+   * True when the catalog holds no public+ready listing at all, regardless of
    * filters — the difference between "nothing here yet" and "nothing matched",
    * which need different next steps (FR-MKT-011).
    */

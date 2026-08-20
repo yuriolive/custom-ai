@@ -11,11 +11,12 @@ import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 import { Suspense } from "react";
 
-import { CatalogControls } from "@/components/marketplace/catalog-controls";
+import { CatalogControls, CatalogFacets } from "@/components/marketplace/catalog-controls";
 import { CatalogEmpty, CatalogGrid } from "@/components/marketplace/catalog-grid";
 import { CatalogPagination } from "@/components/marketplace/catalog-pagination";
 import { CatalogSkeleton } from "@/components/marketplace/catalog-skeleton";
-import { fetchCatalogPage } from "@/components/marketplace/queries";
+import { CategoryTabs } from "@/components/marketplace/category-tabs";
+import { fetchCatalogGroups } from "@/components/marketplace/queries";
 import type { RawSearchParams } from "@/components/marketplace/search-params";
 import {
   catalogHref,
@@ -37,6 +38,12 @@ import { createClient } from "@/lib/supabase/server";
  * a list — so it opened with four paragraphs and a full-width warning banner
  * above the grid. They are two jobs and they are now two routes; `/` sells, this
  * page filters, and `next.config.ts` redirects any indexed `/?q=…` here.
+ *
+ * A CARD IS A MODEL, NOT A DEPLOYMENT (#26). One row per base model, aggregated
+ * over the listings that serve it. That is a whole-page property rather than a
+ * card detail: the tab counts, the rail counts, the result count and the
+ * pagination all count MODELS, and all of them come out of the one
+ * `fetchCatalogGroups` call so none of them can contradict another.
  *
  * A SERVER COMPONENT, and that is the whole architecture of this page. HeroUI v3
  * is client-only (PRD §4.1.0), so the composition is: fetch here, where the
@@ -106,6 +113,9 @@ export default async function ModelsPage({
           Catalog
         </h2>
 
+        {/* Outside the boundary: it owns the search box's caret. Everything that
+            carries a COUNT is inside, because a count has to come from the same
+            query as the rows it sits above. */}
         <CatalogControls query={query} />
 
         {/* Keyed on the full query so a filter change re-suspends and shows
@@ -123,22 +133,41 @@ export default async function ModelsPage({
  * The data-fetching half. Separated from `ModelsPage` so the `<Suspense>`
  * boundary has something to suspend on: an `async` component below the boundary
  * streams, whereas an `await` in the page body would block the whole document.
+ *
+ * ONE query for the whole surface. The tabs, the rail, the result count and the
+ * grid are four renderings of one `CatalogGroupPage`, which is the only way
+ * `Code 11` above eleven rows is a guarantee rather than a coincidence.
  */
 async function CatalogResults({ query, baseUrl }: { query: CatalogQuery; baseUrl: string }) {
   const supabase = await createClient();
-  const page = await fetchCatalogPage(supabase, query);
-
-  if (page.models.length === 0) {
-    return <CatalogEmpty catalogIsEmpty={page.catalogIsEmpty} query={query} />;
-  }
+  const page = await fetchCatalogGroups(supabase, query);
 
   return (
-    <div className="flex flex-col gap-5">
-      <p className="text-muted text-sm" role="status">
-        {page.total === 1 ? "1 model" : `${page.total} models`}
-      </p>
-      <CatalogGrid baseUrl={baseUrl} models={page.models} />
-      <CatalogPagination pageSize={page.pageSize} query={query} total={page.total} />
+    // Two columns above `lg:`, one below. `items-start` so the rail does not
+    // stretch to the grid's height; `CatalogFacets` emits its mobile row and its
+    // desktop rail as siblings, and the mobile row is `display:none` at `lg:`, so
+    // it drops out of the grid rather than claiming the first cell.
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[220px_1fr] lg:items-start lg:gap-8">
+      <CatalogFacets counts={page.counts} query={query} />
+
+      <div className="flex min-w-0 flex-col gap-5">
+        <CategoryTabs counts={page.counts} query={query} />
+
+        {page.groups.length === 0 ? (
+          <CatalogEmpty catalogIsEmpty={page.catalogIsEmpty} query={query} />
+        ) : (
+          <>
+            {/* "models", not "listings". The number is the count of cards, and
+                after grouping those are models — a page that said "7 models"
+                over three cards would be describing the old schema. */}
+            <p className="text-muted text-sm" role="status">
+              {page.total === 1 ? "1 model" : `${page.total} models`}
+            </p>
+            <CatalogGrid baseUrl={baseUrl} groups={page.groups} />
+            <CatalogPagination pageSize={page.pageSize} query={query} total={page.total} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

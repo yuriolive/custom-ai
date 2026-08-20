@@ -3,17 +3,24 @@
 import { Card, EmptyState } from "@heroui/react";
 import Link from "next/link";
 
-import { ModelCard } from "./model-card";
+import { GroupCard } from "./group-card";
 import { appHref } from "./routes";
 import { catalogHref, EMPTY_QUERY, hasActiveFilters } from "./search-params";
-import type { CatalogModel, CatalogQuery } from "./types";
+import type { CatalogGroup, CatalogQuery } from "./types";
 
-/** The grid itself (FR-MKT-001): 1 col mobile · 2 tablet · 3 desktop. */
-export function CatalogGrid({ models, baseUrl }: { models: CatalogModel[]; baseUrl: string }) {
+/**
+ * The grid itself (FR-MKT-001): 1 col mobile · 2 tablet · 3 desktop.
+ *
+ * Keyed on `groupKey`, not on a listing id: the card is a model now, and keying
+ * on the quoted listing would remount every card whose quoted listing changed
+ * when a filter moved — which is most of them, and which throws away the
+ * `Copied` state of any copy button mid-announcement.
+ */
+export function CatalogGrid({ groups, baseUrl }: { groups: CatalogGroup[]; baseUrl: string }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {models.map((model) => (
-        <ModelCard baseUrl={baseUrl} key={model.id} model={model} />
+      {groups.map((group) => (
+        <GroupCard baseUrl={baseUrl} group={group} key={group.groupKey} />
       ))}
     </div>
   );
