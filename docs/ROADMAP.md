@@ -87,6 +87,14 @@ need it.
 The Playground serves one hardcoded model. Correct with one public model; broken the
 moment a second exists, and the marketplace cards already link to it.
 
+**Related, proposed but unnumbered — consumer chat (`docs/CHAT-PLAN.md`).** A
+parameter-free `/chat` reachable from every model page, for the audience that will never
+open the Playground; scoped as demand generation for the creator side, not as a second
+playground. Left unnumbered because its priority against #4 and #6 is not decided. Two
+things must be settled before any code: chat cannot reuse the Playground's
+`PLATFORM_API_KEY` path (the platform would pay for every turn and no creator would earn),
+and the ~90 s cold start is the real product risk. Both are worked through in the plan.
+
 ---
 
 ## P2 — unlocks agentic clients
