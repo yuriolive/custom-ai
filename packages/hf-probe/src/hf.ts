@@ -124,6 +124,33 @@ export function resolveUrl(
   return `${endpoint}/${slug}/resolve/${encodeURIComponent(revision)}/${segments}`;
 }
 
+/**
+ * Fetch a repo file as text. `chat_template.jinja` is Jinja, not JSON, so it
+ * cannot go through getJson — and a 404 here is an ordinary answer ("this repo
+ * does not ship one"), not a failure worth surfacing.
+ */
+export async function getText(
+  url: string,
+  opts: HfClientOptions = {},
+): Promise<HfResponse<string>> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  let res: Response;
+  try {
+    res = await doFetch(url, { headers: authHeaders(opts), signal: opts.signal });
+  } catch (err) {
+    return { status: 0, body: null, error: `request failed: ${errText(err)}` };
+  }
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    return { status: res.status, body: null, error: `HTTP ${res.status}` };
+  }
+  try {
+    return { status: res.status, body: await res.text(), error: null };
+  } catch (err) {
+    return { status: res.status, body: null, error: `response was not text: ${errText(err)}` };
+  }
+}
+
 export async function getJson<T>(
   url: string,
   opts: HfClientOptions = {},

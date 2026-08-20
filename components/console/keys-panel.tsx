@@ -244,6 +244,21 @@ export function KeysPanel({
         </Table>
       )}
 
+      {/* These two columns are counted at the point a request is admitted for
+          billing, which is not the same as "every call you made with this key".
+          Saying so is cheaper than the support thread that follows a developer
+          watching their requests 401 while "Requests" stays put — see the
+          `request_count` column comment in
+          supabase/migrations/20260819000200_api_key_usage_counters.sql. */}
+      {isEmpty ? null : (
+        <p className="text-muted max-w-prose text-xs">
+          <span className="font-medium">Last used</span> and{" "}
+          <span className="font-medium">Requests</span> count requests admitted for billing. A call
+          turned away at the gate — revoked key, empty wallet, model not ready — is not counted and
+          does not move <span className="font-medium">Last used</span>.
+        </p>
+      )}
+
       <CreateKeyDialog
         error={dialogError}
         isOpen={isCreateOpen}

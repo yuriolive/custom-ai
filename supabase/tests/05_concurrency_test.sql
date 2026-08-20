@@ -10,13 +10,15 @@
 -- Fixtures are created and torn down explicitly (both at the top and the
 -- bottom) because there is no enclosing ROLLBACK to clean up after us.
 -- ============================================================================
-select plan(33);
+select plan(41);
 
 create extension if not exists dblink with schema extensions;
 
 -- ── uuids used throughout ───────────────────────────────────────────────────
 -- e1 payer   e2 creator   e3/e4 swapped payer<->creator pair (deadlock probe)
 -- f1/f3/f4 models cloned from the seed row so every NOT NULL column is real.
+-- d1 an api key owned by e1 — scenario 8 only; every other scenario passes a
+--    null api_key_id, which is why the counter bump has to tolerate one.
 
 -- ── teardown helper, run first (in case a previous run died mid-file) ───────
 create or replace function pg_temp.teardown() returns void language plpgsql as $$
@@ -36,6 +38,9 @@ begin
   delete from public.custom_models where id in ('f0000000-0000-0000-0000-0000000000f1',
                                                 'f0000000-0000-0000-0000-0000000000f3',
                                                 'f0000000-0000-0000-0000-0000000000f4');
+  -- After usage_transactions, so v_api_key_usage_drift is never left looking at a
+  -- key whose reservations have been deleted out from under its counter.
+  delete from public.api_keys where id in ('d0000000-0000-0000-0000-0000000000d1');
   delete from auth.users where id in ('e0000000-0000-0000-0000-0000000000e1',
                                       'e0000000-0000-0000-0000-0000000000e2',
                                       'e0000000-0000-0000-0000-0000000000e3',
@@ -93,6 +98,16 @@ select pg_temp.mkmodel('f0000000-0000-0000-0000-0000000000f3',
                        'e0000000-0000-0000-0000-0000000000e3', 'conc-model-3', 1000000, 1000000, 2000);
 select pg_temp.mkmodel('f0000000-0000-0000-0000-0000000000f4',
                        'e0000000-0000-0000-0000-0000000000e4', 'conc-model-4', 1000000, 1000000, 2000);
+
+-- An api key for e1, used only by scenario 8. The hash is two md5s concatenated
+-- purely to satisfy the `^[a-f0-9]{64}$` CHECK — it is the preimage of nothing
+-- and authenticates nowhere.
+insert into public.api_keys (id, user_id, name, key_hash, key_prefix)
+values ('d0000000-0000-0000-0000-0000000000d1',
+        'e0000000-0000-0000-0000-0000000000e1',
+        'concurrency fixture key',
+        md5('conc-key-lo') || md5('conc-key-hi'),
+        'sk-plat-conckey1');
 
 -- ── the fan-out primitive: N genuinely separate sessions, one barrier ────────
 create or replace function pg_temp.fanout(p_sqls text[], p_delay double precision default 1.5)
@@ -383,9 +398,72 @@ select diag('scenario 7 observed errors: ' ||
 select is((select count(*)::int from s7 where res like 'ERROR%'), 0,
           'CONTROL: 20 same-direction concurrent settlements do not deadlock');
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- SCENARIO 8 — FR-CON-001. 20 concurrent authorizes sharing ONE api key.
+--
+-- Two things can only fail here, never on a single connection:
+--
+--   LOST UPDATE. `request_count = request_count + 1` is read-modify-write. It is
+--   safe only because every session already holds profiles(payer) FOR UPDATE
+--   when it runs, and one api key has exactly one owner — so the increments are
+--   already serialized. If the bump ever moves ahead of that lock, or onto the
+--   resolve path, this scenario under-counts.
+--
+--   DEADLOCK AGAINST THE FK. Inserting usage_transactions takes FOR KEY SHARE on
+--   the referenced api_keys row. The bump then updates that same row from the
+--   same transaction. FOR KEY SHARE conflicts with FOR UPDATE but NOT with the
+--   FOR NO KEY UPDATE that a plain non-key UPDATE takes, which is the only
+--   reason 20 sessions can do this at once. Put request_count under a unique
+--   index or a foreign key and the lock is promoted, and this deadlocks.
+-- ════════════════════════════════════════════════════════════════════════════
+update public.profiles set max_balance_micro_usd = 100000000
+ where id = 'e0000000-0000-0000-0000-0000000000e1';
+select public.credit_wallet('e0000000-0000-0000-0000-0000000000e1'::uuid, 1000000::bigint,
+                            'grant'::public.ledger_kind, null, null, 'counter fixture funding');
+
+create temp table s8(res text);
+insert into s8
+select unnest(pg_temp.fanout(
+  (select array_agg(format(
+     'public.authorize_request(%L::uuid, %L::uuid, %L::uuid, %L::uuid, 1000, 0, true)',
+     ('77770000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid,
+     'e0000000-0000-0000-0000-0000000000e1',
+     'd0000000-0000-0000-0000-0000000000d1',
+     'f0000000-0000-0000-0000-0000000000f1'))
+     from generate_series(1, 20) g)));
+
+select diag('scenario 8 observed errors: ' ||
+            coalesce((select string_agg(distinct res, ' || ') from s8 where res like 'ERROR%'), 'none'));
+select is((select count(*)::int from s8), 20,
+          '20 concurrent authorizes on one api key completed');
+select is((select count(*)::int from s8 where res like 'ERROR 40P01%'), 0,
+          'the counter bump does not deadlock against its own FK lock');
+select is((select count(*)::int from s8 where res like 'ERROR%'), 0,
+          'no concurrent counter bump failed for any reason');
+select is((select count(*)::int from s8 where (res::jsonb->>'ok')::boolean), 20,
+          'the wallet funded all 20, so every one of them should have counted');
+select is((select request_count from public.api_keys
+             where id = 'd0000000-0000-0000-0000-0000000000d1'), 20::bigint,
+          'FR-CON-001: exactly one increment per granted authorize, no lost update');
+-- Pinned by name because the drift view alone reports it as an anonymous row.
+-- A plain `last_used_at = now()` passes every single-connection test and fails
+-- here: the UPDATEs serialize in COMMIT order while now() is stamped at START,
+-- so an earlier-started transaction committing later writes a stale timestamp
+-- over a fresher one. Only GREATEST makes the column the max over all of them.
+select is((select last_used_at from public.api_keys
+             where id = 'd0000000-0000-0000-0000-0000000000d1'),
+          (select max(created_at) from public.usage_transactions
+             where api_key_id = 'd0000000-0000-0000-0000-0000000000d1'),
+          'FR-CON-001: last_used_at is the max over concurrent reservations, not the last to commit');
+select is((select count(*)::int from public.v_api_key_usage_drift
+             where api_key_id = 'd0000000-0000-0000-0000-0000000000d1'), 0,
+          'FR-CON-001: the counters match usage_transactions under concurrency');
+
 -- ── teardown ────────────────────────────────────────────────────────────────
 select pg_temp.teardown();
 select is((select count(*)::int from public.v_balance_drift), 0,
           'I4: no drift left behind after teardown');
+select is((select count(*)::int from public.v_api_key_usage_drift), 0,
+          'FR-CON-001: no counter drift left behind after teardown');
 
 select * from finish();
