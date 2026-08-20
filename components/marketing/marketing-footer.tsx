@@ -24,6 +24,7 @@ const PRODUCT: readonly FooterLink[] = [
   { href: "/pricing", label: "Pricing" },
   { href: "/playground", label: "Playground" },
   { href: "/studio/new", label: "Deploy a model" },
+  { href: "/about", label: "About" },
 ] as const;
 
 const LEGAL: readonly FooterLink[] = [
