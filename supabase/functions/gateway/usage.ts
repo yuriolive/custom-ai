@@ -140,6 +140,33 @@ export function extractUsage(obj: unknown): ExtractedUsage | null {
   return fromStandardUsage(obj["usage"]) ?? fromNonStandard(obj);
 }
 
+/**
+ * Characters emitted by one chunk's tool-call deltas (FR-TOOL-004).
+ *
+ * `delta.tool_calls` is an ARRAY of partial entries carrying an `index`, and
+ * `function.arguments` arrives as incremental string fragments that are
+ * routinely split mid-JSON across chunk boundaries. For the estimator only the
+ * total length matters, so no per-index reassembly is needed here — but the
+ * characters must be counted, because tool arguments ARE generated tokens. A
+ * tool-calling turn frequently emits no `content` at all, so counting content
+ * alone estimates a whole billable response at zero.
+ */
+function toolCallChars(delta: Record<string, unknown>): number {
+  const calls = delta["tool_calls"];
+  if (!Array.isArray(calls)) return 0;
+  let n = 0;
+  for (const call of calls) {
+    if (!isRecord(call)) continue;
+    const fn = call["function"];
+    if (!isRecord(fn)) continue;
+    // The name arrives once, on the entry that opens the call; the arguments in
+    // fragments after it. Both are decoded tokens.
+    if (typeof fn["name"] === "string") n += (fn["name"] as string).length;
+    if (typeof fn["arguments"] === "string") n += (fn["arguments"] as string).length;
+  }
+  return n;
+}
+
 /** Characters contributed by one chunk's deltas, for the estimator. */
 export function deltaChars(obj: unknown): number {
   if (!isRecord(obj)) return 0;
@@ -154,6 +181,7 @@ export function deltaChars(obj: unknown): number {
       if (typeof delta["reasoning_content"] === "string") {
         n += (delta["reasoning_content"] as string).length;
       }
+      n += toolCallChars(delta);
     }
     // Legacy / completions-style frames.
     if (typeof choice["text"] === "string") n += (choice["text"] as string).length;

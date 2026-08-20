@@ -95,6 +95,11 @@ export interface RawModelRow {
   platform_fee_bps: number;
   context_length: number;
   cold_start_budget_s: number;
+  /**
+   * FR-TOOL-003. Optional on this row type so a fixture that predates the
+   * column keeps meaning "unknown" rather than silently reading as `false`.
+   */
+  supports_tools?: boolean | null;
 }
 
 /** One row from the single JOIN. Either half may be null (LEFT JOINs). */
@@ -270,6 +275,8 @@ export async function resolveRequest(
     platformFeeBps: Number(model.platform_fee_bps),
     contextLength: Number(model.context_length),
     coldStartBudgetS: Number(model.cold_start_budget_s),
+    // `?? null` and never `?? false`: unknown is a third state (FR-TOOL-003).
+    supportsTools: model.supports_tools ?? null,
   };
 
   return { resolved, cacheHit: cached !== null };
@@ -308,6 +315,7 @@ interface GatewayResolveEnvelope {
   platformFeeBps?: number;
   contextLength?: number;
   coldStartBudgetS?: number;
+  supportsTools?: boolean | null;
   keyRevokedAt?: string | null;
   modelStatus?: string;
   modelVisibility?: string;
@@ -336,6 +344,7 @@ function envelopeToRow(env: GatewayResolveEnvelope): RawResolveRow {
       platform_fee_bps: Number(env.platformFeeBps ?? 0),
       context_length: Number(env.contextLength ?? 0),
       cold_start_budget_s: Number(env.coldStartBudgetS ?? 0),
+      supports_tools: env.supportsTools ?? null,
     },
   };
 }

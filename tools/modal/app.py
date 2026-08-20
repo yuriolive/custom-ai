@@ -148,6 +148,12 @@ def _launch_llama_server(model_path: str, ctx_size: int, parallel: int, alias: s
         "--metrics",
         "--alias",
         alias,
+        # FR-TOOL-002. Load-bearing for tool calling: with --jinja the MODEL'S OWN
+        # chat template renders `tools`, and llama.cpp parses the result back into
+        # `tool_calls`. WITHOUT it the server ignores `tools` entirely and returns
+        # ordinary prose — no error, no warning, and a client's tool loop parses
+        # that as a successful turn that chose not to call anything. Removing this
+        # flag does not break the server; it breaks every agentic client silently.
         "--jinja",
     ]
     print(

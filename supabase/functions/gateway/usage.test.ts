@@ -136,6 +136,76 @@ test("deltaChars counts content, reasoning_content and legacy text", () => {
   assert.equal(deltaChars(null), 0);
 });
 
+test("deltaChars counts tool_calls name and argument fragments (FR-TOOL-004)", () => {
+  const open = {
+    choices: [{
+      delta: {
+        tool_calls: [{
+          index: 0,
+          id: "call_x",
+          type: "function",
+          function: { name: "get_weather", arguments: "" },
+        }],
+      },
+    }],
+  };
+  // The name, and nothing else — `id` and `type` are framing, not decoded text.
+  assert.equal(deltaChars(open), "get_weather".length);
+
+  const fragment = {
+    choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"loc' } }] } }],
+  };
+  assert.equal(deltaChars(fragment), 5);
+
+  // Parallel calls in one frame both count.
+  assert.equal(
+    deltaChars({
+      choices: [{
+        delta: {
+          tool_calls: [
+            { index: 0, function: { arguments: "ab" } },
+            { index: 1, function: { arguments: "cde" } },
+          ],
+        },
+      }],
+    }),
+    5,
+  );
+
+  // Junk in the array must not throw on a billable stream.
+  assert.equal(deltaChars({ choices: [{ delta: { tool_calls: [null, 7, {}] } }] }), 0);
+  assert.equal(deltaChars({ choices: [{ delta: { tool_calls: "nope" } }] }), 0);
+});
+
+test("a tool-only stream never estimates zero completion tokens", () => {
+  // The whole reason FR-TOOL-004 touches this file: a tool-calling turn emits no
+  // `content` at all, so a content-only count bills real GPU work as nothing and
+  // shouldVoid then releases the hold.
+  const acc = new UsageAccumulator({ promptChars: 400 });
+  acc.ingest(JSON.stringify({
+    choices: [{
+      delta: {
+        tool_calls: [{
+          index: 0,
+          id: "c",
+          type: "function",
+          function: { name: "get_weather", arguments: "" },
+        }],
+      },
+    }],
+  }));
+  acc.ingest(JSON.stringify({
+    choices: [{
+      delta: { tool_calls: [{ index: 0, function: { arguments: '{"location":"Lisbon"}' } }] },
+    }],
+  }));
+  acc.ingest(JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] }));
+
+  const result = acc.result();
+  assert.equal(result.source, "estimated");
+  assert.ok(result.completionTokens > 0, "tool arguments are billable completion tokens");
+});
+
 test("extractUsage returns null for ordinary content chunks", () => {
   assert.equal(extractUsage(JSON.parse(chunk("x"))), null);
   assert.equal(extractUsage("[DONE]"), null);
