@@ -351,3 +351,191 @@
     border-radius: calc(var(--radius-2xl) + 0.25rem);
   }
 }
+
+/* -----------------------------------------------------------------------------
+   THE LANDING PAGE'S ATMOSPHERE — three static layers, and nothing that moves.
+
+   WHAT USED TO BE HERE: a 15-cube CSS-3D lattice with an ambient spin, cube
+   relocation, pointer parallax, drag-to-rotate, and a four-stop bloom fake. It
+   was removed, on the owner's call, after three passes failed to make an abstract
+   glowing solid look like anything but an abstract glowing solid.
+
+   IT SHOULD NOT HAVE BEEN BUILT, and the reason is written down in two places
+   this project already had. `docs/DESIGN.md` §4 item 4 bans decoration outright.
+   `docs/UI-REDESIGN-PLAN.md` §2.5 says every section is "display heading → one
+   muted sentence → a **product artifact**. Never an illustration." A rotating
+   cube is an illustration. The hero now shows a real request running instead
+   (`components/marketing/hero-terminal.tsx`), which is what that rule was asking
+   for.
+
+   §4 item 3 (no marketing animation) IS STILL OVERRULED, but by one thing rather
+   than five: the terminal's loop. That is a `setInterval` revealing characters —
+   the same treatment `.streaming-caret` above gets in the playground, on a page
+   whose whole argument is that tokens stream. The scope is `/` and nothing else;
+   §4 item 3's actual argument is about the console, and it stands untouched.
+
+   All three layers below are STATIC. No keyframes, no transforms, no timers.
+   -------------------------------------------------------------------------- */
+@layer base {
+  :root,
+  .light,
+  [data-theme="light"] {
+    /* Grain reads as dirt on a light ground long before it reads as film, so the
+       light theme takes the gentler blend and half the strength. */
+    --grain-blend: soft-light;
+    --grain-overlay-opacity: 0.45;
+
+    /* The same accent mix that reads as ambient light on a dark ground reads as a
+       green cast on a near-white one — there is far less headroom above
+       `--background` here, so the wash tints instead of glowing. */
+    --glow-strength: 9%;
+  }
+
+  .dark,
+  [data-theme="dark"] {
+    --grain-blend: overlay;
+    --grain-overlay-opacity: 0.85;
+    --glow-strength: 16%;
+  }
+
+  /* The grain tile, defined once and read by both surfaces that wear it.
+     A custom property rather than two inline copies, so the noise over the hero
+     wash and the noise over the closing CTA cannot drift apart.
+
+     THE `feColorMatrix` IS LOAD-BEARING. `feTurbulence` writes noise into the
+     ALPHA channel as well as RGB, so the raw tile is patchily transparent and its
+     mean is nowhere near mid-grey. Under `overlay` — which darkens below 50%
+     luminance and lightens above it — a non-neutral mean shifts the whole layer
+     one way, and what the eye sees is not grain but a lighter rectangle the exact
+     size of its box. The matrix copies red into R, G and B and pins alpha to 1,
+     giving opaque greyscale noise whose mean sits on 0.5, and squeezes the range
+     to 0.325–0.675 so the effect is subtle without an `opacity` that would
+     reintroduce the non-neutral mean. */
+  :root {
+    --noise-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0.35 0 0 0 0.325 0.35 0 0 0 0.325 0.35 0 0 0 0.325 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+@layer components {
+  /* GRAIN OVER THE AMBIENT WASHES. The blobs are `filter: blur(90px)`, so grain
+     applied to them would be blurred away with everything else — it has to be a
+     layer above them. It also dithers the wash, which on a dark ground is what
+     stops a 40rem-wide gradient from banding.
+
+     Its parent MUST paint an opaque background, and that is not decoration: a
+     blend mode needs a backdrop, and an isolated stacking context over a
+     transparent ground gives it none, so the layer paints its own mid-grey and
+     draws a visible box, which is exactly what happened the first time this
+     shipped. The `bg-background` on the hero and CTA wrappers is the fix — the
+     ground is the page colour either way, so stating it costs nothing. */
+  .grain-overlay {
+    position: absolute;
+    inset: 0;
+    background-image: var(--noise-tile);
+    background-size: 120px 120px;
+    mix-blend-mode: var(--grain-blend, overlay);
+    opacity: var(--grain-overlay-opacity, 0.7);
+  }
+
+  /* AMBIENT LIGHT, AS A BLURRED ELLIPSE RATHER THAN A GRADIENT-FILLED BOX.
+     This used to be a rectangle painted with two radial gradients, and the box
+     was the bug: a gradient that has not reached full transparency by its own
+     edge shows that edge as a hard seam. In the hero the seam fell at the
+     viewport edge and was invisible; in the closing CTA the layer was clipped at
+     the `max-w-6xl` boundary and drew a visible rectangle across the page, right
+     under the creator section.
+
+     A blurred round element has no edge to reveal, at any container width, under
+     any clipping. Blur is also ink overflow, not scrollable overflow, so a blob
+     may bleed past its container without putting a scrollbar on the document.
+     Size and placement come from the call site — this class is only the light. */
+  .glow-blob {
+    position: absolute;
+    border-radius: 50%;
+    background: color-mix(in oklab, var(--accent) var(--glow-strength, 16%), transparent);
+    filter: blur(90px);
+  }
+
+  /* The hairline grid. `--separator`, not `--border`: this sits behind content,
+     and at 1px across a whole viewport the stronger token reads as a texture
+     rather than as a hairline. Masked to fade out before the copy starts. */
+  .hero-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(to right, var(--separator) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--separator) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(70% 60% at 50% 0%, black, transparent 75%);
+    opacity: 0.5;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   GLASS — translucent panels with a backdrop blur.
+
+   `components/marketing/marketing-nav.tsx` used to carry the opposite rule, in
+   as many words: "No backdrop blur. Modal does not use one either, and it costs
+   a compositor layer on every scroll frame for an effect nothing here needs."
+   THAT IS OVERRULED, on the owner's explicit instruction (2026-08-19: "make the
+   usage of more translucency and glassmorphism, e.g. in the navbar"), and the
+   cost argument is now answered rather than ignored:
+
+     - The blur is spent on the two surfaces that actually sit over varying
+       content — the floating nav, which the whole page scrolls beneath, and the
+       closing CTA, which sits over its own gradient wash. A blur over a flat
+       fill is a composited layer bought for nothing, so cards get the
+       translucency and NOT the filter.
+     - `backdrop-filter` promotes ONE element per class use. Two are cheap; a
+       class applied to every card in a grid would not be, which is why cards get
+       `.glass-panel` — translucency with no filter — instead.
+
+   THE OPACITY FLOOR IS AN ACCESSIBILITY CONSTRAINT, NOT A TASTE ONE. Nav text is
+   `--muted` at 14px, and `--muted` is chosen for its contrast against a SOLID
+   `--surface-secondary`. Let the page show through too far and that contrast is
+   against whatever happens to be scrolling past instead — which on this page
+   includes the accent-filled CTA. 72% fill plus a 20px blur keeps the measured
+   ratio inside a couple of points of the solid case, because the blur flattens
+   what shows through into an average rather than leaving edges under the text.
+
+   The `@supports` fallback is therefore load-bearing and not politeness: with no
+   `backdrop-filter` there is no averaging, so the fill goes almost opaque rather
+   than leaving 38% of a moving background under small muted type.
+   -------------------------------------------------------------------------- */
+@layer components {
+  /* THE SATURATION BOOST IS GONE AND THE FILL IS HIGHER, and both were a fix.
+     `saturate(160%)` was here to keep the blur from washing a scrolling gradient
+     into grey. It does that, but it also AMPLIFIES anything saturated passing
+     underneath — and on the landing page the thing passing underneath the nav is
+     the accent-filled "Get an API key" pill, which sits directly below it. Blurred
+     and then saturated, that pill smeared a bright green streak across the inside
+     of the nav, right behind the wordmark. 115% keeps the wash from going grey
+     without turning one solid element into a stain, and 72% fill suppresses what
+     is left of it. */
+  .glass {
+    background: color-mix(in oklab, var(--surface-secondary) 72%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(115%);
+    backdrop-filter: blur(20px) saturate(115%);
+    /* A 1px inner highlight along the top edge. This is what separates glass
+       from "a semi-transparent box": real glass catches light on the near edge,
+       and without it a blurred panel reads as a rendering artifact. Derived from
+       `--foreground`, so it is a light catch in dark and a soft one in light. */
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--foreground) 10%, transparent);
+  }
+
+  /* Cards over the hero glow and the hairline grid. Translucency only — see the
+     note above on why these do not get the filter. */
+  .glass-panel {
+    background: color-mix(in oklab, var(--surface) 72%, transparent);
+  }
+
+  .glass-panel-secondary {
+    background: color-mix(in oklab, var(--surface-secondary) 68%, transparent);
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: color-mix(in oklab, var(--surface-secondary) 96%, transparent);
+  }
+}

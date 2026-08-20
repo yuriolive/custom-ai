@@ -3,6 +3,7 @@
 import { Tabs } from "@heroui/react";
 
 import { LabelHint } from "@/components/label-hint";
+import { MEASURED } from "@/lib/measured";
 
 import { CodeBlock } from "./code-block";
 import { SNIPPET_LANGUAGES, SNIPPET_TIMEOUT_SECONDS, snippetFor } from "./snippets";
@@ -27,18 +28,42 @@ import { SNIPPET_LANGUAGES, SNIPPET_TIMEOUT_SECONDS, snippetFor } from "./snippe
  * developer scans for: the id, the URL, and the fact that the first call is slow.
  *
  * The cold-start warning specifically is a visible value, not a tooltip. A
- * developer whose first call takes 100 seconds without warning concludes the
+ * developer whose first call takes two minutes without warning concludes the
  * product is broken and leaves — that has to be readable without hovering.
+ *
+ * `showNotes` EXISTS FOR THE LANDING PAGE AND ONLY FOR IT. On a model card and in
+ * the Studio dialog this block is the only place the id, the endpoint and the
+ * timeout are explained, so it defaults on. On `/` all three are already said,
+ * larger and better: the base URL and the model id are the two-line diff in the
+ * column beside this component, and the cold start has a section of its own.
+ * Repeating them underneath is the "muito texto" the landing refresh was against.
+ *
+ * The Base URL caveat carries the Anthropic exception — `ANTHROPIC_BASE_URL` drops
+ * the trailing `/v1` because the Anthropic SDK appends `/v1/messages` itself, so
+ * reusing the OpenAI base URL there produces `/v1/v1/messages` and a 404 that
+ * reads like the gateway is down. That is the single most expensive thing a Claude
+ * Code user can get wrong, which is why it is in the notes and not only in the
+ * snippet.
+ *
+ * EVERY LATENCY FIGURE READS `MEASURED` (`lib/measured.ts`, sourced from
+ * `docs/HANDOFF.md`). The timeout caveat used to say later calls answer "well
+ * under a second", which is the same overstatement the proof strip and the
+ * cold-start section carried: HANDOFF measures warm TTFT p50 at 926 ms and
+ * records it as a MISS against NFR-CS-002's 400 ms — "recorded as a miss, not
+ * restated to match what we measured". Interpolating rather than retyping is what
+ * stops this drifting a third time.
  */
 export function SnippetTabs({
   modelId,
   baseUrl,
   /** Rendered as a `<h_>`-free label; the surrounding card/dialog owns headings. */
   className,
+  showNotes = true,
 }: {
   modelId: string;
   baseUrl: string;
   className?: string;
+  showNotes?: boolean;
 }) {
   return (
     <div className={className}>
@@ -71,41 +96,45 @@ export function SnippetTabs({
         ))}
       </Tabs>
 
-      <dl className="text-muted mt-3 grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1.5 text-xs">
-        <dt className="font-medium">Model id</dt>
-        <dd className="flex min-w-0 items-start gap-1.5">
-          {/* `break-all`, not `truncate`: an id or a URL that is cut off is a
-              first call that does not run, and both are long enough to wrap in
-              a dialog. */}
-          <code className="text-foreground break-all">{modelId}</code>
-          <LabelHint subject="the model id">
-            The platform id — <code>creator-handle/model-slug</code>, not the Hugging Face repo
-            path this model was built from. The handle need not match the HF account and the slug
-            is chosen at registration. Case does not matter (the gateway lowercases it); the names
-            do — a repo path that differs from this id returns 404 <code>model_not_found</code>.
-          </LabelHint>
-        </dd>
-        <dt className="font-medium">Base URL</dt>
-        <dd className="flex min-w-0 items-start gap-1.5">
-          <code className="text-foreground break-all">{baseUrl}</code>
-          <LabelHint subject="the base URL">
-            The trailing <code>/v1</code> is part of it; OpenAI SDKs append{" "}
-            <code>/chat/completions</code>. Anthropic clients (Claude Code) are the exception —{" "}
-            <code>ANTHROPIC_BASE_URL</code> drops the <code>/v1</code>, because the Anthropic SDK
-            appends <code>/v1/messages</code> itself.
-          </LabelHint>
-        </dd>
-        <dt className="font-medium">Timeout</dt>
-        <dd className="flex min-w-0 items-start gap-1.5">
-          <span className="text-foreground">
-            {SNIPPET_TIMEOUT_SECONDS}s — a first call can take up to 2 min
-          </span>
-          <LabelHint subject="the timeout">
-            This model scales to zero, so a first request to an idle worker waits while a GPU
-            starts and the weights load. Later calls answer in well under a second.
-          </LabelHint>
-        </dd>
-      </dl>
+      {showNotes ? (
+        <dl className="text-muted mt-3 grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1.5 text-xs">
+          <dt className="font-medium">Model id</dt>
+          <dd className="flex min-w-0 items-start gap-1.5">
+            {/* `break-all`, not `truncate`: an id or a URL that is cut off is a
+                first call that does not run, and both are long enough to wrap in
+                a dialog. */}
+            <code className="text-foreground break-all">{modelId}</code>
+            <LabelHint subject="the model id">
+              The platform id — <code>creator-handle/model-slug</code>, not the Hugging Face repo
+              path this model was built from. The handle need not match the HF account and the slug
+              is chosen at registration. Case does not matter (the gateway lowercases it); the names
+              do — a repo path that differs from this id returns 404 <code>model_not_found</code>.
+            </LabelHint>
+          </dd>
+          <dt className="font-medium">Base URL</dt>
+          <dd className="flex min-w-0 items-start gap-1.5">
+            <code className="text-foreground break-all">{baseUrl}</code>
+            <LabelHint subject="the base URL">
+              The trailing <code>/v1</code> is part of it; OpenAI SDKs append{" "}
+              <code>/chat/completions</code>. Anthropic clients (Claude Code) are the exception —{" "}
+              <code>ANTHROPIC_BASE_URL</code> drops the <code>/v1</code>, because the Anthropic SDK
+              appends <code>/v1/messages</code> itself.
+            </LabelHint>
+          </dd>
+          <dt className="font-medium">Timeout</dt>
+          <dd className="flex min-w-0 items-start gap-1.5">
+            <span className="text-foreground">
+              {SNIPPET_TIMEOUT_SECONDS}s — a first call can take up to 2 min
+            </span>
+            <LabelHint subject="the timeout">
+              This model scales to zero, so a first request to an idle worker waits while a GPU
+              starts and the weights load — {MEASURED.coldStartSeconds}s measured on a first-ever
+              start, {MEASURED.warmVolumeStartSeconds}s once its weights are cached. Later calls
+              return their first token in {MEASURED.warmTtftMs} ms.
+            </LabelHint>
+          </dd>
+        </dl>
+      ) : null}
     </div>
   );
 }

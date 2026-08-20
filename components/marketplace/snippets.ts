@@ -32,6 +32,8 @@
  *     and "this product is broken".
  */
 
+import { MEASURED } from "@/lib/measured";
+
 /** Timeout, in seconds, written into every generated snippet. */
 export const SNIPPET_TIMEOUT_SECONDS = 180;
 
@@ -56,6 +58,20 @@ export type SnippetInput = {
   baseUrl: string;
 };
 
+/**
+ * The warm figure that goes into every generated snippet.
+ *
+ * `MEASURED.warmTtftMs`, not the phrase "well under a second" these comments used
+ * to carry. `docs/HANDOFF.md` measures warm TTFT p50 at 926 ms and records it as
+ * a MISS against NFR-CS-002's 400 ms target — "recorded as a miss, not restated
+ * to match what we measured". 926 ms is not well under a second, and a snippet a
+ * developer pastes into their editor is the last place to leave a claim they can
+ * time with a stopwatch. Read, not retyped, for the same reason the proof strip
+ * and the snippet notes read it: this is the fourth surface that made this claim
+ * and the fourth to have it wrong.
+ */
+const WARM_COMMENT = `Subsequent calls to a warm worker return their first token in about ${MEASURED.warmTtftMs} ms`;
+
 const COLD_START_COMMENT =
   "the model scales to zero, so the first call may cold-start a GPU (up to ~2 min)";
 
@@ -75,7 +91,7 @@ stream = client.chat.completions.create(
     messages=[{"role": "user", "content": "${PROMPT}"}],
     stream=True,
     # ${COLD_START_COMMENT}.
-    # Subsequent calls to a warm worker return their first token in well under a second.
+    # ${WARM_COMMENT}.
     timeout=${SNIPPET_TIMEOUT_SECONDS},
 )
 
@@ -92,7 +108,7 @@ const client = new OpenAI({
   baseURL: "${baseUrl}",
   apiKey: process.env.NEXUS_API_KEY, // sk-plat-... — create one in the Console
   // ${COLD_START_COMMENT}.
-  // Subsequent calls to a warm worker return their first token in well under a second.
+  // ${WARM_COMMENT}.
   timeout: ${SNIPPET_TIMEOUT_SECONDS}_000,
 });
 
@@ -150,10 +166,7 @@ claude
 `;
 }
 
-export function snippetFor(
-  language: SnippetLanguage,
-  input: SnippetInput,
-): string {
+export function snippetFor(language: SnippetLanguage, input: SnippetInput): string {
   switch (language) {
     case "python":
       return pythonSnippet(input);

@@ -276,7 +276,19 @@ export async function fetchCatalogPage(
   // survive the database being briefly unreachable. `isCatalogEmpty` already
   // takes this stance (it claims non-empty on error so the copy stays sensible).
   if (pageResult.error) {
-    console.error("catalog page query failed", { message: pageResult.error.message });
+    // LOG EVERY FIELD, not just `message`. A PostgREST error carries `message`,
+    // but a TRANSPORT failure — Supabase unreachable, DNS, a refused connection
+    // to a local stack that is not running — arrives as a `PostgrestError` whose
+    // `message` is undefined, so `{ message: … }` printed a bare `{}` and said
+    // nothing about a failure whose cause was one line away. `code`, `details`
+    // and `hint` are what separate "the database is down" from "the query is
+    // wrong", and that is the whole question when this fires.
+    console.error("catalog page query failed", {
+      message: pageResult.error.message ?? "(none — likely a transport failure)",
+      code: pageResult.error.code,
+      details: pageResult.error.details,
+      hint: pageResult.error.hint,
+    });
     return { models: [], total: 0, page: query.page, pageSize: PAGE_SIZE, catalogIsEmpty };
   }
 
