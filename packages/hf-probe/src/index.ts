@@ -50,6 +50,14 @@ export {
 } from "./gguf.ts";
 
 export {
+  classifyUseCases,
+  LONG_CONTEXT_TOKENS,
+  USE_CASES,
+  type UseCase,
+  type UseCaseInput,
+} from "./use-cases.ts";
+
+export {
   detectToolSupport,
   resolveToolSupport,
   CHAT_TEMPLATE_FILE,

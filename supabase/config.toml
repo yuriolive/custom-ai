@@ -442,3 +442,18 @@ enabled = true
 # ─────────────────────────────────────────────────────────────────────────────
 [functions.gateway]
 verify_jwt = false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The embedder (#28). Same reason this block exists at all: the Supabase GitHub
+# integration deploys only the functions DECLARED here, so removing it stops the
+# deploy rather than merely changing the auth behaviour.
+#
+# verify_jwt = false, and the two paths are gated separately in the function
+# itself. The query path is open exactly as the catalog it serves is — it reads
+# nothing and writes nothing — while the write path compares the service-role key
+# in constant time. Leaving verify_jwt on would gate the query path behind the
+# anon key, which is published in the browser bundle and is therefore not a gate,
+# while breaking any caller using a non-JWT publishable key.
+# ─────────────────────────────────────────────────────────────────────────────
+[functions.embed]
+verify_jwt = false

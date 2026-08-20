@@ -45,6 +45,9 @@ supabase/functions/gateway/
     index.ts  auth.ts  resolve.ts  errors.ts             [A5]
     anthropic.ts   Anthropic Messages API glue (§4.6)    [A5]
     stream.ts usage.ts                                   [A6]
+supabase/functions/embed/
+    index.ts  dimension.ts  document.ts                  [A5]
+    gte-small query + deploy-time base-model embedder (#28); adds NO secret
 app/ + root configs       Next.js 15 + Tailwind v4 + HeroUI v3   [A7]
 tests/fixtures/           shared fixtures                [contract — read-only]
 .beans/                   issue tracker files            [shared — every agent writes]
