@@ -15,7 +15,6 @@ import { CatalogControls } from "@/components/marketplace/catalog-controls";
 import { CatalogEmpty, CatalogGrid } from "@/components/marketplace/catalog-grid";
 import { CatalogPagination } from "@/components/marketplace/catalog-pagination";
 import { CatalogSkeleton } from "@/components/marketplace/catalog-skeleton";
-import { HomeIntro } from "@/components/marketplace/home-intro";
 import { fetchCatalogPage } from "@/components/marketplace/queries";
 import type { RawSearchParams } from "@/components/marketplace/search-params";
 import {
@@ -31,6 +30,13 @@ import { createClient } from "@/lib/supabase/server";
 /**
  * The public marketplace (FR-MKT-001 … 011).
  *
+ * MOVED OFF `/` in the landing-page refresh (docs/UI-REDESIGN-PLAN.md §3). The
+ * catalog and the landing page were the same URL, which forced one page to both
+ * explain the product to a first-time visitor and let a returning developer scan
+ * a list — so it opened with four paragraphs and a full-width warning banner
+ * above the grid. They are two jobs and they are now two routes; `/` sells, this
+ * page filters, and `next.config.ts` redirects any indexed `/?q=…` here.
+ *
  * A SERVER COMPONENT, and that is the whole architecture of this page. HeroUI v3
  * is client-only (PRD §4.1.0), so the composition is: fetch here, where the
  * Supabase client and the cookie live, then hand plain serializable props to
@@ -42,11 +48,12 @@ import { createClient } from "@/lib/supabase/server";
  * when there is no session, and RLS answers with public+ready rows only.
  */
 
-const TITLE = "Serverless inference marketplace — open models, per-token pricing";
+const TITLE = "Model catalog — open models, per-token pricing";
 const DESCRIPTION =
-  "Call open Hugging Face models — quantized, uncensored, fine-tuned — through one " +
-  "OpenAI-compatible endpoint. Per-token pricing, no hourly GPU bill. Models scale to " +
-  "zero, so a first request can take up to two minutes and warm calls answer instantly.";
+  "Browse open Hugging Face models — quantized, uncensored, fine-tuned — callable through " +
+  "one OpenAI-compatible endpoint. Filter by measured speed, context window, quality and " +
+  "price. Models scale to zero, so a first request can take up to two minutes and warm " +
+  "calls answer instantly.";
 
 export async function generateMetadata({
   searchParams,
@@ -60,11 +67,11 @@ export async function generateMetadata({
     title: TITLE,
     description: DESCRIPTION,
     // A filtered view is the same catalog sliced differently, so it points at
-    // `/` as canonical and is kept out of the index. Without this, every
-    // shareable filter URL becomes a near-duplicate competing with the front
-    // page — and `follow` still lets a crawler walk through to the model pages,
-    // which are the URLs actually worth ranking.
-    alternates: { canonical: "/" },
+    // `/models` as canonical and is kept out of the index. Without this, every
+    // shareable filter URL becomes a near-duplicate competing with the catalog
+    // front page — and `follow` still lets a crawler walk through to the model
+    // pages, which are the URLs actually worth ranking.
+    alternates: { canonical: "/models" },
     robots: filtered ? { index: false, follow: true } : undefined,
     openGraph: {
       title: TITLE,
@@ -74,7 +81,7 @@ export async function generateMetadata({
   };
 }
 
-export default async function HomePage({
+export default async function ModelsPage({
   searchParams,
 }: {
   searchParams: Promise<RawSearchParams>;
@@ -83,12 +90,23 @@ export default async function HomePage({
   const baseUrl = gatewayBaseUrl(SUPABASE_URL);
 
   return (
-    <div className="flex flex-col gap-12">
-      <HomeIntro baseUrl={baseUrl} />
+    <div className="flex flex-col gap-8">
+      {/* The page head orcarouter.ai uses: the noun, then one line that says
+          what the list is and what it costs to use. It replaces the four
+          paragraphs of onboarding that used to sit here — that copy did not
+          disappear, it moved to `/`, where a first-time visitor actually is. */}
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl leading-[1.15] font-semibold tracking-[-0.03em]">Models</h1>
+        <p className="text-muted text-base">
+          Every model here is deployed by its creator and callable at{" "}
+          <code className="text-foreground text-sm">POST /v1/chat/completions</code>. One key, one
+          prepaid balance, per-token pricing.
+        </p>
+      </div>
 
       <section aria-labelledby="catalog" className="flex flex-col gap-5">
-        <h2 className="text-xl font-semibold tracking-tight" id="catalog">
-          Model catalog
+        <h2 className="sr-only" id="catalog">
+          Catalog
         </h2>
 
         <CatalogControls query={query} />
@@ -105,9 +123,9 @@ export default async function HomePage({
 }
 
 /**
- * The data-fetching half. Separated from `HomePage` so the `<Suspense>` boundary
- * has something to suspend on: an `async` component below the boundary streams,
- * whereas an `await` in the page body would block the whole document.
+ * The data-fetching half. Separated from `ModelsPage` so the `<Suspense>`
+ * boundary has something to suspend on: an `async` component below the boundary
+ * streams, whereas an `await` in the page body would block the whole document.
  */
 async function CatalogResults({ query, baseUrl }: { query: CatalogQuery; baseUrl: string }) {
   const supabase = await createClient();

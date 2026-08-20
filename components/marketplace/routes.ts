@@ -11,8 +11,9 @@
  * So the cast happens here, once, deliberately, instead of being scattered as
  * `as never` across every call site where it would stop being visible. Both
  * generators feeding this function build their paths from string literals
- * (`catalogHref` from `"/"`, the model link from `"/models/"`), and both target
- * routes exist in the table: `"/"` and `"/models/[creator]/[slug]"`.
+ * (`catalogHref` from `"/models"`, the model link from `"/models/"`), and both
+ * target routes exist in the table: `"/models"` and
+ * `"/models/[creator]/[slug]"`.
  */
 
 import type { useRouter } from "next/navigation";
