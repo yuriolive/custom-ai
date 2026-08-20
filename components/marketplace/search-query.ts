@@ -52,3 +52,30 @@ export function handleFragment(text: string): string | null {
   const fragment = text.toLowerCase().replace(/[^a-z0-9-]+/g, "");
   return fragment.length >= 2 ? fragment : null;
 }
+
+/**
+ * Below this many characters the semantic arm is skipped and prefix FTS answers
+ * alone (#28).
+ *
+ * Prefix FTS is STRICTLY BETTER here, not merely cheaper: `qw` is a legal prefix
+ * of `qwen` and matches it exactly, while the embedding of `qw` is an embedding
+ * of nothing — two characters carry no semantics, so the nearest neighbours of
+ * that vector are an arbitrary corner of the space. Running the model on it costs
+ * an inference and returns noise.
+ *
+ * Duplicated from `supabase/functions/embed/dimension.ts`, which is the
+ * embedder's own copy, because the two live in different runtimes and neither
+ * tree may import the other. `hybrid-search.test.ts` asserts the two agree, the
+ * same way this module's tsquery output is asserted against the RPC's pattern.
+ */
+export const MIN_SEMANTIC_QUERY_LENGTH = 3;
+
+/**
+ * True when a query is worth embedding.
+ *
+ * Length is measured on the TRIMMED text: `  q ` is a one-character query with
+ * padding, and paying for an inference on it would be paying for the padding.
+ */
+export function shouldEmbedQuery(text: string): boolean {
+  return text.trim().length >= MIN_SEMANTIC_QUERY_LENGTH;
+}

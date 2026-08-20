@@ -189,7 +189,7 @@ jobs:
         run: uv run --locked --no-build --group dev ruff format --check .
 
   deno:
-    name: deno (edge function gateway)
+    name: deno (edge functions — gateway and embed)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
@@ -215,7 +215,7 @@ jobs:
           # without it the action has nothing to key on. Close to a no-op now,
           # free insurance the moment a jsr:/npm: specifier appears.
           cache: true
-          cache-hash: ${{ hashFiles('supabase/functions/gateway/deno.json') }}
+          cache-hash: ${{ hashFiles('supabase/functions/*/deno.json') }}
 
       # `deno check` on the runtime sources. Not `deno task check` from deno.json:
       # that task once skipped stream.ts and usage.ts, the two files that do the
@@ -240,8 +240,25 @@ jobs:
         working-directory: supabase/functions/gateway
         run: deno fmt --check
 
+      # The embedder (#28) ships to the same runtime and is declared in
+      # config.toml, so it deploys whether or not anything checks it. Listed
+      # explicitly for the same reason as the gateway's file list above: a new
+      # runtime file is checked because it is named, not because something
+      # happens to import it.
+      - name: deno check (embed)
+        working-directory: supabase/functions/embed
+        run: deno check index.ts dimension.ts document.ts
+
+      - name: deno lint (embed)
+        working-directory: supabase/functions/embed
+        run: deno lint
+
+      - name: deno fmt --check (embed)
+        working-directory: supabase/functions/embed
+        run: deno fmt --check
+
   pgtap:
-    name: pgtap (343 billing and schema invariants)
+    name: pgtap (393 billing and schema invariants)
     runs-on: ubuntu-latest
     # Generous: the first run on a cold runner pulls supabase/postgres (~1.5 GB),
     # supabase/gotrue and supabase/pg_prove before a single test executes, and

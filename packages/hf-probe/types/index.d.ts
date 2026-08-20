@@ -162,3 +162,46 @@ export function resolveToolSupport(
 
 /** The pure half, for a template already in hand. null = absent or blank. */
 export function detectToolSupport(template: string | null | undefined): boolean | null;
+
+// ─── Use-case taxonomy (#28 §4.1) ────────────────────────────────────────────
+
+/**
+ * The closed `base_models.use_cases` vocabulary, enforced by the
+ * `base_models_use_cases_vocab` CHECK in migration 20260820000100. Closed
+ * because an open tag cloud splits one facet across synonyms and makes every
+ * counted tab wrong.
+ */
+export type UseCase =
+  | "code"
+  | "reasoning"
+  | "chat"
+  | "roleplay"
+  | "uncensored"
+  | "multilingual"
+  | "vision"
+  | "long-context"
+  | "tool-use"
+  | "math"
+  | "embeddings"
+  | "summarization";
+
+export declare const USE_CASES: readonly UseCase[];
+
+/** Context at or above which `long-context` is a capability rather than a default. */
+export declare const LONG_CONTEXT_TOKENS: number;
+
+export interface UseCaseInput {
+  tags?: readonly string[] | null;
+  pipelineTag?: string | null;
+  repoSlug?: string | null;
+  cardText?: string | null;
+  /** `max_position_embeddings` — the ARCHITECTURE's context, not a listing's. */
+  maxPositionEmbeddings?: number | null;
+}
+
+/**
+ * A repo's metadata → its use cases, deduplicated and in vocabulary order.
+ * Deterministic: the same input classifies the same way every time, because the
+ * output is a facet and a facet that moves between deploys is noise.
+ */
+export declare function classifyUseCases(input: UseCaseInput): UseCase[];

@@ -31,6 +31,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { embedSearchQuery } from "./embedding";
 import { CONTEXT_STEPS, priceRungs, qualityRungs, qualityTier, SPEED_STEPS } from "./format";
 import { handleFragment, toPrefixTsQuery } from "./search-query.ts";
 import { PAGE_SIZE } from "./search-params";
@@ -445,32 +446,68 @@ export async function fetchCatalogGroups(
   supabase: SupabaseClient,
   query: CatalogQuery,
 ): Promise<CatalogGroupPage> {
+  // ── The semantic arm, when there is one (#28) ────────────────────────────
+  // `null` for a query under three characters, for a failed embedder, and for a
+  // slow one — see `embedSearchQuery`. All three mean the same thing here: run
+  // the lexical catalog query, which is what this function did before hybrid
+  // retrieval existed. The semantic arm is an improvement to search; an
+  // improvement that can take the front page down is not one.
+  const embedding = query.q ? await embedSearchQuery(query.q) : null;
+
+  // Everything both RPCs take, spelled once. The two functions differ in exactly
+  // three arguments (below); restating the other twelve would be a second copy of
+  // the call to drift, which is the failure mode this codebase documents for the
+  // two GPU tier catalogs.
+  const shared = {
+    // Tokenized here, not in SQL: `toPrefixTsQuery` is the one place the
+    // search-as-you-type behaviour is defined, and both RPCs re-validate the
+    // shape so a hand-edited `?q=` cannot raise 42601 on the front page.
+    p_ts_query: toPrefixTsQuery(query.q),
+    // The creator-handle arm of search (FR-MKT-003). Sent independently of
+    // `p_ts_query`, because the two sanitize differently and the gap is
+    // reachable: `?q=--` yields no tsquery tokens but a legal handle fragment,
+    // and both RPCs treat "no search" as EVERY arm being absent rather than as
+    // the tsquery alone being absent.
+    p_handle_fragment: query.q ? handleFragment(query.q) : null,
+    p_min_speed: query.minSpeed,
+    p_min_context: query.minContext,
+    p_quality_key: query.quality,
+    p_price_key: query.price,
+    p_creator: query.creator,
+    p_limit: PAGE_SIZE,
+    p_offset: (query.page - 1) * PAGE_SIZE,
+    p_speed_steps: [...SPEED_STEPS],
+    p_context_steps: [...CONTEXT_STEPS],
+    p_quality_rungs: qualityRungs(),
+    p_price_rungs: priceRungs(),
+  };
+
   const [rpcResult, catalogIsEmpty] = await Promise.all([
-    supabase.rpc("catalog_grouped", {
-      // Tokenized here, not in SQL: `toPrefixTsQuery` is the one place the
-      // search-as-you-type behaviour is defined, and the RPC re-validates the
-      // shape so a hand-edited `?q=` cannot raise 42601 on the front page.
-      p_ts_query: toPrefixTsQuery(query.q),
-      // The creator-handle arm of search (FR-MKT-003). Sent independently of
-      // `p_ts_query`, because the two sanitize differently and the gap is
-      // reachable: `?q=--` yields no tsquery tokens but a legal handle fragment,
-      // and the RPC treats "no search" as BOTH being absent rather than as the
-      // tsquery alone being absent.
-      p_handle_fragment: query.q ? handleFragment(query.q) : null,
-      p_min_speed: query.minSpeed,
-      p_min_context: query.minContext,
-      p_quality_key: query.quality,
-      p_price_key: query.price,
-      p_creator: query.creator,
-      p_category: query.category,
-      p_sort: query.sort,
-      p_limit: PAGE_SIZE,
-      p_offset: (query.page - 1) * PAGE_SIZE,
-      p_speed_steps: [...SPEED_STEPS],
-      p_context_steps: [...CONTEXT_STEPS],
-      p_quality_rungs: qualityRungs(),
-      p_price_rungs: priceRungs(),
-    }),
+    // ONE RPC either way, and the two return the SAME envelope — same keys, same
+    // grouping rule, same counts — so every line below this dispatch is identical
+    // for a hybrid search and for a plain catalog page. `search_base_models` with
+    // no arms is REQUIRED to return exactly `catalog_grouped`'s groups, and pgTAP
+    // asserts it (09_search_rrf_test.sql); that assertion is what makes choosing
+    // between them here safe rather than merely convenient.
+    embedding
+      ? supabase.rpc("search_base_models", {
+          ...shared,
+          // A JSON array of numbers, which is also pgvector's own input syntax.
+          // The RPC re-checks the width against `embedding_dimension()` and drops
+          // a wrong one rather than raising.
+          p_embedding: embedding,
+          p_use_case: query.category,
+          // `newest` is what the URL says when the visitor chose NOTHING — the
+          // serializer omits the default — so under a search it is the ABSENCE of
+          // a sort, and the fused relevance order is the honest answer. An
+          // explicit sort is passed through and overrules it.
+          p_sort: query.sort === "newest" ? "relevance" : query.sort,
+        })
+      : supabase.rpc("catalog_grouped", {
+          ...shared,
+          p_category: query.category,
+          p_sort: query.sort,
+        }),
     isCatalogEmpty(supabase),
   ]);
 

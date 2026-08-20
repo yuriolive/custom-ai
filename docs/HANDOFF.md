@@ -13,7 +13,7 @@ State at the end of the first build session. Read this first tomorrow.
 
 Billing checked against real rows: `ceil(53×0.5)+ceil(42×1.5) = 90` micro-USD, platform `18`, creator `72` — exact. One `wallet_ledger` row per transaction, `v_balance_drift` returns zero rows, and a client that hung up mid-stream was still billed its full 400 tokens.
 
-**Tests:** 363 node across 6 test groups (362 pass, 1 skipped) · 343 pgTAP · 48 Python.
+**Tests:** 388 node across 7 test groups (387 pass, 1 skipped) · 393 pgTAP · 48 Python.
 CI runs all of them. Node and pgTAP re-measured 2026-08-20 — the pgTAP figure by RUNNING
 them (`npx supabase test db --local supabase/tests` reports its own total), not by summing
 `plan()` declarations, which is what the two figures before this one were. `npm run test:app`
@@ -54,6 +54,38 @@ To resume: check out the branch, re-read the **frozen** "Frontend / auth contrac
 | Prompt eval | 133 tok/s — **prefill, not decode, dominates any large stable prefix** |
 | KV cache | 64 KiB/token (16 of 65 attention layers, hybrid SSM) |
 | Target model | `qwen35`, hybrid attention/SSM, 262144 native context, **bf16 source exists** |
+
+## Hybrid search — added 2026-08-20 (#28)
+
+Two layers, and only one of them earns its keep today.
+
+**Layer A** is the closed `use_cases` vocabulary rendered as counted tabs. It is
+deterministic, indexable, and it works for the shopper who types nothing at all — which
+is most of them. `classifyUseCases` in `packages/hf-probe` is its writer; nothing calls it
+yet, because the base-model row it writes to is created by the resolution cascade (#25).
+Until that lands, `use_cases` is whatever the seed sets by hand.
+
+**Layer B** is `search_base_models` (20260820006000): a prefix-FTS arm and a cosine arm
+over `base_models.embedding`, fused by Reciprocal Rank Fusion at k = 60 in one RPC. Facts
+worth not re-deriving:
+
+* **It will not beat prefix FTS at this catalog size, and that is expected.** With
+  single-digit model counts there is nothing for a ranking to get right that a prefix
+  match gets wrong. The value is that the embedding is written at DEPLOY time, so the
+  catalog never needs a backfill as it grows.
+* **No new secret.** `Supabase.ai.Session('gte-small')` runs the model inside the Edge
+  Function, so there is no embedding API and no key. That is why the column is 384 wide
+  and not 1536, and why `CONTRACTS.md` §Environment is unchanged.
+* **gte-small is English-only.** Model cards are overwhelmingly English so the corpus is
+  fine; a Portuguese query will underperform and the lexical arm is what carries it.
+  Swapping the model is one constant (`EMBEDDING_DIMENSION` / `embedding_dimension()`), a
+  re-embed and a column type.
+* **The distance ceiling is what makes the vector arm a retrieval.** A vector index has no
+  notion of "no match" — without `p_max_distance` (0.22, i.e. cosine similarity ≥ 0.78 for
+  gte-small) the semantic arm returns the whole catalog reordered for every query.
+* `search_base_models` with no query and no embedding must return exactly
+  `catalog_grouped`'s groups. `09_search_rrf_test.sql` asserts it, which is the only
+  mechanical check that the two copies of the visibility block have not drifted.
 
 ## Anthropic Messages API — added 2026-08-19
 
