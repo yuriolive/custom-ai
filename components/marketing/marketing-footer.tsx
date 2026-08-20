@@ -26,6 +26,10 @@ const PRODUCT: readonly FooterLink[] = [
   { href: "/studio/new", label: "Deploy a model" },
 ] as const;
 
+const LEGAL: readonly FooterLink[] = [
+  { href: "/legal/acceptable-use", label: "Acceptable use" },
+] as const;
+
 const ACCOUNT: readonly FooterLink[] = [
   { href: "/console", label: "Console" },
   { href: "/console/keys", label: "API keys" },
@@ -36,7 +40,7 @@ export function MarketingFooter() {
   return (
     <footer className="border-border mt-8 border-t">
       <MarketingContainer className="flex flex-col gap-10 py-12">
-        <div className="grid gap-10 sm:grid-cols-[1.5fr_1fr_1fr]">
+        <div className="grid gap-10 sm:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div className="flex flex-col gap-3">
             <Wordmark />
             <p className="text-muted max-w-xs text-sm leading-[1.55]">
@@ -47,6 +51,7 @@ export function MarketingFooter() {
 
           <FooterColumn heading="Product" links={PRODUCT} />
           <FooterColumn heading="Account" links={ACCOUNT} />
+          <FooterColumn heading="Legal" links={LEGAL} />
         </div>
 
         <div className="border-border text-muted flex flex-col gap-2 border-t pt-6 text-xs sm:flex-row sm:items-center sm:justify-between">

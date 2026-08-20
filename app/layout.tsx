@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
+import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { JsonLdScript } from "@/components/seo/json-ld-script";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -122,6 +123,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <ThemeProvider>
           <SiteNav />
           <main className="mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
+          {/* MOUNTED HERE, not per marketing page, because the footer is where
+              the legal and policy links live and a policy nobody can reach from
+              the product is not a policy. `MarketingFooter` was built for the
+              landing-page redesign and until now was rendered by nothing at
+              all — so `/pricing` and `/legal/acceptable-use` were reachable
+              only by typing the URL. */}
+          <MarketingFooter />
         </ThemeProvider>
       </body>
     </html>
