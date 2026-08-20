@@ -82,9 +82,15 @@ export class GatewayError extends Error {
 export const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "POST, GET, OPTIONS",
-  "access-control-allow-headers": "authorization, content-type, x-nexus-request-id",
+  // `x-api-key` / `anthropic-*` are the Anthropic dialect (FR-ANTH-003). A browser
+  // preflight that omits them fails before the request is ever sent, so the
+  // Anthropic SDK's `dangerouslyAllowBrowser` path would break on CORS alone.
+  "access-control-allow-headers":
+    "authorization, content-type, x-nexus-request-id, x-api-key, anthropic-version, " +
+    "anthropic-beta, anthropic-dangerous-direct-browser-access",
   "access-control-expose-headers":
-    "x-nexus-request-id, x-nexus-balance-micro-usd, x-nexus-cold-start, x-nexus-ttft-ms, retry-after",
+    "x-nexus-request-id, x-nexus-balance-micro-usd, x-nexus-cold-start, x-nexus-ttft-ms, " +
+    "retry-after, request-id, anthropic-version, x-nexus-adapter-warnings",
   "access-control-max-age": "86400",
 };
 

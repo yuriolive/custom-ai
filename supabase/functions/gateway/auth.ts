@@ -47,6 +47,24 @@ export function extractApiKey(req: Request): string {
   return token;
 }
 
+/**
+ * The same check for the Anthropic routes, which use a different header dialect
+ * (FR-ANTH-003): `x-api-key: <key>` first, `Authorization: Bearer <key>` as a
+ * fallback so a caller that only knows the OpenAI convention still works.
+ *
+ * The key itself is IDENTICAL — one `sk-plat-` key table, one hash, one set of
+ * permissions. Only the envelope differs, and no Anthropic-issued key is ever
+ * accepted here.
+ */
+export function extractAnthropicApiKey(req: Request): string {
+  const header = req.headers.get("x-api-key");
+  if (header === null) return extractApiKey(req);
+
+  const token = header.trim();
+  if (!isWellFormedApiKey(token)) throw invalidKey();
+  return token;
+}
+
 export function isWellFormedApiKey(token: string): boolean {
   return (
     typeof token === "string" &&
