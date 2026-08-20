@@ -112,15 +112,22 @@ a model is what populates it.
 Still open: **FR-TOOL-007**, grammar-constrained decoding (GBNF) for models whose
 template renders tools but whose JSON is unreliable.
 
-### 8. Anthropic Messages API → Claude Code
-`packages/anthropic-adapter` is **already built and tested** (53 tests) and unused.
-Remaining: `/v1/messages` route, `x-api-key` auth, and
-`POST /v1/messages/count_tokens` — which Claude Code calls, and without which it
-fails before sending a single completion.
+### 8. Anthropic Messages API → Claude Code — WIRED
+`packages/anthropic-adapter` is no longer unused. `supabase/functions/gateway/anthropic.ts`
+serves `POST /v1/messages`, `POST /v1/messages/count_tokens` and the Anthropic shape of
+`GET /v1/models`, on `x-api-key` (bearer still accepted), through the same
+auth → resolve → tool-capability → authorize → proxy → settle pipeline (`runInference`).
 
-§4.5 was the hard prerequisite and is now done, so this is unblocked: the adapter's
-`translateTools` / `translateToolChoice` emit exactly the shapes the gateway now
-accepts (`auto` / `required` / `none` / `{type:"function"}`).
+§4.5 was the hard prerequisite and is done, which is what makes this usable: the
+adapter's `translateTools` / `translateToolChoice` emit exactly the shapes the gateway
+now accepts (`auto` / `required` / `none` / `{type:"function"}`).
+
+Model names are mapped by `ANTHROPIC_MODEL_MAP` / `ANTHROPIC_DEFAULT_MODEL`; a name that
+already contains a `/` passes straight through, so Claude Code needs no operator config
+when `ANTHROPIC_MODEL` is set to a platform model id.
+
+Not yet done: a run of the real `claude` CLI against a deployed gateway. The coverage is
+unit + e2e against a fake upstream, which cannot prove an agent loop completes.
 
 Honest viability: 14 tok/s measured. Agentic coding needs tool calling **and** a fast
 tier (~149 tok/s predicted on H100) **and** always-warm. That combination is a paid
@@ -183,7 +190,8 @@ lora/adapter branch of the companion classifier because nothing consumes it yet.
 4. **#7 Tool calling** — the cheapest large capability win
 5. **#4 Design** — do it once Studio exists, so the new surfaces get the same treatment
 6. **Crypto rails** (`docs/PAYMENTS.md`) — ledger generalisation, then a processor
-7. **#8 Claude Code**, then P3
+7. **#8 Claude Code** — the wire is in; what remains is a real `claude` session against
+   the deployed gateway. Then P3
 
 The consistent lesson from every bug found so far: **failures here are silent rather
 than loud.** Wrong-length seed keys, floats into integer columns, public Modal

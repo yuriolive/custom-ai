@@ -218,13 +218,14 @@ jobs:
           cache-hash: ${{ hashFiles('supabase/functions/gateway/deno.json') }}
 
       # `deno check` on the runtime sources. Not `deno task check` from deno.json:
-      # that task lists only index/auth/resolve/errors and silently skips
-      # stream.ts and usage.ts, which are the two files that do the streaming and
-      # the billing. Test files are excluded on purpose — they run under
-      # `node --test` in the node job, not under Deno.
+      # that task once skipped stream.ts and usage.ts, the two files that do the
+      # streaming and the billing. Every runtime file is listed HERE, so a new one
+      # is checked because it is named — not because something happens to import
+      # it. Test files are excluded on purpose — they run under `node --test` in
+      # the node job, not under Deno.
       - name: deno check
         working-directory: supabase/functions/gateway
-        run: deno check index.ts auth.ts resolve.ts errors.ts stream.ts usage.ts
+        run: deno check index.ts auth.ts resolve.ts errors.ts anthropic.ts stream.ts usage.ts
 
       - name: deno lint
         working-directory: supabase/functions/gateway

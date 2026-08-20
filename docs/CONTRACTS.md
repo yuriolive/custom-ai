@@ -43,6 +43,7 @@ supabase/migrations/      schema, RLS, RPCs              [A1]
 supabase/tests/           pgTAP billing invariants       [A2]
 supabase/functions/gateway/
     index.ts  auth.ts  resolve.ts  errors.ts             [A5]
+    anthropic.ts   Anthropic Messages API glue (§4.6)    [A5]
     stream.ts usage.ts                                   [A6]
 app/ + root configs       Next.js 15 + Tailwind v4 + HeroUI v3   [A7]
 tests/fixtures/           shared fixtures                [contract — read-only]
@@ -54,6 +55,8 @@ tests/fixtures/           shared fixtures                [contract — read-only
 SUPABASE_URL, SUPABASE_ANON_KEY            # client-safe
 NEXT_PUBLIC_SUPABASE_URL                   # browser mirror of SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY              # browser mirror; publishable, powerless without RLS
+NEXT_PUBLIC_DEFAULT_MODEL                  # optional — lib/public-env.ts defaults it
+NEXT_PUBLIC_COLD_START_ESTIMATE_SECONDS    # optional — defaults to 100
 SUPABASE_SERVICE_ROLE_KEY                  # secret, Edge Functions only
 PLATFORM_API_KEY                           # secret — the platform's own gateway key
 RUNPOD_API_KEY                             # secret
@@ -65,13 +68,15 @@ RUNPOD_ENDPOINT_ID                         # MVP-0: one manually provisioned end
 LLAMACPP_WORKER_IMAGE                      # pinned, usage-emitting build
 UPSTREAM_PROVIDER                          # modal (default) | runpod | mock
 UPSTREAM_BASE_URL                          # override → point at mock-upstream in tests
+ANTHROPIC_MODEL_MAP                        # Edge Function only — JSON {claude-name: "creator/slug"}
+ANTHROPIC_DEFAULT_MODEL                    # Edge Function only — used when no mapping matches
 GATEWAY_BASE_URL                           # the playground route POSTs to ${…}/v1/chat/completions
 SITE_URL                                   # absolute origin; Stripe redirects AND page metadata
 ```
 
 `SITE_URL` has ONE consumer contract and two readers, and they must not drift: `lib/billing/server-env.ts` builds Stripe Checkout's success and cancel URLs from it, and `lib/seo/site-url.ts` builds `metadataBase`, canonical URLs, the sitemap and the `Sitemap:` line in `robots.txt`. Two different answers to "where does this site live" is not a cosmetic split — on a custom domain it returns a paying developer to one host while every canonical tag names another. Both fall back the same way: `SITE_URL`, then `VERCEL_PROJECT_PRODUCTION_URL` (stable across deployments), then localhost. `lib/seo` adds `VERCEL_URL` below those so a preview links to itself; it must never outrank the production domain, because a per-deployment hostname in a canonical tag is worse than none.
 
-`.env.example` also declares `NEXT_PUBLIC_DEFAULT_MODEL` and `NEXT_PUBLIC_COLD_START_ESTIMATE_SECONDS`. Neither is read anywhere in the codebase — they are deferred config, and they are named here so the next person to grep for them stops looking.
+`NEXT_PUBLIC_DEFAULT_MODEL` and `NEXT_PUBLIC_COLD_START_ESTIMATE_SECONDS` are read only through `lib/public-env.ts`, which supplies a default for each — the seeded model id, and 100 seconds. Both are therefore optional: leaving them unset is a supported configuration, not a missing one, and the fallbacks are the values a fresh deployment runs on.
 
 Never read a secret from a `NEXT_PUBLIC_*` variable. Never log an API key, an HF token, or a bearer header.
 
@@ -101,6 +106,13 @@ billed output by up to 89%.
 
 `POST /v1/chat/completions` — OpenAI Chat Completions, byte-compatible. `model` is `creator/model-slug`.
 
+`POST /v1/messages`, `POST /v1/messages/count_tokens` — the Anthropic Messages API (PRD §4.6),
+served off the SAME key table, resolver, hold, upstream and settlement. Auth is `x-api-key` with
+`Authorization: Bearer` as a fallback. Errors use the Anthropic envelope
+(`{"type":"error","error":{"type","message"}}`) with Anthropic's own statuses — notably **529**
+`overloaded_error`, where the OpenAI route answers 503. `GET /v1/models` returns the Anthropic
+shape when the request carries `x-api-key` or `anthropic-version`, and the OpenAI shape otherwise.
+
 Errors always use the OpenAI envelope:
 
 ```json
@@ -121,6 +133,10 @@ Non-negotiable behaviors:
 1. Response headers flush **before** the upstream fetch is issued.
 2. While upstream is silent, emit `: keepalive\n\n` every 5 s. Stops on first upstream byte, never resumes.
 3. Upstream bytes forwarded **verbatim**. Tee for usage; never parse-and-reserialize.
+   *Exception, `/v1/messages` only:* re-framing OpenAI chunks into Anthropic events IS that
+   route's work, so verbatim forwarding is structurally impossible there. The re-framing runs
+   DOWNSTREAM of the same proxy, so rules 1, 2, 5 and 6 and the usage tee are untouched — usage
+   still comes from the OpenAI bytes, never from the translator.
 4. Gateway always requests `stream: true` upstream, even for non-streaming clients (buffer and assemble), **and always injects `stream_options: { include_usage: true }`**. vLLM emits no usage without that flag — forgetting it silently drops every request onto the estimator with no error raised anywhere. llama.cpp ignores the flag, so send it unconditionally rather than branching on runtime.
 5. Settlement runs **outside** the client-write path — a client disconnect must not cause unbilled GPU work.
 6. **Never cache** API key validity, wallet balance, or suspension state.
