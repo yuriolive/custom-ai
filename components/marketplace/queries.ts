@@ -19,14 +19,21 @@
  *     browser. `CATALOG_COLUMNS` is an allow-list, and nothing hardware-shaped
  *     is on it (FR-MKT-002).
  *
- * NOTE ON RLS: the `visibility`/`status`/`deleted_at` predicates below are not
- * redundant with the `custom_models_select_public` policy. That policy is one of
- * TWO select policies and Postgres ORs them: a signed-in creator also matches
- * `custom_models_select_own`, which admits their own rows in ANY status. Without
- * these predicates, a creator browsing the public catalog would see their own
- * drafts and failed deployments listed as though they were public. RLS is the
- * floor that stops anonymous visitors reading private rows; this is the query
- * actually asking for the public catalog.
+ * NOTE ON RLS: the `visibility`/`status`/`deleted_at`/`suspended_at` predicates
+ * below are not redundant with the `custom_models_select_public` policy. That
+ * policy is one of TWO select policies and Postgres ORs them: a signed-in creator
+ * also matches `custom_models_select_own`, which admits their own rows in ANY
+ * status. Without these predicates, a creator browsing the public catalog would
+ * see their own drafts and failed deployments listed as though they were public.
+ * RLS is the floor that stops anonymous visitors reading private rows; this is
+ * the query actually asking for the public catalog.
+ *
+ * `suspended_at` (§5.5) is the sharpest instance of that gap, and the reason it
+ * is written out here rather than left to the policy: the OR means a creator
+ * whose listing an operator has just taken down would otherwise keep seeing it
+ * in the catalog and on its own page — the one reader for whom RLS alone does
+ * not hide it, and the one reader who must not be able to act as though nothing
+ * happened. Studio is where a creator sees a suspended listing, with its reason.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -208,7 +215,8 @@ export async function fetchCatalogPage(
     .select(CATALOG_COLUMNS, { count: "exact" })
     .eq("visibility", "public")
     .eq("status", "ready")
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .is("suspended_at", null);
 
   if (query.minSpeed != null) {
     builder = builder.gte("measured_tokens_per_second", query.minSpeed);
@@ -319,7 +327,8 @@ export async function isCatalogEmpty(supabase: SupabaseClient): Promise<boolean>
     .select("id", { count: "exact", head: true })
     .eq("visibility", "public")
     .eq("status", "ready")
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .is("suspended_at", null);
 
   // On error, claim the catalog is not empty: the zero-results copy ("try
   // clearing a filter") is a safer thing to show than "nobody has published
@@ -348,6 +357,7 @@ export async function fetchModelByHandleAndSlug(
     .eq("visibility", "public")
     .eq("status", "ready")
     .is("deleted_at", null)
+    .is("suspended_at", null)
     .eq("slug", slug)
     .eq("creator_public.handle", creatorHandle)
     .maybeSingle();
@@ -406,6 +416,7 @@ export async function fetchSitemapModels(
     .eq("visibility", "public")
     .eq("status", "ready")
     .is("deleted_at", null)
+    .is("suspended_at", null)
     .order("updated_at", { ascending: false })
     .limit(limit);
 

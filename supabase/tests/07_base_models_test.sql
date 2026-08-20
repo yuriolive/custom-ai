@@ -518,11 +518,17 @@ select ok(
   pg_get_functiondef('public.gateway_resolve(text,text,text)'::regprocedure)
     not like '%base_model%',
   'gateway_resolve does not read base_models');
+-- This line USED to assert the opposite — that gateway_resolve does not read
+-- suspended_at "yet" — and said that shipping #31 meant changing it. #31 shipped
+-- (20260820002000), so it is changed, in the only direction the tripwire allowed.
+-- The suspension is a raw envelope fact, not a WHERE clause, for the same reason
+-- visibility is: filtering the row out would collapse "suspended" into "no such
+-- model" and cost the gateway its 401-revoked-key answer. 08 owns the behavior;
+-- this stays here because a change that drops it again has to come past base_models.
 select ok(
   pg_get_functiondef('public.gateway_resolve(text,text,text)'::regprocedure)
-    not like '%suspended_at%',
-  'and it does not read suspended_at yet either — #31 owns that, and this '
-  'assertion is the reminder that shipping it means changing this line');
+    like '%suspended_at%',
+  'and it DOES read suspended_at, so a takedown stops the stream (#31)');
 
 select * from finish();
 rollback;

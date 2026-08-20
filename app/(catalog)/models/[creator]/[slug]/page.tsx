@@ -16,7 +16,7 @@ import { JsonLdScript } from "@/components/seo/json-ld-script";
 import { buildModelApplication, buildModelBreadcrumbs } from "@/lib/seo/json-ld";
 import { pageOpenGraph } from "@/lib/seo/open-graph";
 import { SUPABASE_URL } from "@/lib/supabase/public-config";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
 
 /**
  * `/models/[creator]/[slug]` — the addressable page for one model (FR-MKT-007).
@@ -117,12 +117,15 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 }
 
 export default async function ModelPage({ params }: { params: Promise<Params> }) {
-  const model = await loadModel(params);
+  // Both reads at once: neither depends on the other, and the session read is a
+  // round trip to the Auth server that has no business queuing behind the model.
+  const [model, viewer] = await Promise.all([loadModel(params), getCurrentUser()]);
 
-  // One 404 for "no such model", "private", "not ready" and "creator
-  // suspended". Distinguishing them would tell an anonymous visitor that a
-  // private model exists — the same reason the gateway answers 404 and not 403
-  // (CONTRACTS.md §Gateway wire contract).
+  // One 404 for "no such model", "private", "not ready", "creator suspended"
+  // and — since §5.5 — "this listing was taken down". Distinguishing them would
+  // tell an anonymous visitor that a private model exists, and would tell the
+  // internet which listings are under moderation; the gateway answers 404 rather
+  // than 403 for exactly the same reason (CONTRACTS.md §Gateway wire contract).
   if (!model) notFound();
 
   return (
@@ -134,7 +137,11 @@ export default async function ModelPage({ params }: { params: Promise<Params> })
       <JsonLdScript node={buildModelApplication(model)} />
       <JsonLdScript node={buildModelBreadcrumbs(model)} />
 
-      <ModelDetail baseUrl={gatewayBaseUrl(SUPABASE_URL)} model={model} />
+      <ModelDetail
+        baseUrl={gatewayBaseUrl(SUPABASE_URL)}
+        model={model}
+        viewerId={viewer?.id ?? null}
+      />
     </>
   );
 }

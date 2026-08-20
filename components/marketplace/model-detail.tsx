@@ -15,6 +15,7 @@ import {
   qualityLabel,
   qualityNote,
 } from "./format";
+import { ReportModelButton } from "./report-model";
 import { appHref } from "./routes";
 import { catalogHref, EMPTY_QUERY, withCatalogQuery } from "./search-params";
 import { SnippetTabs } from "./snippet-tabs";
@@ -35,7 +36,20 @@ import type { CatalogModel } from "./types";
  * much it remembers, how good the weights are and what it costs; which silicon
  * delivers that is the platform's problem (FR-MKT-002).
  */
-export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: string }) {
+export function ModelDetail({
+  model,
+  baseUrl,
+  viewerId,
+}: {
+  model: CatalogModel;
+  baseUrl: string;
+  /**
+   * The signed-in visitor's id, or `null`. Passed down from the page rather than
+   * read here: this is a client component, and `getUser()` on the server is the
+   * only read that verifies the cookie's signature (see lib/supabase/server).
+   */
+  viewerId: string | null;
+}) {
   const tokensServed = model.totalPromptTokens + model.totalCompletionTokens;
 
   return (
@@ -194,6 +208,18 @@ export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: 
           </Link>
         </Card.Footer>
       </Card>
+
+      {/* Last on the page, and quiet. A prominent report control next to "Call
+          it" reads as a warning about the listing it sits on, and every listing
+          would carry it. It still has to be findable without reading the legal
+          pages, which is why it is on the page at all (§5.5). */}
+      <footer className="border-border flex flex-wrap items-center justify-between gap-2 border-t pt-6">
+        <p className="text-muted text-xs">
+          Something wrong with this listing — a licence, a rights claim, or the acceptable use
+          policy? An operator can take it down.
+        </p>
+        <ReportModelButton modelId={model.modelId} modelUuid={model.id} viewerId={viewerId} />
+      </footer>
     </div>
   );
 }

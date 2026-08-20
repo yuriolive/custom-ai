@@ -223,6 +223,14 @@ export type MyModelRow = {
   provisioningError: string | null;
   createdAt: string;
   readyAt: string | null;
+  /**
+   * Operator takedown (§5.5). Non-null => this listing is out of the catalog and
+   * 404s at the gateway, and the creator cannot clear it — the columns are pinned
+   * out of `custom_models_update_own`. Surfaced here because Studio is the only
+   * place its target can see it at all.
+   */
+  suspendedAt: string | null;
+  suspensionReason: string | null;
 };
 
 /** The provisioning stepper's stages, in order (FR-STU-007). */

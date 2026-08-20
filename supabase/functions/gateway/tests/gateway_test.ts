@@ -2,8 +2,11 @@
  * Gateway unit tests.
  *
  * Written against `node:test` + `node:assert/strict` so the SAME file runs under
- * Deno (`deno test`) and under Node (`node --import tsx/esm --test`). Deno is not
- * installed in the authoring environment, so the recorded run is the Node one.
+ * Deno (`deno test`) and under Node (`node --import tsx/esm --test`). Both runs
+ * are recorded as of #31: 110 pass under each, and `deno check` + `deno lint`
+ * are clean — worth stating because node's type-stripping cannot see a
+ * Deno-only error, so a green Node run is not evidence about the deployed
+ * artifact, which is Deno.
  *
  * Everything here is pure: no database, no network, no Deno-only globals.
  */
@@ -33,6 +36,7 @@ import {
 } from "../auth.ts";
 import {
   invalidateModelCache,
+  makePostgrestExecutor,
   parseModelId,
   type RawModelRow,
   type RawResolveRow,
@@ -70,6 +74,7 @@ function modelRow(over: Partial<RawModelRow> = {}): RawModelRow {
     status: "ready",
     visibility: "public",
     deleted_at: null,
+    suspended_at: null,
     runpod_endpoint_id: "ep_abcdef123456",
     served_model_name: "Qwen3.8-27B-Uncensored-Q4_K_M.gguf",
     runtime: "llamacpp",
@@ -476,6 +481,147 @@ test("resolve order: unknown key 401, revoked key 401 revoked_api_key, not-ready
     )
   );
   assert.equal(deleted.status, 404);
+});
+
+// ─── 4b. The operator suspension (§5.5, GitHub #31) ──────────────────────────
+//
+// A suspended listing must STOP SERVING, not merely stop being listed. `#24` put
+// the column behind RLS, which covers the catalog and the model page; the gateway
+// resolves through a SECURITY DEFINER RPC that bypasses RLS by design, so the
+// suspension arrives as a raw envelope fact and these are the tests that it is
+// acted on.
+
+test("a SUSPENDED listing returns 404, byte-identical to a model that does not exist", async () => {
+  invalidateModelCache();
+  const suspended = await expectGatewayError(() =>
+    resolveRequest(
+      KEY_HASH,
+      parsedId,
+      execReturning({
+        api_key: liveKeyStranger,
+        model: modelRow({ suspended_at: "2026-08-20T00:00:00Z" }),
+      }),
+      { useCache: false },
+    )
+  );
+  const missing = await expectGatewayError(() =>
+    resolveRequest(
+      KEY_HASH,
+      parsedId,
+      execReturning({ api_key: liveKeyStranger, model: null }),
+      { useCache: false },
+    )
+  );
+
+  assert.equal(suspended.status, 404);
+  assert.equal(suspended.code, "model_not_found");
+  // Not 503: `model_unavailable` reads as "exists, try later", which both
+  // confirms the listing to a stranger and tells the creator to retry.
+  assert.notEqual(suspended.status, 503);
+  assert.deepEqual(suspended.toEnvelope(), missing.toEnvelope());
+});
+
+test("the OWNER of a suspended listing gets the same 404 — no owner exemption", async () => {
+  invalidateModelCache();
+  // The contrast that makes this test worth having: the identical row with
+  // `visibility: private` instead resolves FINE for this same owner (asserted
+  // above). A takedown that leaves the offender's own key streaming has taken
+  // nothing down.
+  const err = await expectGatewayError(() =>
+    resolveRequest(
+      KEY_HASH,
+      parsedId,
+      execReturning({
+        api_key: liveKeyOwner,
+        model: modelRow({ user_id: OWNER_ID, suspended_at: "2026-08-20T00:00:00Z" }),
+      }),
+      { useCache: false },
+    )
+  );
+  assert.equal(err.status, 404);
+  assert.equal(err.code, "model_not_found");
+});
+
+test("a suspended PUBLIC listing 404s even though it is still `ready`", async () => {
+  invalidateModelCache();
+  // The suspension is not a status change: the worker is still provisioned and
+  // the row is still `ready`, which is why the status branch cannot carry this.
+  const err = await expectGatewayError(() =>
+    resolveRequest(
+      KEY_HASH,
+      parsedId,
+      execReturning({
+        api_key: liveKeyStranger,
+        model: modelRow({ status: "ready", suspended_at: "2026-08-20T00:00:00Z" }),
+      }),
+      { useCache: false },
+    )
+  );
+  assert.equal(err.status, 404);
+});
+
+test("the RPC envelope's modelSuspendedAt reaches the model row it 404s on", async () => {
+  invalidateModelCache();
+  // The seam between the migration and this module. `gateway_resolve` emits
+  // camelCase `modelSuspendedAt`; `RawModelRow` consumes snake_case
+  // `suspended_at`. A typo on either side of that rename is invisible to the
+  // typechecker and fails OPEN — the suspension silently never arrives and the
+  // listing keeps serving — so it is asserted through the real executor rather
+  // than through a hand-built row.
+  const exec = makePostgrestExecutor(
+    "https://project.supabase.co",
+    "service-role-key",
+    () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            found: true,
+            apiKeyId: "k1",
+            userId: OWNER_ID,
+            modelId: MODEL_ID,
+            creatorId: OWNER_ID,
+            upstreamEndpointRef: "?ref=x",
+            servedModelName: "m.gguf",
+            runtime: "llamacpp",
+            modelStatus: "ready",
+            modelVisibility: "public",
+            modelDeletedAt: null,
+            modelSuspendedAt: "2026-08-20T00:00:00Z",
+            keyRevokedAt: null,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+  );
+
+  const row = await exec({
+    keyHash: KEY_HASH,
+    creatorHandle: "owner",
+    slug: "secret-model",
+    includeModel: true,
+  });
+  assert.equal(row.model?.suspended_at, "2026-08-20T00:00:00Z");
+
+  const err = await expectGatewayError(() =>
+    resolveRequest(KEY_HASH, parsedId, () => Promise.resolve(row), { useCache: false })
+  );
+  assert.equal(err.status, 404, "and it is acted on, not merely carried");
+});
+
+test("a fixture with no suspended_at at all still resolves (absent means not suspended)", async () => {
+  invalidateModelCache();
+  const row = modelRow();
+  delete (row as { suspended_at?: unknown }).suspended_at;
+  const { resolved } = await resolveRequest(
+    KEY_HASH,
+    parsedId,
+    execReturning({
+      api_key: liveKeyOwner,
+      model: row,
+    }),
+    { useCache: false },
+  );
+  assert.equal(resolved.modelId, MODEL_ID);
 });
 
 test("the model LRU serves the model half but always re-fetches the key half", async () => {

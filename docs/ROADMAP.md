@@ -148,6 +148,8 @@ tier (~149 tok/s predicted on H100) **and** always-warm. That combination is a p
 | **Supabase Branching** | Removes production service-role key from preview environments. Threshold: the first real user. |
 | **One-time `prettier` + `deno fmt` pass** | Both `format:check` steps are advisory; the repo has never been formatted. Do it as its own commit so it buries nothing. |
 | **`active_weights_bytes` for MoE** | Correct for this dense model; needs the tensor-info section for MoE, which is outside the header range window. |
+| **Re-listing after a takedown** | The per-listing suspension (§5.5, #31) cannot be cleared by its target and freezes `deleted_at` while it stands, so the soft-delete-and-re-list escape is closed on the suspended row. Deploying the same weights as a NEW listing is still possible and is not treated as evasion today; a variant-level block needs a suspension record that outlives the listing. |
+| **Gateway model-cache invalidation is unwired** | `invalidateModelCache()` exists and nothing calls it: `custom_models` is not in the `supabase_realtime` publication (only `profiles` is), so the 60 s LRU TTL is the ONLY invalidation. A visibility flip and now an operator suspension are both observable up to 60 s late on a warm isolate. FR-GW-054 specifies the subscription; it was never built. |
 
 ---
 
@@ -168,6 +170,17 @@ with no `[auth.email.smtp]` block means production falls back to Supabase's buil
 sender, which is rate-limited to a few per hour and not intended for production. Fix
 with real SMTP before any real user; for an operator account, create the user in
 Dashboard → Authentication → Users with auto-confirm and skip email entirely.
+
+**A takedown is a column, not a `visibility` value.** The per-listing suspension
+(§5.5, #31) is `custom_models.suspended_at` + `suspension_reason`, pinned out of both
+creator RLS policies and written only by operator-guarded RPCs. It is deliberately
+NOT a `model_visibility` value — `visibility` sits inside `custom_models_update_own`,
+so a licence complaint expressed as a visibility flip is a takedown the offender can
+undo — and deliberately NOT a `model_status`, which the deploy pipeline would clobber
+on its next write. `profiles.is_suspended` stays the creator-level hammer; suspending
+a whole account over one bad listing is too blunt. The operator check lives in
+Postgres (`is_platform_operator`), not in a route handler, because a creator's JWT
+reaches PostgREST directly and never has to pass through the handler.
 
 **GitHub OAuth needs credentials, not code.** `signInWithOAuth` is wired and the
 authorize URL was verified correct including PKCE. Missing only a GitHub OAuth App
