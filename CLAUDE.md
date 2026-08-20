@@ -13,6 +13,37 @@ MVP-0's acceptance test is one sentence, and it is in `docs/CONTRACTS.md`: token
 from a scale-to-zero llama.cpp worker and **exactly one** `usage_transactions` row settles
 with a correct split and no negative balance.
 
+## Work tracking — beans, not todo lists
+
+**IMPORTANT: before you do anything else, run `beans prime` and heed its output.**
+
+Issues ("beans") live in `.beans/` as one Markdown file each, committed with the code
+they describe, managed by the [`beans`](https://github.com/hmans/beans) CLI. They
+replace `TodoWrite` and any ad-hoc todo list — a bean survives a context reset and
+lands in the same commit as its change, which a scratch list does not.
+
+```bash
+beans prime                      # the agent contract — read it before anything else
+beans list --json --ready        # what is actually startable (unblocked, not done)
+beans show --json <id>           # body, todo items, relationships
+beans create --json "T" -t task -s in-progress   # before starting work no bean covers
+beans update --json <id> -s completed            # only when no "- [ ]" items remain
+beans check                      # validates config + links; run after hand-editing a bean
+beans tui                        # interactive board, for humans
+```
+
+Install: `brew install hmans/beans/beans`, or `go install github.com/hmans/beans@latest`.
+Beans is alpha — its CLI surface can move between releases, so trust `beans <cmd> --help`
+over anything memorised, including this file.
+
+`docs/ROADMAP.md` stays the narrative: priority order, the reasoning behind it, and what
+was decided against. The beans carry the same work as *state* — status, blockers,
+checklists. When the two disagree, the beans are right about status and the roadmap is
+right about intent; fix whichever is stale instead of deleting the other.
+
+Bean bodies are prose and are in `.prettierignore`. Never reformat them by hand: the next
+`beans update` rewrites the file and the reformat comes back as churn.
+
 ## Read before changing anything
 
 | Doc | What it holds |
@@ -21,11 +52,13 @@ with a correct split and no negative balance.
 | `docs/PRD-inference-marketplace-mvp.md` | Requirements, FR-* ids referenced throughout the code comments. |
 | `docs/HANDOFF.md` | Current state, measured facts (cold start, decode rate, KV size) worth not re-deriving. |
 | `docs/DEPLOY.md` | Which host deploys what, and what is already configured. |
+| `docs/ROADMAP.md` | What is left and in which order, and what was decided against. Beans hold the *status* of the same work. |
 | `tools/modal/README.md` | How the Modal worker actually serves: class parameters, pools, cold start. |
 
 ## Layout
 
 ```
+.beans/                     Issue tracker — one Markdown file per bean, git-tracked
 app/                        Next.js 15 App Router — marketplace, studio, console, playground
 components/                 UI (HeroUI v3 + Tailwind v4)
 lib/                        Server + client app code

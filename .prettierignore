@@ -19,3 +19,7 @@ tools/runpod/
 
 # Deno formats this tree with `deno fmt` (see supabase/functions/gateway/deno.json).
 supabase/functions/
+
+# Written by the `beans` CLI. Prettier would reflow the bodies, and the next
+# `beans update` would write them back — churn on both sides, no gain.
+.beans/

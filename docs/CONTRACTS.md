@@ -46,6 +46,7 @@ supabase/functions/gateway/
     stream.ts usage.ts                                   [A6]
 app/ + root configs       Next.js 15 + Tailwind v4 + HeroUI v3   [A7]
 tests/fixtures/           shared fixtures                [contract — read-only]
+.beans/                   issue tracker files            [shared — every agent writes]
 ```
 
 ## Environment
