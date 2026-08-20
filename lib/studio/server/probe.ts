@@ -26,13 +26,15 @@ import { probeRepo, type HfProbeResult, type ModelVariant } from "@nexus/hf-prob
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type {
+  ProbeBaseModel,
   ProbeFailure,
   ProbeResponse,
   RefsResponse,
   StudioArchitecture,
   StudioVariant,
 } from "../types";
-import { fetchCardDescription } from "./model-card";
+import { suggestBaseModels } from "./base-model";
+import { fetchCardFacts } from "./model-card";
 
 /**
  * The community-default quantization's bits-per-weight (PRD §4.3.3.2 ladder).
@@ -263,10 +265,10 @@ export async function probeForStudio(
 
   // The card read and the SSM figure are independent, so they run together
   // rather than one after the other. The card is advisory and cannot fail the
-  // probe — `fetchCardDescription` resolves to null instead of throwing.
-  const [ssmBytes, suggestedDescription] = await Promise.all([
+  // probe — `fetchCardFacts` resolves to empty facts instead of throwing.
+  const [ssmBytes, card] = await Promise.all([
     ssmStateBytes(supabase, result.architecture),
-    fetchCardDescription(trimmed, result.revision, {
+    fetchCardFacts(trimmed, result.revision, {
       ...(opts.hfToken ? { hfToken: opts.hfToken } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
     }),
@@ -282,6 +284,26 @@ export async function probeForStudio(
     ssmStateBytesPerSeq: ssmBytes,
     architecture: arch.architecture,
     source: arch.source,
+    nAttentionHeads: arch.nAttentionHeads,
+    hiddenSize: arch.hiddenSize,
+    fullAttentionInterval: arch.fullAttentionInterval,
+  };
+
+  // ── Which model is this? (#25) ──────────────────────────────────────────
+  // The probe's own declarations come from the Hub's `cardData` and from the
+  // GGUF header; the card frontmatter is the fallback for a repo whose
+  // `cardData` the Hub did not return. Suggestions are only computed when
+  // nothing was declared — a declared parent is an answer, and asking a creator
+  // to confirm an answer teaches them to click past the question.
+  const declared = result.declaredBaseModels[0] ?? card.declaredBaseModels[0] ?? null;
+  const baseModel: ProbeBaseModel = {
+    declared: declared
+      ? { repoSlug: declared.repoSlug, relation: declared.relation, source: declared.source }
+      : null,
+    suggestions: declared
+      ? []
+      : await suggestBaseModels(supabase, { repoSlug: trimmed, architecture }),
+    license: result.license ?? card.license,
   };
 
   // Base family first — it is the one whose geometry was read.
@@ -310,7 +332,8 @@ export async function probeForStudio(
     architecture,
     architectureError: null,
     recommendedVariantId: recommend(variants),
-    suggestedDescription,
+    suggestedDescription: card.description,
+    baseModel,
   };
 }
 

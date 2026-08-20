@@ -8,6 +8,7 @@ import test from "node:test";
 
 import {
   architectureFromHeader,
+  baseModelsFromHeader,
   deriveAttentionLayers,
   parseGgufHeader,
   readGgufArchitecture,
@@ -104,6 +105,34 @@ const QWEN_KV: KvPair[] = [
   ["qwen3.attention.key_length", T.UINT32, 128],
   ["qwen3.rope.freq_base", T.FLOAT32, 1_000_000],
 ];
+
+// ─── general.base_model.* (cascade signal 2) ─────────────────────────────────
+
+test("declared base models are read off the header, count key or not", () => {
+  const header = parseGgufHeader(
+    buildGguf(3, [
+      ...QWEN_KV,
+      ["general.base_model.count", T.UINT32, 2],
+      ["general.base_model.0.repo_url", T.STRING, "https://huggingface.co/Qwen/Qwen3-8B"],
+      ["general.base_model.0.name", T.STRING, "Qwen3-8B"],
+      ["general.base_model.0.organization", T.STRING, "Qwen"],
+      // Second entry with no repo_url at all: a conversion from a local
+      // checkout writes only the name and the organization.
+      ["general.base_model.1.name", T.STRING, "Mistral-7B-v0.3"],
+      ["general.base_model.1.organization", T.STRING, "mistralai"],
+    ]),
+  );
+  const refs = baseModelsFromHeader(header);
+  assert.equal(refs.length, 2);
+  assert.equal(refs[0].repoUrl, "https://huggingface.co/Qwen/Qwen3-8B");
+  assert.equal(refs[1].repoUrl, null);
+  assert.equal(refs[1].organization, "mistralai");
+  assert.equal(refs[1].name, "Mistral-7B-v0.3");
+});
+
+test("a repo that declares nothing yields no refs rather than empty ones", () => {
+  assert.deepEqual(baseModelsFromHeader(parseGgufHeader(buildGguf(3, QWEN_KV))), []);
+});
 
 // ─── parser ─────────────────────────────────────────────────────────────────
 

@@ -105,6 +105,10 @@ export interface HfProbeResult {
   architecture: ModelArchitecture | null;
   /** Set when architecture could not be determined — then REJECT, never guess. */
   architectureError?: string;
+  /** Parents the repo DECLARES, card data first. The only auto-link signals. */
+  declaredBaseModels: DeclaredBaseModel[];
+  /** The licence THIS repo carries — advisory about the weights beneath it. */
+  license: RepoLicense | null;
 }
 
 export interface ProbeOptions {
@@ -162,3 +166,149 @@ export function resolveToolSupport(
 
 /** The pure half, for a template already in hand. null = absent or blank. */
 export function detectToolSupport(template: string | null | undefined): boolean | null;
+
+// ─── Base-model identity & licence (#25) ─────────────────────────────────────
+
+export type BaseModelRelation = "quantized" | "finetune" | "merge" | "adapter";
+
+export type BaseModelSignal = "card_data" | "gguf_header" | "fingerprint" | "name" | "manual";
+
+/** Mirrors `public.commercial_hosting`. `unknown` never auto-publishes. */
+export type CommercialHosting = "allowed" | "conditional" | "prohibited" | "unknown";
+
+export interface RepoLicense {
+  id: string | null;
+  name: string | null;
+  url: string | null;
+  commercialHosting: CommercialHosting;
+}
+
+export interface DeclaredBaseModel {
+  repoSlug: string;
+  relation: BaseModelRelation | null;
+  source: "card_data" | "gguf_header";
+}
+
+/** NEVER an identity: a fine-tune matches its parent on every field. */
+export interface Fingerprint {
+  architecture: string | null;
+  nLayers: number | null;
+  nAttentionHeads: number | null;
+  nKvHeads: number | null;
+  headDim: number | null;
+  hiddenSize: number | null;
+}
+
+export interface BaseModelCandidate {
+  id: string;
+  slug: string;
+  displayName: string;
+  fingerprint: Fingerprint | null;
+}
+
+export interface ScoredCandidate extends BaseModelCandidate {
+  confidence: number;
+  matchedOn: ("fingerprint" | "name")[];
+  relationHint: "quantized" | "finetune";
+}
+
+export interface IdentityInput {
+  repoSlug: string;
+  declared: DeclaredBaseModel[];
+  fingerprint: Fingerprint | null;
+  candidates?: BaseModelCandidate[];
+}
+
+export interface BaseModelIdentity {
+  /** True only for a DECLARED signal — card data or the GGUF header. */
+  autoLink: boolean;
+  signal: BaseModelSignal | null;
+  relation: BaseModelRelation | null;
+  parentRepoSlug: string | null;
+  /** True when THIS repo is its own model whose parent is `parentRepoSlug`. */
+  ownModel: boolean;
+  confidence: number;
+  /** Populated only when nothing was declared. Never auto-applied. */
+  suggestions: ScoredCandidate[];
+  reason: string;
+}
+
+/** The cascade. The only function allowed to decide that a repo links. */
+export function resolveBaseModelIdentity(input: IdentityInput): BaseModelIdentity;
+
+export function scoreCandidates(
+  input: { repoSlug: string; fingerprint: Fingerprint | null },
+  candidates: BaseModelCandidate[],
+): ScoredCandidate[];
+
+export function repoSlugFromRef(ref: string | null | undefined): string | null;
+
+/** `publisher/name` for a `base_models` row, from a Hub repo slug. */
+export function baseModelSlugFromRepo(repoSlug: string): string | null;
+
+export function normalizeModelName(name: string): string;
+
+export function nameTokens(name: string): string[];
+
+export function nameSimilarity(a: string, b: string): number;
+
+export function normalizeRelation(raw: unknown): BaseModelRelation | null;
+
+export function fingerprintMatches(a: Fingerprint | null, b: Fingerprint | null): boolean;
+
+export function commercialHostingFor(licenseId: string | null | undefined): CommercialHosting;
+
+export function normalizeLicenseId(raw: unknown): string | null;
+
+export function strictest(a: CommercialHosting, b: CommercialHosting): CommercialHosting;
+
+export interface HfCardData {
+  base_model?: string | string[];
+  base_model_relation?: string;
+  license?: string | string[];
+  license_name?: string;
+  license_link?: string;
+  tags?: string[];
+  pipeline_tag?: string;
+  [k: string]: unknown;
+}
+
+export function licenseFromCardData(
+  cardData: HfCardData | null | undefined,
+  repo?: { repoSlug?: string; revision?: string; endpoint?: string },
+): RepoLicense | null;
+
+export interface HfModelInfo {
+  id?: string;
+  sha?: string;
+  private?: boolean;
+  gated?: false | "auto" | "manual" | string;
+  library_name?: string | null;
+  pipeline_tag?: string | null;
+  siblings?: { rfilename: string; size?: number }[];
+  config?: Record<string, unknown>;
+  /** Only present because getModelInfo asks for `?full=true`. */
+  cardData?: HfCardData | null;
+  safetensors?: { total?: number; parameters?: Record<string, number> } | null;
+  tags?: string[];
+  [k: string]: unknown;
+}
+
+export interface HfClientOptions {
+  endpoint?: string;
+  hfToken?: string;
+  fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+}
+
+export interface HfResponse<T> {
+  status: number;
+  body: T | null;
+  error: string | null;
+}
+
+/** `GET /api/models/{slug}?full=true` — the request that carries `cardData`. */
+export function getModelInfo(
+  slug: string,
+  opts?: HfClientOptions,
+): Promise<HfResponse<HfModelInfo>>;

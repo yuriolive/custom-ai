@@ -302,6 +302,57 @@ function asInt(v: GgufValue | undefined): number | null {
   return null;
 }
 
+// ─── general.base_model.* — cascade signal 2 ────────────────────────────────
+
+/**
+ * One entry of the GGUF header's declared base-model list.
+ *
+ * Every field is optional in practice. `convert_hf_to_gguf.py` writes
+ * `repo_url` when the source repo was on the Hub and only `name`/`organization`
+ * when it was converted from a local checkout, so a reader that requires the URL
+ * silently loses the parent on half the repos that declare one.
+ */
+export interface GgufBaseModelRef {
+  repoUrl: string | null;
+  name: string | null;
+  organization: string | null;
+  version: string | null;
+}
+
+function asString(v: GgufValue | undefined): string | null {
+  return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
+}
+
+/**
+ * The base models a GGUF file declares in its own KV header.
+ *
+ * This is the ONLY declared signal a llama.cpp-native repo has — such a repo
+ * often ships no model card at all — and the header was already fetched and
+ * parsed to read the architecture, so reading it costs nothing.
+ *
+ * `general.base_model.count` is authoritative but not always present; the scan
+ * therefore continues past it up to whatever indices actually carry keys, and
+ * stops at the first gap so a malformed header cannot make this loop forever.
+ */
+export function baseModelsFromHeader(header: GgufHeader): GgufBaseModelRef[] {
+  const kv = header.kv;
+  const declared = asInt(kv["general.base_model.count"]);
+  const limit = declared !== null && declared > 0 ? Math.min(declared, 64) : 64;
+
+  const refs: GgufBaseModelRef[] = [];
+  for (let i = 0; i < limit; i++) {
+    const ref: GgufBaseModelRef = {
+      repoUrl: asString(kv[`general.base_model.${i}.repo_url`]),
+      name: asString(kv[`general.base_model.${i}.name`]),
+      organization: asString(kv[`general.base_model.${i}.organization`]),
+      version: asString(kv[`general.base_model.${i}.version`]),
+    };
+    if (ref.repoUrl === null && ref.name === null && ref.organization === null) break;
+    refs.push(ref);
+  }
+  return refs;
+}
+
 export type GgufArchitectureResult =
   | { ok: true; architecture: ModelArchitecture; header: GgufHeader; bytesRead: number }
   | { ok: false; error: string; bytesRead: number };
