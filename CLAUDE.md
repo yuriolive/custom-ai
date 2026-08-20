@@ -116,6 +116,14 @@ same VRAM and differ 2x in speed. Selection is `argmin(price)` over tiers meetin
 VRAM fit and the throughput target. Never sort the list and call it quality; never show it to
 a creator as a menu.
 
+**The VRAM fit is the AGGREGATE, and the slot count is capped.** llama.cpp allocates
+`ctx_size x parallel` of KV eagerly at load, so the test that matters is
+`weights + overhead(total_ctx, slots) + slots * per_stream <= usable` — a single-stream fit
+test says nothing about what the worker does, and an uncapped `floor(pool / per_stream)` once
+emitted 91 slots and killed the container. The slot count is what becomes `--parallel`; it is
+NOT the cost floor's throughput multiplier (that is `batch_throughput_factor`), because a
+formula that divides by the slot count rewards inflating the number it multiplies.
+
 **There are two tier catalogs and they are not the same thing.** `supabase/migrations`
 (`gpu_tiers` + `solver_config`) is what runs at request time; `tools/modal/tiers.py` is what
 the deploy tooling and the Python tests use. A change to solver constants or hardware prices

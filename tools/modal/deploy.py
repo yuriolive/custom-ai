@@ -27,6 +27,8 @@ import urllib.parse
 from tiers import (
     GIB,
     MVP_TARGET_SHAPE,
+    SLOT_HARD_CAP,
+    SOLVER_CONFIG,
     TIERS_BY_ID,
     Infeasible,
     ModelShape,
@@ -81,6 +83,17 @@ def resolve_config(
         )
     if not model_file.lower().endswith(".gguf"):
         raise ValueError(f"model_file {model_file!r} is not a .gguf file")
+
+    # `--parallel` bypasses the solver entirely, and llama.cpp allocates
+    # ctx_size x parallel of KV eagerly at load — so an operator typo here is the same
+    # cudaMalloc failure #37 produced from a solver bug. The hard cap applies to a
+    # hand-passed value too; the SOLVER_CONFIG ceiling deliberately does not, because
+    # overriding that ceiling is the reason this flag exists.
+    if parallel_override is not None and not 1 <= parallel_override <= SLOT_HARD_CAP:
+        raise ValueError(
+            f"--parallel {parallel_override} is outside 1..{SLOT_HARD_CAP}: llama.cpp "
+            f"allocates ctx_size x parallel of KV at load, and that will not fit."
+        )
 
     shape = ModelShape(
         weights_bytes=weights_bytes,
@@ -146,6 +159,13 @@ def resolve_config(
             "ssm_layers": shape.n_ssm_layers,
             "kv_gib_per_stream": round(shape.kv_bytes_per_token * context_length / GIB, 3),
             "max_concurrent_streams": parallel,
+            # What the container will really allocate at THIS slot count — including a
+            # hand-passed --parallel, which is exactly the case where the solver's own
+            # aggregate would be the wrong number to print (#37).
+            "aggregate_bytes": (
+                weights_bytes + shape.base_overhead_bytes + parallel * shape.slot_cost_bytes()
+            ),
+            "usable_vram_bytes": int(tier.vram_bytes * SOLVER_CONFIG["vram_utilization"]),
             "predicted_tokens_per_second": predicted,
             "cost_floor_micro_per_mtoken": cost_floor,
             "usd_per_hour_micro": tier.usd_per_hour_micro,
@@ -216,6 +236,13 @@ def render(cfg: dict) -> str:
         f"    kv per stream      {c['kv_gib_per_stream']} GiB at {cfg['class_parameters']['ctx_size']} ctx"
     )
     L.append(f"    max concurrent     {c['max_concurrent_streams']} streams")
+    # The aggregate, not the per-stream figure: llama.cpp allocates ctx x parallel of
+    # KV at load, so this is the number that either fits or kills the container (#37).
+    L.append(
+        f"    total allocation   {c['aggregate_bytes'] / GIB:.2f} GiB of "
+        f"{c['usable_vram_bytes'] / GIB:.2f} GiB usable"
+        + ("   *** DOES NOT FIT ***" if c["aggregate_bytes"] > c["usable_vram_bytes"] else "")
+    )
     L.append(f"    predicted speed    {c['predicted_tokens_per_second']} tok/s")
     L.append(f"    GPU price          ${c['usd_per_hour_micro'] / 1e6:.2f}/hr")
     if c["cost_floor_micro_per_mtoken"]:
