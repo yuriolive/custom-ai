@@ -210,7 +210,7 @@ _RULES: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         r"cudaMalloc failed: out of memory|CUDA error: out of memory|"
-        r"ggml_backend_cuda_buffer_type_alloc_buffer",
+        + r"ggml_backend_cuda_buffer_type_alloc_buffer",
         PERMANENT,
         "cuda_oom",
         "The GPU ran out of memory while loading. The weights plus the KV cache for "
@@ -219,7 +219,7 @@ _RULES: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         r"unknown model architecture|unsupported model architecture|"
-        r"unknown architecture|unsupported architecture",
+        + r"unknown architecture|unsupported architecture",
         PERMANENT,
         "unsupported_arch",
         "This model's architecture is not supported by the pinned llama.cpp build. "
@@ -227,8 +227,8 @@ _RULES: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         r"invalid magic character|gguf_init_from_file failed|"
-        r"failed to load model|unable to load model|"
-        r"wrong number of tensors|tensor .* not found|invalid model file",
+        + r"failed to load model|unable to load model|"
+        + r"wrong number of tensors|tensor .* not found|invalid model file",
         PERMANENT,
         "bad_gguf",
         "The GGUF file could not be read as a model. It may be truncated, may not be "
@@ -237,7 +237,7 @@ _RULES: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         r"error while handling model file|unsupported quantization|"
-        r"quantization type not supported",
+        + r"quantization type not supported",
         PERMANENT,
         "unsupported_quant",
         "The pinned llama.cpp build cannot read this file's quantization. Pick a more "
@@ -245,9 +245,9 @@ _RULES: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         r"ConnectionError|ConnectionResetError|IncompleteRead|Read timed out|"
-        r"ReadTimeout|Temporary failure in name resolution|"
-        r"HTTP Error 5\d\d|429 Too Many Requests|hf_transfer|"
-        r"RepositoryNotFoundError|EntryNotFoundError|Consistency check failed",
+        + r"ReadTimeout|Temporary failure in name resolution|"
+        + r"HTTP Error 5\d\d|429 Too Many Requests|hf_transfer|"
+        + r"RepositoryNotFoundError|EntryNotFoundError|Consistency check failed",
         TRANSIENT,
         "weights_download",
         "Fetching the weights failed. This is usually the network or Hugging Face, "
@@ -255,7 +255,7 @@ _RULES: tuple[tuple[str, str, str, str], ...] = (
     ),
     (
         r"Stale file handle|Input/output error|No space left on device|"
-        r"Transport endpoint is not connected",
+        + r"Transport endpoint is not connected",
         TRANSIENT,
         "volume_io",
         "The weight cache volume misbehaved during load. Not a property of the model; "
@@ -544,6 +544,15 @@ def probe_health(port: int, *, timeout_s: float = HEALTH_PROBE_TIMEOUT_S) -> Hea
         return HealthProbe(UNBOUND, f"{type(e).__name__}: {e}")
 
 
+def _stuck_description(last: HealthProbe, ever_bound: bool) -> str:
+    """Which kind of slow, for the timeout message. See wait_until_ready()."""
+    if last.bound:
+        return "bound and answering, still loading"
+    if ever_bound:
+        return "bound earlier, then stopped accepting connections"
+    return "never bound"
+
+
 def wait_until_ready(
     server: SupervisedServer,
     *,
@@ -595,18 +604,20 @@ def wait_until_ready(
             break
         sleep(POLL_INTERVAL_S)
 
-    # Only reachable by a process that is STILL ALIVE — a dead one left via the
-    # raise above. So this message is about a slow load, and says which kind of
-    # slow: bound-and-503 (loading, just not finished) versus never-bound (the
-    # port never came up at all). The old code could not tell those apart.
-    stuck = (
-        "bound and answering, still loading"
-        if last.bound
-        else ("bound earlier, then stopped accepting connections" if ever_bound else "never bound")
-    )
+    # The ceiling was reached. One last poll before blaming a slow load: a process
+    # that died inside the final probe window would otherwise be described as "still
+    # running", and — worse — leave via RuntimeError instead of LlamaServerExited, so
+    # the caller would never record the failure the next cold start needs.
+    if server.poll() is not None:
+        raise LlamaServerExited(server.exit_report())
+
+    # Genuinely alive, just slow. Say WHICH kind of slow: bound-and-503 (loading, not
+    # finished) versus never-bound (the port never came up). The old single
+    # `except OSError: pass` could not tell those apart at all.
     raise RuntimeError(
         f"llama-server did not become healthy within {timeout_s}s "
-        f"({attempt} polls, still running, {stuck}, last probe: {last.detail})\n"
+        f"({attempt} polls, still running, {_stuck_description(last, ever_bound)}, "
+        f"last probe: {last.detail})\n"
         f"--- last output ---\n{server.tail.text()}"
     )
 
@@ -654,9 +665,14 @@ def watch_after_ready(
             # `@modal.exit` asked for this. The container is already going away.
             return
         report = server.exit_report()
-        if on_death is not None:
-            on_death(report)
-        kill(report)
+        # try/finally, because on_death writes a file and commits a Volume. If any of
+        # that throws, the container must STILL go down — a watchdog that dies while
+        # reporting leaves exactly the orphan it exists to prevent.
+        try:
+            if on_death is not None:
+                on_death(report)
+        finally:
+            kill(report)
 
     thread = threading.Thread(target=_watch, name="llama-server-watchdog", daemon=True)
     thread.start()

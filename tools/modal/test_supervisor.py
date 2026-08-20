@@ -245,6 +245,28 @@ class SlowLoadTest(unittest.TestCase):
         self.assertEqual(elapsed, 589.0)
         self.assertIsNotNone(server.ready_at)
 
+    def test_a_death_inside_the_final_probe_window_is_still_a_death(self):
+        # The nastiest boundary. If the child dies just before the ceiling is reached,
+        # the loop breaks on the timeout — and the old shape would then report a corpse
+        # as "still running" AND leave via RuntimeError, so _bring_up would never record
+        # the failure the next cold start needs.
+        clock = FakeClock()
+        proc = FakeProc(alive_polls=5, returncode=1)
+        server = build_server(proc, clock, tail_lines=CUDA_OOM_LOG)
+
+        with self.assertRaises(LlamaServerExited) as caught:
+            supervisor.wait_until_ready(
+                server,
+                port=8080,
+                timeout_s=5,
+                probe=lambda: HealthProbe(LOADING, "HTTP 503"),
+                sleep=clock.sleep,
+                clock=clock,
+                echo=lambda _msg: None,
+            )
+        self.assertEqual(caught.exception.report.returncode, 1)
+        self.assertEqual(caught.exception.report.failure.code, "kv_cache_oom")
+
     def test_never_bound_reads_differently_from_still_loading(self):
         clock = FakeClock()
         server = build_server(FakeProc(), clock)
@@ -286,6 +308,20 @@ class SlowLoadTest(unittest.TestCase):
         self.assertIn("stopped accepting connections", str(caught.exception))
 
 
+class StuckDescriptionTest(unittest.TestCase):
+    def test_the_three_kinds_of_stuck_are_distinct(self):
+        cases = {
+            (LOADING, False): "bound and answering, still loading",
+            (LOADING, True): "bound and answering, still loading",
+            (UNBOUND, True): "bound earlier, then stopped accepting connections",
+            (UNBOUND, False): "never bound",
+        }
+        for (state, ever_bound), expected in cases.items():
+            with self.subTest(state=state, ever_bound=ever_bound):
+                probe = HealthProbe(state, "detail")
+                self.assertEqual(supervisor._stuck_description(probe, ever_bound), expected)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 3. An exit after readiness takes the container down
 # ═════════════════════════════════════════════════════════════════════════════
@@ -309,6 +345,32 @@ class PostReadyWatchdogTest(unittest.TestCase):
         self.assertEqual(len(noted), 1)
         self.assertTrue(killed[0].after_ready)
         self.assertEqual(killed[0].returncode, 137)
+
+    def test_the_container_goes_down_even_if_reporting_the_death_throws(self):
+        # on_death writes a file and commits a Volume. A watchdog that dies while
+        # reporting leaves exactly the orphaned GPU it exists to prevent.
+        clock = FakeClock()
+        proc = FakeProc(alive_polls=10**9)
+        server = build_server(proc, clock, tail_lines=["CUDA error: out of memory"])
+        server.ready_at = 1.0
+        killed = []
+
+        def explode(_report):
+            raise RuntimeError("the volume is on fire")
+
+        # The traceback is deliberate diagnostics in production (where `kill` is
+        # os._exit and never returns, so it is never actually reached). Silence it here
+        # so a passing run does not look like a failing one.
+        original_hook = threading.excepthook
+        threading.excepthook = lambda _args: None
+        self.addCleanup(lambda: setattr(threading, "excepthook", original_hook))
+
+        thread = supervisor.watch_after_ready(server, on_death=explode, kill=killed.append)
+        proc.die()
+        thread.join(5.0)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(len(killed), 1)
 
     def test_shutdown_from_modal_exit_does_not_look_like_a_death(self):
         # Every ordinary scaledown terminates the child. If the watchdog treated that as
