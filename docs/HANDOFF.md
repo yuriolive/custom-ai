@@ -50,6 +50,29 @@ To resume: check out the branch, re-read the **frozen** "Frontend / auth contrac
 | KV cache | 64 KiB/token (16 of 65 attention layers, hybrid SSM) |
 | Target model | `qwen35`, hybrid attention/SSM, 262144 native context, **bf16 source exists** |
 
+## Anthropic Messages API — added 2026-08-19
+
+`POST /v1/messages`, `POST /v1/messages/count_tokens` and an Anthropic-shaped
+`GET /v1/models` are served by `supabase/functions/gateway/anthropic.ts`, on `x-api-key`
+(bearer still accepted), through the same pipeline and the same settlement as
+`/v1/chat/completions` — `handleChatCompletions` was split so both routes call one
+`runInference()`. Tool calling (PR #13) is the prerequisite that makes it useful: an
+Anthropic client that cannot call a tool connects and does nothing.
+
+Two things worth not re-deriving:
+
+- **The re-framing runs downstream of `proxyStream`, not instead of it.** Usage therefore
+  still comes from the OpenAI byte tee. Reading it from `message_delta` instead would be a
+  second billing path to keep in step with the first.
+- **The adapter's error precedence is `type` before `code`, which inverts ours.** Our
+  envelopes carry a coarse `type` (`api_error`) and a precise `code` (`model_unavailable`),
+  so passing both collapses every 503 to `api_error/500` and every 404/401 to a flat 400.
+  `anthropic.ts` drops the `type` when a `code` is present; that is what makes 529
+  `overloaded_error` come out right.
+
+Not verified against a live `claude` session — the coverage is unit + e2e against a fake
+upstream, which cannot prove an agent loop completes at 14 tok/s.
+
 ## Known-open, deliberately
 
 - **Warm TTFT p50 926 ms misses NFR-CS-002** (400 ms). Recorded as a miss, not restated to match what we measured.
