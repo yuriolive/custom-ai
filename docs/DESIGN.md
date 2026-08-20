@@ -1124,7 +1124,8 @@ written against §1–§3 needs no follow-up pass. Ordered by PRD priority:
 - No horizontal document overflow at 375px.
 - Every aligned figure has `tabular-nums`.
 - No GPU or hardware term anywhere in the diff, including `title` attributes.
-- `npm run check` passes (`oxlint` + `eslint` + all four `tsc` projects).
+- `npm run check` passes (`check:env` + `check:migrations` + `oxlint` + `eslint` + every
+  `tsc` project).
 - No `onClick` on a HeroUI component; `Alert` takes `status`; `Chip` keeps `color` and
   `variant` as independent props.
 - No coral, salmon or orange as an accent; the only warm colour in the diff is `--warning`

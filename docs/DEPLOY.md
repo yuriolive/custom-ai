@@ -236,7 +236,7 @@ Two ways out, either is fine:
 
 ---
 
-## 5. Post-deploy verification
+## 6. Post-deploy verification
 
 ```
 curl https://gexxzdlppbplfpfqhszf.supabase.co/functions/v1/gateway/v1/models \

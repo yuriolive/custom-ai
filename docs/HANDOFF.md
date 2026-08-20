@@ -13,7 +13,9 @@ State at the end of the first build session. Read this first tomorrow.
 
 Billing checked against real rows: `ceil(53×0.5)+ceil(42×1.5) = 90` micro-USD, platform `18`, creator `72` — exact. One `wallet_ledger` row per transaction, `v_balance_drift` returns zero rows, and a client that hung up mid-stream was still billed its full 400 tokens.
 
-**Tests:** 253 node (5 workspaces) · 129 pgTAP · 41 Python. CI runs all of them.
+**Tests:** 336 node across 6 test groups (335 pass, 1 skipped) · 201 pgTAP · 48 Python.
+CI runs all of them. Node and Python re-measured 2026-08-19; the pgTAP figure is the sum of
+the `plan()` declarations in `supabase/tests/`, since running them needs Docker.
 
 ## Branches
 

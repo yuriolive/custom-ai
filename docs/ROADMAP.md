@@ -6,7 +6,10 @@ topology.
 
 **Where things stand:** MVP-0 is deployed. The gateway is ACTIVE on Supabase
 (`verify_jwt: false`, v3), Modal is deployed at $0 idle, migrations are applied, the
-web app is on Vercel. 263 node tests + 129 pgTAP + 41 python, CI green. A real billed
+web app is on Vercel. CI is green across its four jobs — node, python, deno, pgTAP. For
+current test counts run them rather than trusting a number frozen here: `npm test`,
+`cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift`, and
+`npx supabase test db --local supabase/tests`. A real billed
 inference has been verified end to end **locally** and against an **authenticated**
 Modal endpoint.
 
@@ -41,7 +44,7 @@ Blocked on nothing. This is pure product work against finished infrastructure.
 Until Studio exists, production needs one creator profile, the Qwen model row pointed
 at the live Modal endpoint, a funded caller, and a key minted against **production**
 (never the committed fixture — see the seed warning in `DEPLOY.md`). Do this via
-`tools/keygen` + SQL, then run the `DEPLOY.md` §5 verification for a real billed
+`tools/keygen` + SQL, then run the `DEPLOY.md` §6 verification for a real billed
 request through the deployed stack.
 
 ### 3. Two dashboard settings (operator, 5 minutes)
