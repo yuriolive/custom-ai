@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import type { AuthFormState } from "@/app/(auth)/form-state";
+import { revokeChatSession } from "@/lib/chat/session-key";
 import { describeAuthError } from "@/lib/supabase/auth-errors";
 import { safeNextPath, SIGNED_IN_HOME } from "@/lib/supabase/middleware";
 import { createClient } from "@/lib/supabase/server";
@@ -205,6 +206,16 @@ export async function signInWithGitHubAction(
 
 export async function signOutAction(): Promise<void> {
   const supabase = await createClient();
+
+  // Order matters: the chat session key is revoked while the session that
+  // proves who owns it still exists. Without this the auth cookie goes and a
+  // credential that can spend the wallet stays behind in the browser — which on
+  // a shared machine is the next person's working balance.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) await revokeChatSession(user.id);
+
   // 'local' revokes this browser's refresh token only; other devices keep
   // their sessions, which is what a "sign out" button means to a user.
   await supabase.auth.signOut({ scope: "local" });

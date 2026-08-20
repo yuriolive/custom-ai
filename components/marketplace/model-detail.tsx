@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, Chip, Table } from "@heroui/react";
+import type { Route } from "next";
 import Link from "next/link";
 
 import { formatCreditValue } from "@/lib/format";
@@ -180,17 +181,28 @@ export function ModelDetail({ model, baseUrl }: { model: CatalogModel; baseUrl: 
         </p>
       </section>
 
+      {/* FR-CHAT-004. This link is the conversion path: a model page that a
+          non-developer lands on has to lead somewhere they can actually use,
+          and the chat opens with THIS model already selected. Without it, chat
+          is a page nobody finds. */}
       <Card>
         <Card.Header>
           <Card.Title className="text-base">Try it without writing code</Card.Title>
           <Card.Description>
-            The playground streams through the same gateway, with per-turn cost metering, so you can
-            see the cold start and the warm speed for yourself before you integrate.
+            Chat with this model in the browser — no keys, no parameters, billed per token from
+            your wallet. The playground is the same gateway with the inference parameters exposed,
+            for when you want to feel what they do before you integrate.
           </Card.Description>
         </Card.Header>
-        <Card.Footer>
-          <Link className="text-accent text-sm font-medium hover:underline" href="/playground">
-            Open the playground →
+        <Card.Footer className="flex flex-wrap items-center gap-4">
+          <Link
+            className="text-accent text-sm font-medium hover:underline"
+            href={`/chat?model=${encodeURIComponent(model.modelId)}` as Route}
+          >
+            Chat with {model.displayName} →
+          </Link>
+          <Link className="text-muted text-sm hover:underline" href="/playground">
+            Open the playground
           </Link>
         </Card.Footer>
       </Card>

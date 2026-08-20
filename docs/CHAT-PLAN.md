@@ -1,11 +1,16 @@
 # Consumer Chat — implementation plan
 
-Status: **proposal**, not frozen. Written against the repo as of 2026-08-19 and the
+Status: **v1 is implemented** (`/chat`, `/api/chat`, `lib/chat/`, `components/chat/`).
+v2 and v3 remain proposals. Written against the repo as of 2026-08-19 and the
 competitive scan in §2, which was taken live on the same day.
 
-Read `CONTRACTS.md` first. This document proposes two changes to text that is frozen
-there (§4 billing identity, §7 route protection). Both are called out explicitly rather
-than assumed, per the rule at the top of that file.
+Read `CONTRACTS.md` first. Both of the frozen-text changes this document requested were
+raised before being taken, and both have now landed there: `/chat/**` is in the
+authenticated route table, and the chat session cookie is documented alongside the other
+things the browser may not do directly.
+
+§11 records what v1 actually decided, including where it deliberately does less than the
+plan asked for.
 
 ---
 
@@ -171,6 +176,55 @@ Requirement ids follow the PRD's convention so code comments can reference them.
 |---|---|
 | FR-CHAT-013 | `/chat/agent` as a **separate route**, with real tool calling. Hard-blocked on roadmap item #7 — the gateway 501s `tools` today, and llama.cpp needs `--jinja` or it returns prose that merely looks like a tool call. |
 | FR-CHAT-014 | Per-model `supports_tools`, detected at probe time. Tool calling in GGUF-land is per-chat-template and is not uniform; a global toggle would be a lie. |
+| FR-CHAT-015 | Third-party tool connectors — a catalog of integrations the user grants once and any model can then call. See §7.5. |
+
+## 7.5 Tool connectors — the shape to leave room for
+
+Recorded now so the architecture does not foreclose it, in the same spirit as the parked
+Phase-3 items in `ROADMAP.md`. Nothing here is scheduled.
+
+Once FR-CHAT-013 exists, the interesting question stops being "can the model call a tool"
+and becomes "whose tools, and who holds the credentials". Three ways to answer it, and
+they are not exclusive:
+
+**Platform-owned tools.** Web search, a code sandbox, a URL fetcher. The platform holds
+the credential, the cost folds into the turn, and nothing about the user's accounts is
+involved. This is where FR-CHAT-011 already starts, and it is the only kind that needs no
+consent flow.
+
+**MCP servers.** The de-facto standard for "here is a tool server, here are its tools".
+A user (or a creator, per model) points the chat at an MCP endpoint and its tools become
+callable. The attraction is that it is a protocol rather than a vendor: anything that
+speaks MCP works, including things the platform has never heard of.
+
+**Aggregators — Composio and its kind.** One integration that brings hundreds: Gmail,
+Slack, Notion, GitHub, Linear, calendars. The user authorises each app once, on the
+provider's side, and the platform never sees those credentials. This is the cheapest path
+to "the chat can actually do things in my accounts", and it is what makes an agent tier
+worth paying for rather than a demo.
+
+What has to be true before any of it ships, stated now because retrofitting it is where
+these features go wrong:
+
+- **The credential boundary is the whole design.** OAuth grants to third-party accounts
+  are not `api_keys` rows, are not micro-USD, and must not end up in the same table
+  because they are both "secrets". They need their own storage, their own revocation UI,
+  and a per-connector consent record — what was granted, when, by whom.
+- **A tool call is an action, not a completion.** Sending an email on a model's say-so is
+  irreversible, and the gateway's whole safety story today is that the worst outcome is a
+  wasted token. Anything with a side effect needs an explicit confirmation step in the UI
+  before it fires, per connector, and a log of what fired.
+- **Billing is not just tokens any more.** A tool call is latency the user pays for in
+  wall-clock and often a third-party quota. `usage_transactions` has no shape for that,
+  and inventing one on the fly during an agent sprint is how a billing model gets a float
+  in it.
+- **Per-model capability, not a global switch.** FR-CHAT-014 already says this for tool
+  calling; connectors inherit it. A model whose chat template cannot emit a tool call must
+  not be offered a connector list.
+
+The cheap decision that keeps the door open, and the only one worth making today: keep
+tool support a per-model capability flag from the start, rather than a property of the
+chat surface.
 
 **Deliberately out of scope:** image and video generation (no such worker exists);
 multi-model compare (a second GPU spin-up per prompt against a 90 s cold start is a bad
@@ -231,3 +285,65 @@ One sentence, in the style of MVP-0's:
    cheap to reuse — worth doing both in one pass?
 4. **Rate limiting.** Nothing rate-limits an authenticated caller today; the wallet is the
    limit. Adequate for chat, or does a spend-per-hour ceiling belong here?
+
+## 11. What v1 actually shipped
+
+Implemented against §6, with the differences below. They are recorded because a plan that
+is quietly not what was built is worse than no plan.
+
+**Billing went with §4 Option A, unchanged.** `lib/chat/session-key.ts` mints an
+`sk-plat-` key scoped `['inference','chat']`, named `Web chat (browser session)`, and puts
+the plaintext in one httpOnly cookie. The gateway was not modified. Three things the plan
+did not spell out and the implementation had to decide:
+
+- **The cookie is validated against the database on every turn**, by hashing it and doing
+  the same indexed `key_hash` lookup the gateway does. The alternative — discovering a
+  revoked key when the gateway answers 401 — happens mid-stream, after the response
+  headers have flushed, which is the one moment nothing can be done about it.
+- **Three chat keys per account, oldest revoked to make room.** The plaintext is
+  unrecoverable, so every new browser session can only mint. Without a cap, a user who
+  clears cookies weekly walks into the console's 25-key ceiling and cannot create an API
+  key any more.
+- **Sign-out revokes the key**, before the auth session it belongs to is destroyed.
+  Otherwise the auth cookie goes and a credential that can spend the wallet stays behind
+  in the browser.
+
+**History became a thread list, not a single conversation.** Still `localStorage`, still
+no server copy (FR-CHAT-007). A "New chat" that destroys the previous one is not a chat
+product, and the storage shape was the cheap half of the work.
+
+**Cost is shown as an estimate, and says so.** The gateway does not surface the settled
+figure to its callers yet, so each turn is priced from the model's own published prices
+using the ledger's own arithmetic — integer micro-USD, CEIL each side, one-microdollar
+floor. It errs in the direction of the bill rather than under-quoting it. The exact charge
+stays where it is authoritative, on `/console/usage`.
+
+**Per-model warmth labelling was NOT built** — §5 asked for it. There is no signal for it
+in the schema today: `total_requests` is a lifetime counter and `p50_ttft_ms` is
+warm-worker latency, and neither answers "is a worker up right now". What shipped instead
+is the honest half: the default model is the most-requested one (the closest proxy the
+public projection allows), and the cold-start wait is stated as a number both in the model
+line and in the notice that appears while the worker wakes. A real badge needs a
+`last_request_at` column or a view, which is a migration and belongs to A1.
+
+**A retry affordance was added.** `presentChatError` marks only the two timeouts
+retryable, and only those get a "Try again" button. Offering retry on a 402 would be a
+product spending someone's attention on an error that is guaranteed to repeat.
+
+**The turn meter is now shared with the playground** (`lib/turn-metrics.ts`). Both routes
+proxy the same gateway and report the same numbers; two copies drift, and they drift in
+the direction of under-reporting tokens.
+
+### Verified
+
+`npm run check` and `npm test` green; `next build` compiles `/chat` and `/api/chat`. In a
+local dev server: `/chat` redirects to `/login?next=%2Fchat` when signed out, the model
+page CTA links to `/chat?model=…` with the model preselected, the transcript renders
+fenced code with a copy control, the per-turn estimate matches the arithmetic above by
+hand, and an unauthenticated POST to `/api/chat` renders as "You are signed out" with a
+sign-in link rather than a raw envelope. No horizontal overflow at 375px; dark mode
+correct.
+
+**Not verified end to end:** a real billed turn. That needs a signed-in session and a
+funded wallet, and it is the acceptance test in §9 — run it before calling this done in
+production.

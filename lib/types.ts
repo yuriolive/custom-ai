@@ -42,6 +42,16 @@ export const emptyTurnMetrics: TurnMetrics = {
 /** The UIMessage shape used across the playground. */
 export type PlaygroundUIMessage = UIMessage<TurnMetrics>;
 
+/**
+ * The UIMessage shape used across the chat (FR-CHAT-001).
+ *
+ * Identical metadata to the playground's, and named separately anyway: the two
+ * surfaces answer to different requirements and the chat's metering is expected
+ * to gain a settled cost before the playground's does. An alias makes that a
+ * one-line change instead of a rename across both.
+ */
+export type ChatUIMessage = UIMessage<TurnMetrics>;
+
 /** Body posted from the playground client to /api/playground. */
 export type PlaygroundRequestBody = {
   model?: string;

@@ -5,7 +5,7 @@ import { Alert, Button, Card, EmptyState, Label, Slider, TextArea } from "@herou
 import { DefaultChatTransport } from "ai";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
-import { ColdStartNotice } from "@/components/playground/cold-start-notice";
+import { ColdStartNotice } from "@/components/cold-start-notice";
 import { MessageList } from "@/components/playground/message-list";
 import { publicEnv } from "@/lib/public-env";
 import type { PlaygroundUIMessage } from "@/lib/types";

@@ -1,0 +1,76 @@
+/**
+ * Unit tests for reply segmentation.
+ * Run: npm run test:app
+ *
+ * The streaming case is the one that matters. A fence arrives half-open on
+ * every reply that contains code, and if an unterminated block did not render
+ * as a code block immediately the transcript would visibly reflow the moment
+ * the closing fence landed.
+ */
+
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+import { splitSegments } from "./segments.ts";
+
+describe("splitSegments", () => {
+  it("returns nothing for an empty string", () => {
+    assert.deepEqual(splitSegments(""), []);
+  });
+
+  it("treats prose as one text segment, newlines intact", () => {
+    assert.deepEqual(splitSegments("line one\nline two"), [
+      { type: "text", text: "line one\nline two" },
+    ]);
+  });
+
+  it("splits prose around a fenced block and keeps the language tag", () => {
+    const reply = "Here you go:\n```python\nprint(1)\n```\nThat is it.";
+    assert.deepEqual(splitSegments(reply), [
+      { type: "text", text: "Here you go:" },
+      { type: "code", code: "print(1)", language: "python", closed: true },
+      { type: "text", text: "That is it." },
+    ]);
+  });
+
+  it("renders an unterminated fence as an open code block", () => {
+    assert.deepEqual(splitSegments("Try:\n```ts\nconst a = 1"), [
+      { type: "text", text: "Try:" },
+      { type: "code", code: "const a = 1", language: "ts", closed: false },
+    ]);
+  });
+
+  it("handles a fence with no language", () => {
+    assert.deepEqual(splitSegments("```\nplain\n```"), [
+      { type: "code", code: "plain", language: null, closed: true },
+    ]);
+  });
+
+  it("takes only the first word of a fence info string", () => {
+    const [segment] = splitSegments("```js title=demo.js\nx\n```");
+    assert.equal(segment?.type === "code" && segment.language, "js");
+  });
+
+  it("drops whitespace-only runs between blocks", () => {
+    const segments = splitSegments("```\na\n```\n\n```\nb\n```");
+    assert.equal(segments.length, 2);
+    assert.equal(segments.every((s) => s.type === "code"), true);
+  });
+
+  it("keeps blank lines INSIDE a code block", () => {
+    const [segment] = splitSegments("```\na\n\nb\n```");
+    assert.equal(segment?.type === "code" && segment.code, "a\n\nb");
+  });
+
+  it("does not treat inline backticks as a fence", () => {
+    assert.deepEqual(splitSegments("use the ```code``` thing"), [
+      { type: "text", text: "use the ```code``` thing" },
+    ]);
+  });
+
+  it("tolerates an indented fence", () => {
+    const segments = splitSegments("  ```\nx\n  ```");
+    assert.equal(segments.length, 1);
+    assert.equal(segments[0]?.type, "code");
+  });
+});
