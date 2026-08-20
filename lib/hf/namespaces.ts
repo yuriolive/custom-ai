@@ -72,5 +72,25 @@ export function normalizeHfNamespaces(values: readonly unknown[]): string[] {
     const normalized = normalizeHfNamespace(value);
     if (normalized) seen.add(normalized);
   }
-  return [...seen].toSorted();
+  return [...seen].toSorted(compareNamespaces);
+}
+
+/**
+ * Code-point order, explicitly, and NOT `localeCompare`.
+ *
+ * A comparator is required rather than optional: `toSorted()` with no argument
+ * sorts by the elements' *string conversion*, which is a real defect waiting for
+ * the first non-ASCII input even though every value reaching it here has already
+ * been narrowed to `[a-z0-9._-]`.
+ *
+ * `localeCompare` is the usual suggestion and is the wrong one for this array.
+ * Its ordering comes from ICU and therefore from the runtime's default locale,
+ * which makes the stored value a function of the machine that wrote it — two
+ * servers could persist the same org list in two orders, and the fixture diffs
+ * this sort exists to keep quiet would start moving again. Code-point order is
+ * the same everywhere.
+ */
+function compareNamespaces(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }

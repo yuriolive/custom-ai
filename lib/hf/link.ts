@@ -84,16 +84,18 @@ export async function recordHuggingFaceIdentity(session: Session): Promise<void>
     if (!isHuggingFaceSession(session)) return;
 
     const fromClaims = factsFromSessionClaims(session);
+
     // The org list is the fact only the Hub can settle, so the network call
     // happens whenever the claims did not carry a memberships list — even if
-    // they named the user. A username alone is still stored if the Hub says
-    // nothing (`?? fromClaims`), because a username-only identity earns the
-    // badge on a personal repo and that is most creators.
-    const facts =
-      fromClaims?.membershipsReadable === true
-        ? fromClaims
-        : ((session.provider_token ? await fetchHfUserInfo(session.provider_token) : null) ??
-          fromClaims);
+    // they already named the user. Written as three statements rather than one
+    // expression because the fallback order is the whole logic: ask the Hub, and
+    // keep the claims if it says nothing. A username-only identity is still
+    // worth storing — it earns the badge on a personal repo, which is most
+    // creators.
+    let facts = fromClaims;
+    if (fromClaims?.membershipsReadable !== true && session.provider_token) {
+      facts = (await fetchHfUserInfo(session.provider_token)) ?? fromClaims;
+    }
 
     if (!facts) return;
 
