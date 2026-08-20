@@ -48,7 +48,12 @@ export function Quickstart({ modelId, baseUrl }: Readonly<{ modelId: string; bas
           </div>
         </dl>
 
-        <SnippetTabs baseUrl={baseUrl} modelId={modelId} />
+        {/* `showNotes={false}`: the id, the endpoint and the timeout are all
+            already stated on this page — the first two as the two-line diff in
+            the column beside this, the third as its own section. The notes exist
+            for the model card, where this component is the only place they
+            appear. */}
+        <SnippetTabs baseUrl={baseUrl} modelId={modelId} showNotes={false} />
       </div>
     </Section>
   );

@@ -1,4 +1,5 @@
-import { MEASURED } from "./measured";
+import { MEASURED } from "@/lib/measured";
+
 import { MarketingContainer } from "./section";
 
 /**

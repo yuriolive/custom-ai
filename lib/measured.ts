@@ -1,11 +1,17 @@
 /**
- * The measured facts this landing page is allowed to print.
+ * The measured facts the UI is allowed to print.
  *
- * ONE PLACE, so the hero, the proof strip and the cold-start section cannot
- * disagree with each other. They had already drifted once: two of them said warm
- * calls answer "well under a second" while `docs/HANDOFF.md` recorded 926 ms as a
- * MISS against NFR-CS-002's 400 ms target, and both quoted "~100s" for a cold
- * start measured at 115.
+ * IN `lib/`, NOT `components/marketing/`, because it stopped being a marketing
+ * concern the moment a second component tree needed it: `snippet-tabs.tsx` makes
+ * the same cold-start and warm-latency claims on the model card and the model
+ * detail page. Importing marketing into marketplace would be the wrong dependency
+ * direction — marketplace is what marketing is built on.
+ *
+ * ONE PLACE, so the hero, the proof strip, the cold-start section and the snippet
+ * notes cannot disagree with each other. They had already drifted: three of them
+ * said warm calls answer "well under a second" while `docs/HANDOFF.md` recorded
+ * 926 ms as a MISS against NFR-CS-002's 400 ms target, and two quoted "~100s" for
+ * a cold start measured at 115.
  *
  * SOURCE IS `docs/HANDOFF.md` — its "measured facts worth not re-deriving" table
  * and its "known-open, deliberately" list. Nothing here is rounded in our favour,

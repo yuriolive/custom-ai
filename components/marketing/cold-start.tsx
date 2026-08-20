@@ -1,6 +1,5 @@
 import { SNIPPET_TIMEOUT_SECONDS } from "@/components/marketplace/snippets";
-
-import { MEASURED } from "./measured";
+import { MEASURED } from "@/lib/measured";
 
 import { Section } from "./section";
 
@@ -28,7 +27,7 @@ import { Section } from "./section";
  * without the other is the drift to watch for — and it had already happened once.
  * Both said "well under a second" for the warm case while `docs/HANDOFF.md` had
  * 926 ms recorded as a MISS against the 400 ms target, and both said ~100s for a
- * cold start measured at 115. Both now interpolate `MEASURED` (`measured.ts`)
+ * cold start measured at 115. Both now interpolate `MEASURED` (`lib/measured.ts`)
  * rather than restating it, so the drift is no longer possible.
  */
 export function ColdStart() {

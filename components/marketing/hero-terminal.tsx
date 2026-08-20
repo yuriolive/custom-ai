@@ -2,7 +2,7 @@
 
 import { useEffect, useReducer } from "react";
 
-import { MEASURED } from "./measured";
+import { MEASURED } from "@/lib/measured";
 
 /**
  * Hero variant `terminal` — one request, start to settled, on a loop.
@@ -13,7 +13,7 @@ import { MEASURED } from "./measured";
  * the 80/20 split. Those four things are what the whole landing page argues, and
  * a developer reads them here faster than in four paragraphs.
  *
- * EVERY NUMBER IS FROM `MEASURED` (`measured.ts`, sourced from docs/HANDOFF.md). The cold-start counter runs
+ * EVERY NUMBER IS FROM `MEASURED` (`lib/measured.ts`, sourced from docs/HANDOFF.md). The cold-start counter runs
  * to 115, not to a friendlier figure; time-to-first-token shows 926 ms, which is
  * a recorded NFR miss. A hero that inflates its own benchmarks is the one thing
  * on this page that a visitor can check in thirty seconds.
