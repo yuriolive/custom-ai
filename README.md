@@ -83,7 +83,7 @@ npm run build     # production build; `npm run build:local` runs check first
 Two suites live outside `npm test`:
 
 ```bash
-cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift
+cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift test_supervisor
 npx supabase test db --local supabase/tests    # pgTAP; needs `supabase start` first
 ```
 

@@ -31,10 +31,11 @@ SSE streaming — with no shim of ours in the path. A shim would be a second pla
 """
 
 import os
-import subprocess
 import time
 
 import modal
+
+import supervisor
 
 # NOTE: do NOT add `from __future__ import annotations` to this module. Modal inspects
 # the *runtime* annotations of `modal.parameter()` fields to pick a serializer, and PEP
@@ -73,7 +74,16 @@ llamacpp_image = (
             "HF_HUB_DISABLE_TELEMETRY": "1",
         }
     )
+    # Modal 1.x no longer auto-mounts local Python modules, and supervisor.py is
+    # imported at the top of this file. Without this line the container dies at
+    # import with ModuleNotFoundError before any of it runs.
+    .add_local_python_source("supervisor")
 )
+
+# Where a permanent load failure is remembered, on the same Volume as the weights —
+# the only thing this container has that outlives it. See supervisor.py's
+# "do not pay to fail twice" section for why the GPU is part of the key.
+FAILURE_CACHE_DIR = f"/cache/{supervisor.FAILURE_CACHE_DIRNAME}"
 
 app = modal.App(APP_NAME)
 
@@ -116,9 +126,11 @@ def _download_weights(model_repo: str, model_file: str) -> tuple[str, float, boo
     return path, elapsed, was_cached
 
 
-def _launch_llama_server(model_path: str, ctx_size: int, parallel: int, alias: str) -> None:
+def _launch_llama_server(
+    model_path: str, ctx_size: int, parallel: int, alias: str
+) -> supervisor.SupervisedServer:
     """
-    Start llama-server on SERVER_PORT. Modal's web_server proxy waits for the port.
+    Start llama-server on SERVER_PORT and KEEP THE HANDLE.
 
     NOTE on --ctx-size: llama.cpp treats it as the TOTAL context split across `--parallel`
     slots, not the per-slot window. To give every concurrent stream the context the
@@ -161,13 +173,17 @@ def _launch_llama_server(model_path: str, ctx_size: int, parallel: int, alias: s
         flush=True,
     )
     print(f"[serve] $ {' '.join(cmd)}", flush=True)
-    # Inherit stdout/stderr so llama.cpp's own startup report — including the KV cache
-    # size it actually allocates — lands in the Modal log. That number is ground truth
-    # against the solver's kv_bytes_per_token arithmetic.
-    subprocess.Popen(cmd)
+    # TEE, do not capture. llama.cpp's own startup report — including the KV cache size
+    # it ACTUALLY allocates — must keep landing in the Modal log: that number is the only
+    # ground truth against the solver's kv_bytes_per_token arithmetic. supervisor.launch
+    # echoes every byte onward and keeps the last fifty lines in a ring buffer, so the
+    # error raised on a dead server can name the reason without costing us the report.
+    return supervisor.launch(cmd)
 
 
-def _wait_until_ready(timeout_s: int = 600) -> float:
+def _wait_until_ready(
+    server: supervisor.SupervisedServer, timeout_s: int = supervisor.DEFAULT_READY_TIMEOUT_S
+) -> float:
     """
     Block until llama-server reports itself HEALTHY, not merely until the port is open.
 
@@ -175,7 +191,7 @@ def _wait_until_ready(timeout_s: int = 600) -> float:
     container ready as soon as the port ACCEPTS CONNECTIONS — but llama-server binds the
     port immediately and answers every request with
 
-        HTTP 503  {"error":{"message":"Loading model","code":503}}
+        HTTP 503  {"error":{"message":"Loading model"}}
 
     for the whole model-load window. Without this wait, Modal considers the container up,
     routes the very first (cold) request to it, and the caller gets a 503 instead of a
@@ -184,30 +200,91 @@ def _wait_until_ready(timeout_s: int = 600) -> float:
 
     Waiting here instead means the container is only marked ready when it can actually
     serve, and the cold-start cost shows up honestly as latency rather than as an error.
+
+    The loop itself lives in supervisor.py, where it can be tested without a GPU. Its one
+    substantive change: `proc.poll()` runs before every probe, so a server that exited
+    nine seconds in raises at t≈10s instead of running the 600 s clock out against a dead
+    port while the GPU bills.
     """
-    import urllib.error
-    import urllib.request
+    return supervisor.wait_until_ready(server, port=SERVER_PORT, timeout_s=timeout_s)
 
-    t0 = time.monotonic()
-    attempt = 0
-    while time.monotonic() - t0 < timeout_s:
-        attempt += 1
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/health", timeout=5) as r:
-                if r.status == 200:
-                    elapsed = time.monotonic() - t0
-                    print(
-                        f"[serve] llama-server HEALTHY after {elapsed:.1f}s ({attempt} polls)",
-                        flush=True,
-                    )
-                    return elapsed
-        except OSError:
-            # HTTPError and URLError are both OSError subclasses, so this one clause
-            # covers the 503-while-loading case and the pre-bind connection refusal.
-            pass
-        time.sleep(1.0)
 
-    raise RuntimeError(f"llama-server did not become healthy within {timeout_s}s")
+def _record_failure(report: supervisor.ServerExit, key: str, params: dict) -> None:
+    """
+    Make the reason survive the container.
+
+    Two channels, and both are deliberate. The greppable `[serve] LOAD-FAILURE {json}`
+    line is the interim signal to the control plane — nothing in this container holds a
+    credential that could write `custom_models`, and it should not: creator-supplied
+    weights execute here. The Volume sentinel is the part that actually stops the money,
+    and it is written only for a permanent failure DURING LOAD (see
+    supervisor.record_permanent_failure).
+    """
+    supervisor.log_failure(report)
+    supervisor.record_permanent_failure(
+        FAILURE_CACHE_DIR,
+        key,
+        report,
+        params=params,
+        # This process is usually about to os._exit, and an uncommitted Volume write is
+        # invisible to the very next container — the one whose bill this is meant to stop.
+        commit=weights_volume.commit,
+    )
+
+
+def _bring_up(
+    gpu: str, model_repo: str, model_file: str, ctx_size: int, parallel: int
+) -> supervisor.SupervisedServer:
+    """
+    The whole `@modal.enter` body: refuse-known-bad, download, launch, gate, watch.
+
+    Every tier class calls this with its own `gpu=` string, which must match the one in
+    its decorator: the failure sentinel is keyed on it, because all nine classes mount
+    the SAME Volume and a CUDA OOM on an L4 says nothing whatsoever about an H100.
+    """
+    params = {
+        "gpu": gpu,
+        "image": LLAMACPP_IMAGE,
+        "model_repo": model_repo,
+        "model_file": model_file,
+        "ctx_size": ctx_size,
+        "parallel": parallel,
+    }
+    key = supervisor.failure_key(**params)
+    # FIRST, before the download and before the GPU does any work: if this exact tuple
+    # has already proved unloadable, the cheapest container is one that dies right now.
+    supervisor.raise_if_known_permanent(FAILURE_CACHE_DIR, key)
+
+    model_path, _, _ = _download_weights(model_repo, model_file)
+    server = _launch_llama_server(model_path, ctx_size, parallel, model_repo)
+    try:
+        _wait_until_ready(server)
+    except supervisor.LlamaServerExited as exited:
+        _record_failure(exited.report, key, params)
+        server.shutdown()  # already dead; this closes the pipe the tee was reading
+        raise
+    except BaseException:
+        # A timeout — or the container being cancelled mid-load — otherwise leaves a live
+        # child holding the GPU while Modal tears the container down around it.
+        server.shutdown()
+        raise
+
+    # Readiness is not the end of the watch. A server that dies later (CUDA OOM on a long
+    # prompt, the host OOM-killer) would otherwise leave @modal.web_server proxying to a
+    # closed port for the rest of scaledown_window, on the clock, answering nothing.
+    supervisor.watch_after_ready(
+        server, on_death=lambda report: _record_failure(report, key, params)
+    )
+    return server
+
+
+def _tear_down(server) -> None:
+    """
+    Stop the child from `@modal.exit`. An orphaned llama-server holding the GPU after
+    Modal believes the container is gone costs exactly what a serving one does.
+    """
+    if server is not None:
+        server.shutdown()
 
 
 # ── Common decorator settings for every tier ─────────────────────────────────
@@ -255,8 +332,21 @@ _WEB_SERVER_STARTUP_TIMEOUT = 900
 #     reaches a container, so a rejected caller costs nothing and cannot cold-start a GPU.
 _REQUIRES_PROXY_AUTH = True
 
+# ── GPU strings, named once ──────────────────────────────────────────────────
+# Each tier's `gpu=` value is needed TWICE: in the decorator, where it becomes the
+# container spec, and in `_bring_up`, where it is part of the load-failure sentinel key.
+# Naming it once is the only way those two cannot drift — and a drifted key would either
+# refuse a model on the wrong card's evidence or keep paying for the right one.
+_GPU_T4 = "T4"
+_GPU_L4 = "L4"
+_GPU_A10 = "A10"
+_GPU_L40S = "L40S"
+_GPU_A100_40GB = "A100-40GB"
+_GPU_A100_80GB = "A100-80GB"
+_GPU_H100 = "H100"
 
-@app.cls(gpu="T4", **_CLS_KWARGS)
+
+@app.cls(gpu=_GPU_T4, **_CLS_KWARGS)
 class LlamaServerT4:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
@@ -265,11 +355,17 @@ class LlamaServerT4:
 
     @modal.enter()
     def prepare(self):
-        # Download, launch, AND wait for health — all before Modal marks this container
-        # ready. See _wait_until_ready() for why the health gate is not optional.
-        self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
-        _wait_until_ready()
+        # Refuse-known-bad, download, launch, AND wait for health — all before Modal marks
+        # this container ready. See _wait_until_ready() for why the health gate is not
+        # optional, and _bring_up() for what happens when the server does not survive it.
+        self.server = _bring_up(
+            _GPU_T4, self.model_repo, self.model_file, self.ctx_size, self.parallel
+        )
+
+    @modal.exit()
+    def shutdown(self):
+        # @enter may have raised before `server` was ever bound.
+        _tear_down(getattr(self, "server", None))
 
     @modal.web_server(
         port=SERVER_PORT,
@@ -282,7 +378,7 @@ class LlamaServerT4:
         pass
 
 
-@app.cls(gpu="L4", **_CLS_KWARGS)
+@app.cls(gpu=_GPU_L4, **_CLS_KWARGS)
 class LlamaServerL4:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
@@ -291,11 +387,17 @@ class LlamaServerL4:
 
     @modal.enter()
     def prepare(self):
-        # Download, launch, AND wait for health — all before Modal marks this container
-        # ready. See _wait_until_ready() for why the health gate is not optional.
-        self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
-        _wait_until_ready()
+        # Refuse-known-bad, download, launch, AND wait for health — all before Modal marks
+        # this container ready. See _wait_until_ready() for why the health gate is not
+        # optional, and _bring_up() for what happens when the server does not survive it.
+        self.server = _bring_up(
+            _GPU_L4, self.model_repo, self.model_file, self.ctx_size, self.parallel
+        )
+
+    @modal.exit()
+    def shutdown(self):
+        # @enter may have raised before `server` was ever bound.
+        _tear_down(getattr(self, "server", None))
 
     @modal.web_server(
         port=SERVER_PORT,
@@ -308,7 +410,7 @@ class LlamaServerL4:
         pass
 
 
-@app.cls(gpu="A10", **_CLS_KWARGS)
+@app.cls(gpu=_GPU_A10, **_CLS_KWARGS)
 class LlamaServerA10:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
@@ -317,11 +419,17 @@ class LlamaServerA10:
 
     @modal.enter()
     def prepare(self):
-        # Download, launch, AND wait for health — all before Modal marks this container
-        # ready. See _wait_until_ready() for why the health gate is not optional.
-        self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
-        _wait_until_ready()
+        # Refuse-known-bad, download, launch, AND wait for health — all before Modal marks
+        # this container ready. See _wait_until_ready() for why the health gate is not
+        # optional, and _bring_up() for what happens when the server does not survive it.
+        self.server = _bring_up(
+            _GPU_A10, self.model_repo, self.model_file, self.ctx_size, self.parallel
+        )
+
+    @modal.exit()
+    def shutdown(self):
+        # @enter may have raised before `server` was ever bound.
+        _tear_down(getattr(self, "server", None))
 
     @modal.web_server(
         port=SERVER_PORT,
@@ -334,7 +442,7 @@ class LlamaServerA10:
         pass
 
 
-@app.cls(gpu="L40S", **_CLS_KWARGS)
+@app.cls(gpu=_GPU_L40S, **_CLS_KWARGS)
 class LlamaServerL40S:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
@@ -343,11 +451,17 @@ class LlamaServerL40S:
 
     @modal.enter()
     def prepare(self):
-        # Download, launch, AND wait for health — all before Modal marks this container
-        # ready. See _wait_until_ready() for why the health gate is not optional.
-        self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
-        _wait_until_ready()
+        # Refuse-known-bad, download, launch, AND wait for health — all before Modal marks
+        # this container ready. See _wait_until_ready() for why the health gate is not
+        # optional, and _bring_up() for what happens when the server does not survive it.
+        self.server = _bring_up(
+            _GPU_L40S, self.model_repo, self.model_file, self.ctx_size, self.parallel
+        )
+
+    @modal.exit()
+    def shutdown(self):
+        # @enter may have raised before `server` was ever bound.
+        _tear_down(getattr(self, "server", None))
 
     @modal.web_server(
         port=SERVER_PORT,
@@ -360,7 +474,7 @@ class LlamaServerL40S:
         pass
 
 
-@app.cls(gpu="A100-40GB", **_CLS_KWARGS)
+@app.cls(gpu=_GPU_A100_40GB, **_CLS_KWARGS)
 class LlamaServerA10040:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
@@ -369,11 +483,17 @@ class LlamaServerA10040:
 
     @modal.enter()
     def prepare(self):
-        # Download, launch, AND wait for health — all before Modal marks this container
-        # ready. See _wait_until_ready() for why the health gate is not optional.
-        self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
-        _wait_until_ready()
+        # Refuse-known-bad, download, launch, AND wait for health — all before Modal marks
+        # this container ready. See _wait_until_ready() for why the health gate is not
+        # optional, and _bring_up() for what happens when the server does not survive it.
+        self.server = _bring_up(
+            _GPU_A100_40GB, self.model_repo, self.model_file, self.ctx_size, self.parallel
+        )
+
+    @modal.exit()
+    def shutdown(self):
+        # @enter may have raised before `server` was ever bound.
+        _tear_down(getattr(self, "server", None))
 
     @modal.web_server(
         port=SERVER_PORT,
@@ -386,7 +506,7 @@ class LlamaServerA10040:
         pass
 
 
-@app.cls(gpu="A100-80GB", **_CLS_KWARGS)
+@app.cls(gpu=_GPU_A100_80GB, **_CLS_KWARGS)
 class LlamaServerA10080:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
@@ -395,11 +515,17 @@ class LlamaServerA10080:
 
     @modal.enter()
     def prepare(self):
-        # Download, launch, AND wait for health — all before Modal marks this container
-        # ready. See _wait_until_ready() for why the health gate is not optional.
-        self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
-        _wait_until_ready()
+        # Refuse-known-bad, download, launch, AND wait for health — all before Modal marks
+        # this container ready. See _wait_until_ready() for why the health gate is not
+        # optional, and _bring_up() for what happens when the server does not survive it.
+        self.server = _bring_up(
+            _GPU_A100_80GB, self.model_repo, self.model_file, self.ctx_size, self.parallel
+        )
+
+    @modal.exit()
+    def shutdown(self):
+        # @enter may have raised before `server` was ever bound.
+        _tear_down(getattr(self, "server", None))
 
     @modal.web_server(
         port=SERVER_PORT,
@@ -412,7 +538,7 @@ class LlamaServerA10080:
         pass
 
 
-@app.cls(gpu="H100", **_CLS_KWARGS)
+@app.cls(gpu=_GPU_H100, **_CLS_KWARGS)
 class LlamaServerH100:
     model_repo: str = modal.parameter()
     model_file: str = modal.parameter()
@@ -421,11 +547,17 @@ class LlamaServerH100:
 
     @modal.enter()
     def prepare(self):
-        # Download, launch, AND wait for health — all before Modal marks this container
-        # ready. See _wait_until_ready() for why the health gate is not optional.
-        self.model_path, _, _ = _download_weights(self.model_repo, self.model_file)
-        _launch_llama_server(self.model_path, self.ctx_size, self.parallel, self.model_repo)
-        _wait_until_ready()
+        # Refuse-known-bad, download, launch, AND wait for health — all before Modal marks
+        # this container ready. See _wait_until_ready() for why the health gate is not
+        # optional, and _bring_up() for what happens when the server does not survive it.
+        self.server = _bring_up(
+            _GPU_H100, self.model_repo, self.model_file, self.ctx_size, self.parallel
+        )
+
+    @modal.exit()
+    def shutdown(self):
+        # @enter may have raised before `server` was ever bound.
+        _tear_down(getattr(self, "server", None))
 
     @modal.web_server(
         port=SERVER_PORT,

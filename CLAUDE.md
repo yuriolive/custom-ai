@@ -84,7 +84,7 @@ npm run dev        # Next dev server
 Python worker tests are stdlib `unittest`, not pytest — `pyproject.toml` declares no
 runtime deps and pytest is not installed, so `uv run pytest` fails with "program not
 found". Run what CI runs:
-`cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift`.
+`cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift test_supervisor`.
 Postgres invariants are pgTAP under
 `supabase/tests/` and are the authority on billing behavior — a money change that does not
 touch them is incomplete.

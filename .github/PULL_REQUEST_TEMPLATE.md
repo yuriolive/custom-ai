@@ -13,7 +13,7 @@ Run these locally — CI is the backstop, not the first run.
 
 Conditional, by what the diff touches:
 
-- [ ] `tools/modal/` — `cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift`
+- [ ] `tools/modal/` — `cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift test_supervisor`
       plus `ruff check .` and `ruff format --check .` (stdlib `unittest`; pytest is not installed)
 - [ ] `supabase/functions/gateway/` — `deno check`, `deno lint`, `deno fmt --check` in that directory
       (node's type-stripping cannot see a Deno-only error)

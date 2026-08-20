@@ -8,7 +8,7 @@ topology.
 (`verify_jwt: false`, v3), Modal is deployed at $0 idle, migrations are applied, the
 web app is on Vercel. CI is green across its four jobs — node, python, deno, pgTAP. For
 current test counts run them rather than trusting a number frozen here: `npm test`,
-`cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift`, and
+`cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift test_supervisor`, and
 `npx supabase test db --local supabase/tests`. A real billed
 inference has been verified end to end **locally** and against an **authenticated**
 Modal endpoint.

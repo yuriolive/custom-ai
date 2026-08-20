@@ -7,9 +7,11 @@ with no token and no spend.
 tiers.py          GPU catalog + capacity solver (pure arithmetic, no I/O, no modal import)
 sync_rates.py     refresh prices from `modal billing rates --json` (LOCAL: needs a token)
 app.py            the deployed Modal app: one parameterized llama.cpp class per GPU tier
+supervisor.py     llama-server supervision: poll loop, output tee, failure classifier
 deploy.py         spec -> deployment config resolver, --dry-run, URL lookup
 measure.py        cold/warm measurement + the SSE usage analyzer
 test_measure.py   offline tests (unittest); end-to-end ones drive tools/mock-upstream
+test_supervisor.py  offline tests for the supervision above, incl. real subprocesses
 test_tier_drift.py  CI-enforced: tiers.py vs the gpu_tiers state the migrations leave
 reports/          measurement JSON output (gitignored)
 ```
@@ -42,7 +44,7 @@ python tools/modal/deploy.py --dry-run
 python tools/modal/deploy.py --pin-tier l4 --parallel 1
 
 # 2. Tests — no token, no GPU, no spend
-cd tools/modal && python -m unittest test_measure -v
+cd tools/modal && uv run --locked python -m unittest test_measure test_tier_drift test_supervisor -v
 
 # 3. Deploy the app (one time; adding models later needs no redeploy)
 cd tools/modal && modal deploy app.py
@@ -157,6 +159,64 @@ during the overlap, so it can be done without downtime. Nothing automates or rem
 this today, and there is no revocation signal if a token leaks other than noticing. Deciding
 an actual rotation cadence and owner is open work, not something this change settles.
 
+## llama-server is supervised, and its death ends the container
+
+A GPU that cannot serve still bills. Until this was fixed, a container whose
+`llama-server` died during model load sat in the health-poll loop against a dead port
+for the full 600 s window — the handle from `subprocess.Popen(cmd)` was dropped, and
+one `except OSError: pass` covered both "still loading" and "exited ten seconds ago".
+Observed live: CUDA OOM on a 46 GiB KV allocation, server gone 10 s in, no `HEALTHY`
+line and no exception anywhere in the container log.
+
+`supervisor.py` holds the fix, and it is a separate module for a reason: `app.py`
+imports `modal`, `modal` is not installed on the path CI runs, so anything in `app.py`
+is untestable. Every judgement call lives in `supervisor.py` with a test; `app.py`
+stays wiring. The cost of that split is one line — `add_local_python_source`, because
+Modal 1.x no longer auto-mounts local Python modules.
+
+| | |
+|---|---|
+| **Death beats diagnosis** | `proc.poll()` runs before every `/health` probe. A returncode is exact and free; the probe is neither, and each one is GPU-seconds. An exit nine seconds in raises at t≈10s. |
+| **600 s is still 600 s** | The ceiling is unchanged and is only ever reached by a process that is *still alive* — a genuinely slow load of a large model. Lowering it was the tempting fix and the wrong one. |
+| **Tee, do not capture** | llama.cpp's startup report prints the KV cache size it ACTUALLY allocated — the only ground truth against the solver's `kv_bytes_per_token`. It keeps streaming to the Modal log; a 50-line ring buffer feeds the raised error in parallel. |
+| **Three states, not two** | `HEALTHY` / `LOADING` (bound, answering 503) / `UNBOUND` (nothing listening). `HTTPError` and `URLError` are both `OSError`, which is exactly how the two got conflated. The timeout message now says *which* kind of stuck. |
+| **Post-ready watchdog** | A daemon thread `wait()`s on the child and `os._exit(70)`s the container when it dies. `sys.exit` would unwind one thread and leave Modal's runner advertising a closed port for the rest of `scaledown_window`. A `@modal.exit` teardown sets a flag so an ordinary scaledown is not mistaken for a crash. |
+
+### Do not pay to fail twice
+
+A load failure is a property of the tuple `(gpu, image, model_repo, model_file,
+ctx_size, parallel)` — the same tuple that *is* Modal's container-pool selector. Retrying
+it is not optimism, it is a guaranteed repeat charge, multiplied by `max_containers=3`
+when requests arrive together.
+
+So a failure is classified, and a **permanent** one (CUDA OOM, KV cache that does not
+fit, unreadable GGUF, unsupported architecture) leaves a sentinel JSON file under
+`/cache/load-failures/<key>.json` on the weights Volume. `@modal.enter` reads it before
+anything else, so the next cold start of that tuple costs container boot instead of
+download + load + poll.
+
+Three rules make that safe, and all three are tested:
+
+* **Transient and unclassified failures write nothing.** A download error or an exit we
+  could not read is not evidence the model is unloadable, and refusing to serve on that
+  basis would cost more than the repeat charge it saves. `SIGKILL` with no message counts
+  as unclassified — it is usually the host OOM-killer, not the GPU.
+* **A death *after* readiness is never cached.** A server that reached `HEALTHY` has
+  proved the tuple loads; the death was about one request. Caching it would take a
+  working model out of service.
+* **The GPU is part of the key.** All nine tier classes mount the *same* Volume, and a
+  CUDA OOM on an L4 says nothing whatsoever about an H100.
+
+`NEXUS_IGNORE_LOAD_FAILURE_CACHE=1` bypasses the sentinel for one cold start; deleting
+the file clears it permanently.
+
+Every failure also prints one greppable line —
+`[serve] LOAD-FAILURE {"kind":…,"code":…,"hint":…}` — which is the **interim** channel to
+the control plane. Nothing in this container holds a credential that could write
+`custom_models`, and it should not: creator-supplied weights execute here. Taking the
+model row out of `ready` with the reason, and showing that reason in the provisioning
+stepper, still needs a channel that does not put a service-role key next to a GGUF.
+
 ## The measurement, and why it exists
 
 `measure.py` forces a scaled-to-zero container, then records time to response headers, time
@@ -184,6 +244,10 @@ Decode throughput is `(n-1) / (last_token − first_token)` — it excludes TTFT
 | Hybrid attention/SSM KV | Only `block_count // full_attention_interval` blocks keep a KV cache. Treating all 65 blocks as attention over-counts KV ~4x and picks a GPU two tiers too large. |
 | `head_dim` | It is the declared `key_length` (256), **not** `hidden_size / head_count` (213.33). |
 | `A10G` | Not a valid Modal GPU string. It is `A10`. |
+| A dropped `Popen` handle | Nothing notices the server died. The health poll cannot tell "loading" from "long dead", so a container that can never serve bills for the whole 600 s window and does it again next request. See the supervision section above. |
+| `sys.exit` from a watchdog thread | Unwinds that thread only. Modal's runner stays up, still advertising a port nothing is listening on, for the rest of `scaledown_window`. `os._exit` is the one that reaps the container. |
+| Local imports in `app.py` | Modal 1.x removed automounting. A module imported by `app.py` needs `Image.add_local_python_source(...)` or the container dies at import with `ModuleNotFoundError`. |
+| An uncommitted Volume write | Invisible to the next container. A sentinel written and never `commit()`ed is a sentinel that saves nothing, and the watchdog is about to `os._exit`. |
 | `requires_proxy_auth` | Goes on `@modal.web_server`, **not** `@app.cls` — `App.cls` has no such kwarg. It defaults to `False`, so an endpoint is PUBLIC unless you say otherwise, and nothing warns you. |
 
 ## There are two tier catalogs, and only one of them bills anyone
