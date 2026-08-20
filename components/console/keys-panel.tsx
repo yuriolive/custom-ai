@@ -249,7 +249,7 @@ export function KeysPanel({
           Saying so is cheaper than the support thread that follows a developer
           watching their requests 401 while "Requests" stays put — see the
           `request_count` column comment in
-          supabase/migrations/20260819000200_api_key_usage_counters.sql. */}
+          supabase/migrations/20260819000400_api_key_usage_counters.sql. */}
       {isEmpty ? null : (
         <p className="text-muted max-w-prose text-xs">
           <span className="font-medium">Last used</span> and{" "}

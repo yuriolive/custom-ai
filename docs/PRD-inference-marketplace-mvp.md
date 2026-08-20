@@ -2145,7 +2145,7 @@ MVP rejected `tools` / `functions` / `tool_choice` / `function_call` with 501. T
 |---|---|
 | 001 forward the four params | `HONORED_PARAMS` + `validateToolParams` in `supabase/functions/gateway/index.ts` |
 | 002 `--jinja` | `tools/modal/app.py`, `_launch_llama_server` |
-| 003 `supports_tools` | `supabase/migrations/20260819000200_tool_calling.sql`, `packages/hf-probe/src/chat-template.ts`, `assertToolsSupported` |
+| 003 `supports_tools` | `supabase/migrations/20260819000300_tool_calling.sql`, `packages/hf-probe/src/chat-template.ts`, `assertToolsSupported` |
 | 004 fragment reassembly | `foldToolCallDeltas` (assembler) and `deltaChars` (`usage.ts`) |
 | 005 `finish_reason` + assembly | `assembleNonStreaming` |
 | 006 billing unchanged, verified | `gateway_e2e_test.ts` "a tool-calling stream settles once" and "a tool-only stream with no usage" |
