@@ -334,6 +334,28 @@ product spending someone's attention on an error that is guaranteed to repeat.
 proxy the same gateway and report the same numbers; two copies drift, and they drift in
 the direction of under-reporting tokens.
 
+**The model control is a palette, not a form control.** First cut was a `<Select>`
+with a paragraph of price small print beside it, which read as a setting to configure
+before starting — the exact impression this surface exists to avoid, and unusable the
+moment the catalog outgrows a handful of rows. It is now a pill showing what you are
+talking to, opening a searchable palette (⌘K) whose rows carry the speed, context and
+price of the model they name. The one line of small print moved under the composer,
+where every product in this category puts its disclaimer.
+
+**The blank state centres itself.** Composer, heading and openers sit in the middle of
+the canvas until the first message, then the composer drops to the bottom and the
+transcript takes the space. A composer pinned to the bottom of an empty page reads as
+the footer of a page that failed to load.
+
+**A HeroUI Modal that stays mounted cannot be closed.** `Modal` is React Aria's
+`DialogTrigger`, which pairs [trigger, overlay] children; with no trigger child the root
+treats the backdrop as its trigger and never gets an overlay to unmount, so
+`isOpen={false}` does nothing and the dialog ignores Escape, an outside click and its own
+row presses alike. Measured, not assumed. The palette is mounted only while open, which
+is what the working dialogs in `model-dialogs.tsx` already do. **`CreateKeyDialog` in
+`components/console/key-dialogs.tsx` uses the always-mounted shape and is likely to have
+the same defect** — reported, not fixed here.
+
 ### Verified
 
 `npm run check` and `npm test` green; `next build` compiles `/chat` and `/api/chat`. In a
