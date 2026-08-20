@@ -182,4 +182,18 @@ export interface ResolvedRequest {
   platformFeeBps: number;
   contextLength: number;
   coldStartBudgetS: number;
+  /**
+   * Whether the model's chat template can render tool definitions (FR-TOOL-003).
+   *
+   * THREE-STATE, and the third state is the important one:
+   *   true   the template was read and declares tools     -> forward `tools`
+   *   false  the template was read and declares none      -> 400, never a
+   *          silent prose answer that a client parses as a successful turn
+   *   null   the template could not be read at all        -> forward anyway
+   *
+   * `null` is absence of evidence, not evidence of absence: every row
+   * provisioned before FR-TOOL-003 carries it, and refusing those would break
+   * requests that work. `false` is a measurement and is enforced.
+   */
+  supportsTools: boolean | null;
 }

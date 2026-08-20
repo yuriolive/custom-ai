@@ -3,7 +3,7 @@
 -- Probed as the REAL roles (SET ROLE), not by reading the grant catalog.
 -- ============================================================================
 begin;
-select plan(27);
+select plan(31);
 
 \set payer   '00000000-0000-0000-0000-0000000000a2'
 \set creator '00000000-0000-0000-0000-0000000000a1'
@@ -104,6 +104,35 @@ select throws_ok(
   $$ update public.profiles set stripe_customer_id = 'cus_hijacked'
        where id = '00000000-0000-0000-0000-0000000000a2' $$,
   '42501', null, 'authenticated cannot set its own stripe_customer_id');
+
+-- ── custom_models.supports_tools is a MEASUREMENT, not a creator claim ──────
+-- FR-TOOL-003. The gateway trusts this column to decide whether to forward
+-- `tools`, and a creator who could set it to true would buy back exactly the
+-- silent prose-instead-of-tool-call the column exists to prevent. `custom_models`
+-- is directly UPDATE-able by its owner, so the pin is the only thing stopping it.
+reset role;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated"}';
+set local role authenticated;
+
+select is(auth.uid(), '00000000-0000-0000-0000-0000000000a1'::uuid,
+          'the session really is acting as the model owner');
+
+select throws_ok(
+  $$ update public.custom_models set supports_tools = true
+       where id = '00000000-0000-0000-0000-0000000000c1' $$,
+  '42501', null, 'a creator cannot claim tool support on their own model');
+
+select throws_ok(
+  $$ update public.custom_models set supports_tools = false
+       where id = '00000000-0000-0000-0000-0000000000c1' $$,
+  '42501', null, 'a creator cannot clear tool support either');
+
+-- Positive control: the pin must not have frozen the columns a creator owns.
+-- Without this, a policy that rejected every UPDATE would pass the two above.
+select lives_ok(
+  $$ update public.custom_models set display_name = 'Renamed by its owner'
+       where id = '00000000-0000-0000-0000-0000000000c1' $$,
+  'a creator can still rename their own model');
 
 reset role;
 select * from finish();

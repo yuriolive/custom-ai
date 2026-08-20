@@ -25,10 +25,10 @@
 import { Chip, Table } from "@heroui/react";
 import type { Selection } from "react-aria-components";
 
+import { LabelHint } from "@/components/label-hint";
+
 import { formatGiB, formatPricePerMtoken, qualityNote } from "@/lib/studio/format";
 import type { Placement, StudioVariant, VariantPlacement } from "@/lib/studio/types";
-
-import { LabelHint } from "./primitives";
 
 /**
  * Hardware appears in this column and inside the Deployment Plan, and nowhere

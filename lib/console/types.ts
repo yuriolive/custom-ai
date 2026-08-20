@@ -20,8 +20,26 @@ export type ApiKeyRow = {
   /** Display-only, e.g. `sk-plat-a1b2c3d4`. Insufficient to authenticate. */
   key_prefix: string;
   created_at: string;
+  /**
+   * When a request was last ADMITTED for billing with this key, not when the key
+   * was last presented. Written by `authorize_request`, so a call refused at the
+   * gate — revoked key, empty wallet, model not ready — leaves it untouched: a
+   * key can be in active, failing use and still read stale here.
+   *
+   * Exactly `max(usage_transactions.created_at)` for this key. Null means no
+   * request has ever been admitted.
+   */
   last_used_at: string | null;
   revoked_at: string | null;
+  /**
+   * Requests admitted for billing with this key — exactly
+   * `count(usage_transactions)` for it, including the ones that later voided,
+   * failed or expired. NOT a count of HTTP calls; see `last_used_at`.
+   *
+   * Both columns are reconciled by `v_api_key_usage_drift`
+   * (supabase/migrations/20260819000400_api_key_usage_counters.sql), which is the
+   * authority on their semantics.
+   */
   request_count: number;
 };
 

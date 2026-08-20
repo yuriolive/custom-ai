@@ -36,13 +36,28 @@ export {
   moeFromHeader,
   parseGgufHeader,
   readGgufArchitecture,
+  readGgufChatTemplate,
+  CHAT_TEMPLATE_KEY,
   DEFAULT_INITIAL_BYTES,
   DEFAULT_MAX_BYTES,
+  DEFAULT_TEMPLATE_BYTES,
+  DEFAULT_TEMPLATE_MAX_BYTES,
   type GgufArchitectureResult,
+  type GgufChatTemplateResult,
   type GgufHeader,
   type GgufReadOptions,
   type GgufValue,
 } from "./gguf.ts";
+
+export {
+  detectToolSupport,
+  resolveToolSupport,
+  CHAT_TEMPLATE_FILE,
+  TOKENIZER_CONFIG_FILE,
+  type ToolSupportOptions,
+  type ToolSupportResult,
+  type ToolSupportSource,
+} from "./chat-template.ts";
 
 export {
   architectureFromConfig,
@@ -53,6 +68,7 @@ export {
 
 export {
   getModelInfo,
+  getText,
   listRepoFiles,
   resolveUrl,
   HF_ENDPOINT,

@@ -994,8 +994,8 @@ Deployed as the Supabase Edge Function `gateway` (Deno). This is the only hot pa
 | Also | `GET /functions/v1/gateway/v1/models` — OpenAI-shaped catalog listing |
 | Auth | `Authorization: Bearer sk-plat-<43 url-safe base64 chars>` |
 | Request body | OpenAI Chat Completions object. `model` = `creator/model-slug`. |
-| Honored params | `messages`, `stream`, `stream_options`, `temperature`, `top_p`, `top_k`, `max_tokens`, `stop`, `presence_penalty`, `frequency_penalty`, `seed`, `n` (must be 1 in MVP), `response_format` (passthrough) |
-| Rejected | `tools`/`functions` (501 — Phase 2), `n > 1` (400), `logprobs` (400) |
+| Honored params | `messages`, `stream`, `stream_options`, `temperature`, `top_p`, `top_k`, `max_tokens`, `stop`, `presence_penalty`, `frequency_penalty`, `seed`, `n` (must be 1 in MVP), `response_format` (passthrough), `tools`/`tool_choice`/`functions`/`function_call` (passthrough — §4.5, shipped) |
+| Rejected | `n > 1` (400), `logprobs` (400), malformed `tools` (400), `tools` on a model measured `supports_tools = false` (400) |
 | Response | Byte-compatible OpenAI `chat.completion` or `chat.completion.chunk` SSE stream |
 | CORS | `POST, GET, OPTIONS`; `Authorization, Content-Type` allowed; browser-direct calls permitted |
 
@@ -2137,7 +2137,20 @@ FR-BIL-038 (P1)  Email at 20% and 5% of the 30-day rolling average balance.
 
 ### 4.5 Tool Calling (Phase 2.1a)
 
-MVP rejects `tools` / `functions` / `tool_choice` / `function_call` with 501. That single rejection is what makes the platform unusable for agentic clients — Cline, Aider, OpenAI Agents SDK, LangGraph, and Claude Code are all fundamentally tool-call loops. Lifting it is the highest-leverage unlock available, and it is worth doing **before** any wire-format work for a specific client.
+MVP rejected `tools` / `functions` / `tool_choice` / `function_call` with 501. That single rejection is what made the platform unusable for agentic clients — Cline, Aider, OpenAI Agents SDK, LangGraph, and Claude Code are all fundamentally tool-call loops. Lifting it was the highest-leverage unlock available, and it came **before** any wire-format work for a specific client.
+
+**STATUS: FR-TOOL-001 … FR-TOOL-006 shipped.** FR-TOOL-007 (grammar-constrained decoding) is still open. What landed, and where to look:
+
+| FR | Where |
+|---|---|
+| 001 forward the four params | `HONORED_PARAMS` + `validateToolParams` in `supabase/functions/gateway/index.ts` |
+| 002 `--jinja` | `tools/modal/app.py`, `_launch_llama_server` |
+| 003 `supports_tools` | `supabase/migrations/20260819000300_tool_calling.sql`, `packages/hf-probe/src/chat-template.ts`, `assertToolsSupported` |
+| 004 fragment reassembly | `foldToolCallDeltas` (assembler) and `deltaChars` (`usage.ts`) |
+| 005 `finish_reason` + assembly | `assembleNonStreaming` |
+| 006 billing unchanged, verified | `gateway_e2e_test.ts` "a tool-calling stream settles once" and "a tool-only stream with no usage" |
+
+One deviation from the text below, recorded rather than hidden: FR-TOOL-003 says a model without the flag "must return a clear 400". The flag is THREE-state, and only a measured `false` returns 400. `null` — the template could not be read, which is what every row provisioned before this change carries — is forwarded, because rejecting on absence of evidence would refuse calls that work.
 
 ```
 FR-TOOL-001 (P1)  Accept and forward `tools`, `tool_choice`, `functions`,
@@ -4530,7 +4543,7 @@ total compromise of the database — RLS is bypassed by design for that role.
 | HTTP | `error.code` | Cause | Client action |
 |---|---|---|---|
 | 400 | `invalid_model_format` | `model` lacks `creator/slug` form | Fix the model id |
-| 400 | `unsupported_parameter` | `n > 1`, `logprobs` | Remove the parameter |
+| 400 | `unsupported_parameter` | `n > 1`, `logprobs`, malformed `tools`/`tool_choice`, or `tools` on a model whose chat template cannot render them (§4.5) | Remove or correct the parameter |
 | 401 | `invalid_api_key` | Missing/malformed/unknown key | Check the key |
 | 401 | `revoked_api_key` | Key revoked | Create a new key |
 | 402 | `insufficient_balance` | Available balance below hold | Top up the wallet |
@@ -4538,7 +4551,7 @@ total compromise of the database — RLS is bypassed by design for that role.
 | 404 | `model_not_found` | Unknown model, **or** private model and caller is not the owner | Check the id / access |
 | 429 | `rate_limit_exceeded` | Per-key rpm exceeded | Back off per `Retry-After` |
 | 500 | `internal_error` | Platform fault (incl. RunPod credential failure) | Retry with backoff |
-| 501 | `not_implemented` | `tools` / `functions` requested | Await Phase 2 |
+| 501 | `not_implemented` | Reserved. No request parameter maps here since §4.5 shipped | — |
 | 503 | `model_unavailable` | Model not `ready`, paused, or endpoint missing | Retry later |
 | 504 | `cold_start_timeout` | No first token within 90 s | Retry; the worker is likely warming |
 | 504 | `stream_timeout` | Stream exceeded 300 s | Lower `max_tokens` |

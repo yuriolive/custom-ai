@@ -240,7 +240,7 @@ jobs:
         run: deno fmt --check
 
   pgtap:
-    name: pgtap (141 billing invariants)
+    name: pgtap (201 billing invariants)
     runs-on: ubuntu-latest
     # Generous: the first run on a cold runner pulls supabase/postgres (~1.5 GB),
     # supabase/gotrue and supabase/pg_prove before a single test executes, and
@@ -275,6 +275,20 @@ jobs:
 
       - name: Install (supabase CLI comes from devDependencies)
         run: npm ci
+
+      # `version` is the PRIMARY KEY of supabase_migrations.schema_migrations, so
+      # two migration files sharing a numeric prefix is not a naming nit: the
+      # second INSERT raises 23505 and `supabase db reset` aborts partway
+      # through, which takes this job — and therefore every open PR — red for a
+      # reason that has nothing to do with the PR. It has happened twice
+      # (0348c2d moved tool_calling off a collision with gpu_tiers_modal_catalog;
+      # it then collided again with api_key_usage_counters one number along),
+      # because two branches that never see each other's files cannot detect it
+      # themselves. Same script `npm run check` runs, so the collision is caught
+      # on the machine that creates it; here it is the backstop, placed before
+      # the ~1.5 GB image pull so a third one fails in seconds.
+      - name: check:migrations
+        run: npm run check:migrations
 
       # NOTE ON DOCKER LAYER CACHING: deliberately not done. The only image worth
       # caching is supabase/postgres at ~1.5 GB compressed; `docker save` +
