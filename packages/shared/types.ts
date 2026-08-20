@@ -90,6 +90,45 @@ export interface ModelArchitecture {
   source: "config.json" | "gguf-header";
 }
 
+// ─── Base-model identity (packages/hf-probe/src/identity.ts) ─────────────────
+
+/**
+ * How a repo relates to the weights it was built FROM — Hugging Face's own
+ * `base_model_relation`. The distinction is not cosmetic: `quantized` means the
+ * repo serves the SAME weights and belongs under the parent's catalog row,
+ * while every other value means the repo is its own model whose output is not
+ * the parent's.
+ */
+export type BaseModelRelation = "quantized" | "finetune" | "merge" | "adapter";
+
+/**
+ * Which signal grouped a listing under a base model. Only `card_data` and
+ * `gguf_header` — the two the repository DECLARES — may auto-link; the rest
+ * are shown to the creator to confirm. See `resolveBaseModelIdentity`.
+ */
+export type BaseModelSignal = "card_data" | "gguf_header" | "fingerprint" | "name" | "manual";
+
+/** Mirrors `public.commercial_hosting`. `unknown` never auto-publishes. */
+export type CommercialHosting = "allowed" | "conditional" | "prohibited" | "unknown";
+
+export interface RepoLicense {
+  /** SPDX-ish id as the Hub writes it: "apache-2.0", "llama3.1", "other". */
+  id: string | null;
+  name: string | null;
+  url: string | null;
+  /** May a THIRD PARTY serve these weights for money. Never derived from `id` alone by a caller — see `commercialHostingFor`. */
+  commercialHosting: CommercialHosting;
+}
+
+/** A parent the repository itself names. The ONLY kind that may auto-link. */
+export interface DeclaredBaseModel {
+  /** `owner/name` on the Hub. */
+  repoSlug: string;
+  /** null when the source declares a parent but not how it relates to it. */
+  relation: BaseModelRelation | null;
+  source: "card_data" | "gguf_header";
+}
+
 export interface HfProbeResult {
   repoSlug: string;
   revision: string;
@@ -105,6 +144,18 @@ export interface HfProbeResult {
   architecture: ModelArchitecture | null;
   /** Set when architecture could not be determined — then we REJECT, never guess. */
   architectureError?: string;
+  /**
+   * Parents this repository declares, strongest source first (card data, then
+   * the GGUF header). Empty when it declares none — which is a suggestion, not
+   * a link: see `resolveBaseModelIdentity`.
+   */
+  declaredBaseModels: DeclaredBaseModel[];
+  /**
+   * The licence THIS repo carries. Advisory about the weights: a community
+   * re-quantization routinely says `other` or nothing at all, and a permissive
+   * string on a quant repo does not relicense what is underneath it.
+   */
+  license: RepoLicense | null;
 }
 
 // ─── Usage extraction (supabase/functions/gateway/usage.ts) ───────────────────

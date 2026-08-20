@@ -6,7 +6,12 @@
  * runs in a Supabase Edge Function (Deno) and in Node tooling.
  */
 
-import type { HfFile, HfProbeResult, ModelArchitecture } from "../../shared/types.ts";
+import type {
+  DeclaredBaseModel,
+  HfFile,
+  HfProbeResult,
+  ModelArchitecture,
+} from "../../shared/types.ts";
 import { classifyRepoFiles, deriveRuntime } from "./classify.ts";
 import {
   architectureFromConfig,
@@ -19,9 +24,12 @@ import {
   HF_ENDPOINT,
   listRepoFiles,
   resolveUrl,
+  type HfCardData,
   type HfClientOptions,
 } from "./hf.ts";
-import { readGgufArchitecture } from "./gguf.ts";
+import { baseModelsFromHeader, readGgufArchitecture, type GgufHeader } from "./gguf.ts";
+import { normalizeRelation, repoSlugFromRef } from "./identity.ts";
+import { licenseFromCardData } from "./license.ts";
 
 export interface ProbeOptions extends HfClientOptions {
   /** Git revision. Default "main". */
@@ -52,6 +60,8 @@ function emptyResult(slug: string, revision: string): HfProbeResult {
     variants: [],
     companions: [],
     architecture: null,
+    declaredBaseModels: [],
+    license: null,
   };
 }
 
@@ -96,6 +106,14 @@ export async function probeRepo(slug: string, opts: ProbeOptions = {}): Promise<
   result.isPrivate = body.private === true;
   result.isGated = body.gated !== undefined && body.gated !== false && body.gated !== null;
   result.libraryName = typeof body.library_name === "string" ? body.library_name : null;
+
+  // ── declared identity + licence, from the SAME response (§2 signal 1) ─────
+  // `cardData` is why getModelInfo asks for `?full=true`. Both facts are about
+  // the WEIGHTS rather than this repo's packaging, and both are advisory here:
+  // nothing below fails a probe because a card said nothing.
+  const cardData = body.cardData ?? null;
+  result.license = licenseFromCardData(cardData, { repoSlug: slug, revision, endpoint });
+  result.declaredBaseModels = declaredFromCardData(cardData);
 
   // ── file list ─────────────────────────────────────────────────────────────
   let files: HfFile[];
@@ -146,6 +164,15 @@ export async function probeRepo(slug: string, opts: ProbeOptions = {}): Promise<
   const arch = await resolveArchitecture(slug, revision, endpoint, config, classified, opts);
   if (arch.ok) {
     result.architecture = arch.architecture;
+    // Signal 2, free of charge: the header was already fetched and parsed for
+    // the geometry above, and for a llama.cpp-native repo — which frequently
+    // ships no model card at all — it is the only declaration that exists.
+    if (arch.header) {
+      result.declaredBaseModels = [
+        ...result.declaredBaseModels,
+        ...declaredFromGgufHeader(arch.header),
+      ];
+    }
     // A FR-DEP-045 "no deployable variant" reason set above is deliberately
     // kept: the repo is still not deployable even though we read its geometry.
   } else {
@@ -155,6 +182,45 @@ export async function probeRepo(slug: string, opts: ProbeOptions = {}): Promise<
   return result;
 }
 
+/** A scalar or a list, as a list. `base_model` and `license` are both written both ways. */
+function asList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
+  return typeof value === "string" ? [value] : [];
+}
+
+/**
+ * `cardData.base_model` is a string on most repos and an ARRAY on merges, which
+ * name every ingredient. The relation applies to all of them, and the first
+ * entry is the one a merge is conventionally attributed to.
+ */
+function declaredFromCardData(cardData: HfCardData | null): DeclaredBaseModel[] {
+  if (!cardData) return [];
+  const entries = asList(cardData.base_model);
+  const relation = normalizeRelation(cardData.base_model_relation);
+
+  const out: DeclaredBaseModel[] = [];
+  for (const entry of entries) {
+    const repoSlug = repoSlugFromRef(entry);
+    if (repoSlug === null) continue;
+    out.push({ repoSlug, relation, source: "card_data" });
+  }
+  return out;
+}
+
+function declaredFromGgufHeader(header: GgufHeader): DeclaredBaseModel[] {
+  const out: DeclaredBaseModel[] = [];
+  for (const ref of baseModelsFromHeader(header)) {
+    const repoSlug =
+      repoSlugFromRef(ref.repoUrl) ??
+        (ref.organization && ref.name ? repoSlugFromRef(`${ref.organization}/${ref.name}`) : null);
+    if (repoSlug === null) continue;
+    // The header has no relation key at all — the cascade infers it from the
+    // name, and infers "derived" whenever it cannot tell.
+    out.push({ repoSlug, relation: null, source: "gguf_header" });
+  }
+  return out;
+}
+
 async function resolveArchitecture(
   slug: string,
   revision: string,
@@ -162,7 +228,9 @@ async function resolveArchitecture(
   config: HfConfigJson | null,
   classified: { variants: HfProbeResult["variants"]; weightsFormat: string },
   opts: ProbeOptions,
-): Promise<{ ok: true; architecture: ModelArchitecture } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; architecture: ModelArchitecture; header?: GgufHeader } | { ok: false; error: string }
+> {
   // 1. config.json
   if (config) {
     const fromConfig = architectureFromConfig(config);
@@ -197,7 +265,7 @@ async function resolveArchitecture(
       maxBytes: opts.maxHeaderBytes,
       initialBytes: opts.initialHeaderBytes,
     });
-    if (read.ok) return { ok: true, architecture: read.architecture };
+    if (read.ok) return { ok: true, architecture: read.architecture, header: read.header };
     return { ok: false, error: `${read.error} (${target.files[0]})` };
   }
 

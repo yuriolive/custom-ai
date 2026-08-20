@@ -28,6 +28,25 @@ function authHeaders(opts: HfClientOptions): Record<string, string> {
   return h;
 }
 
+/**
+ * The parsed YAML frontmatter of the model card, as the Hub itself parsed it.
+ *
+ * `base_model` is a string on most repos and an ARRAY on merges, which name
+ * every ingredient — so a caller that assumes one shape drops the parent of the
+ * other. `license` has the same two shapes for the same reason.
+ */
+export interface HfCardData {
+  base_model?: string | string[];
+  /** "quantized" | "finetune" | "merge" | "adapter" — see BaseModelRelation. */
+  base_model_relation?: string;
+  license?: string | string[];
+  license_name?: string;
+  license_link?: string;
+  tags?: string[];
+  pipeline_tag?: string;
+  [k: string]: unknown;
+}
+
 export interface HfModelInfo {
   id?: string;
   sha?: string;
@@ -37,15 +56,30 @@ export interface HfModelInfo {
   pipeline_tag?: string | null;
   siblings?: { rfilename: string; size?: number }[];
   config?: Record<string, unknown>;
+  /** Only present with `?full=true`. See getModelInfo. */
+  cardData?: HfCardData | null;
+  /** Parameter counts per dtype, safetensors repos only. `total` is the sum. */
+  safetensors?: { total?: number; parameters?: Record<string, number> } | null;
+  tags?: string[];
   [k: string]: unknown;
 }
 
+/**
+ * `?full=true` IS THE POINT, not a detail: without it the Hub omits `cardData`
+ * entirely, and `cardData.base_model` + `base_model_relation` are one of the
+ * only two signals allowed to auto-link a repo to the model it is a variant of
+ * (the other is the GGUF header). The default payload answers "does this repo
+ * exist"; this one also answers "what model is it, and under what licence".
+ *
+ * The cost is a longer body — `full` inlines the sibling list — and it is paid
+ * once per probe, on a request that was already being made.
+ */
 export async function getModelInfo(
   slug: string,
   opts: HfClientOptions = {},
 ): Promise<HfResponse<HfModelInfo>> {
   const base = opts.endpoint ?? HF_ENDPOINT;
-  const url = `${base}/api/models/${slug}`;
+  const url = `${base}/api/models/${slug}?full=true`;
   return await getJson<HfModelInfo>(url, opts);
 }
 

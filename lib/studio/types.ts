@@ -55,6 +55,99 @@ export type StudioArchitecture = {
   ssmStateBytesPerSeq: number;
   architecture: string | null;
   source: "config.json" | "gguf-header";
+  /**
+   * The two fields below and `fullAttentionInterval` feed NOTHING in the
+   * solver — they are the rest of `base_models`' architecture fingerprint (#25
+   * signal 3), which needs the whole shape to be worth comparing: `qwen3` alone
+   * is shared by a 0.6B and a 32B.
+   */
+  nAttentionHeads: number;
+  hiddenSize: number;
+  fullAttentionInterval: number | null;
+};
+
+// ─── Base model (#25 — the resolution cascade) ────────────────────────────────
+
+/**
+ * An existing catalog model this repo MIGHT be, from signals 3 (architecture
+ * fingerprint) and 4 (normalized name). Never applied automatically: a
+ * fine-tune matches its parent on every field of both.
+ */
+export type BaseModelSuggestion = {
+  baseModelId: string;
+  /** `publisher/name` — `base_models.slug`, not a Hugging Face repo path. */
+  slug: string;
+  displayName: string;
+  /** 0…1, and capped well below certainty. Shown next to the radio button. */
+  confidence: number;
+  matchedOn: ("fingerprint" | "name")[];
+  /** Whether the creator is being offered "this IS it" or "derived from it". */
+  relationHint: "quantized" | "finetune";
+};
+
+/**
+ * The creator's answer to the confirm step. Sent ONLY when the probe returned
+ * no declared base model — a repository that declares its own parent is not
+ * asked, and the server ignores this field in that case.
+ */
+export type BaseModelChoice =
+  | { kind: "existing"; baseModelId: string }
+  | { kind: "child"; parentBaseModelId: string }
+  | { kind: "none" };
+
+/**
+ * `custom_models.base_model_match` — the audit trail that makes a wrong
+ * grouping explainable and lets a re-resolution pass find every row grouped on
+ * a weak signal. `unresolved` is a real value: nothing declared a parent and
+ * nobody confirmed one.
+ */
+export type BaseModelMatch = {
+  signal: "card_data" | "gguf_header" | "fingerprint" | "name" | "manual" | "unresolved";
+  relation: "quantized" | "finetune" | "merge" | "adapter" | null;
+  confidence: number;
+  /** The creator's user id, on a manual confirmation only. */
+  confirmedBy: string | null;
+  at: string;
+  reason: string;
+  /** The Hub repo or model slug the parent came from. */
+  sourceRepo: string | null;
+  candidates: {
+    baseModelId: string;
+    slug: string;
+    confidence: number;
+    matchedOn: ("fingerprint" | "name")[];
+    relationHint: "quantized" | "finetune";
+  }[];
+};
+
+/** What the probe learned about which model this is, and under what terms. */
+export type ProbeBaseModel = {
+  /**
+   * The parent the REPOSITORY declares — card data or GGUF header. When this is
+   * set the grouping is decided and the form asks nothing.
+   *
+   * ONE parent, even for a merge that names several: `base_models.parent_id` is
+   * single-valued, and a merge is attributed to its first-named ingredient.
+   */
+  declared: {
+    repoSlug: string;
+    relation: "quantized" | "finetune" | "merge" | "adapter" | null;
+    source: "card_data" | "gguf_header";
+  } | null;
+  /** Populated only when `declared` is null. */
+  suggestions: BaseModelSuggestion[];
+  /**
+   * The licence THIS repo carries. A community re-quantization routinely says
+   * `other` or nothing, and a permissive string on a quant repo does not
+   * relicense the weights underneath it — so this is what the repo claims, and
+   * the weights' terms are the resolved base model's.
+   */
+  license: {
+    id: string | null;
+    name: string | null;
+    url: string | null;
+    commercialHosting: "allowed" | "conditional" | "prohibited" | "unknown";
+  } | null;
 };
 
 export type ProbeSuccess = {
@@ -85,6 +178,8 @@ export type ProbeSuccess = {
    * unparseable, and always overwritable by the creator.
    */
   suggestedDescription: string | null;
+  /** Which model these weights are, and under what licence (#25). */
+  baseModel: ProbeBaseModel;
 };
 
 export type ProbeFailureCode =
@@ -184,6 +279,12 @@ export type DeployRequest = {
   pricePromptMicro: number;
   priceCompletionMicro: number;
   isPublic: boolean;
+  /**
+   * Only meaningful when the probe found no declared base model. A repository
+   * that declares its own parent is authoritative about it, so this is ignored
+   * there rather than trusted over the repo's own metadata.
+   */
+  baseModelChoice?: BaseModelChoice;
 };
 
 export type ModelStatus =

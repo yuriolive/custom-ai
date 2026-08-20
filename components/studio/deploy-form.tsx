@@ -70,6 +70,7 @@ import type {
 } from "@/lib/studio/types";
 import { createClient } from "@/lib/supabase/client";
 
+import { BaseModelStep, decodeBaseModelChoice } from "./base-model-step";
 import { DeploymentPlan } from "./deployment-plan";
 import { SummaryLayout } from "./primitives";
 import { ProvisioningStepper } from "./provisioning-stepper";
@@ -135,6 +136,10 @@ export function DeployForm() {
   const [pricesTouched, setPricesTouched] = useState(false);
   const [isPublic, setPublic] = useState(true);
 
+  // Which base model the creator says this is (#25). Null until they answer, and
+  // an answer is never required — see `BaseModelStep`.
+  const [baseModelChoice, setBaseModelChoice] = useState<string | null>(null);
+
   // ── Solver output ────────────────────────────────────────────────────────
   const [placements, setPlacements] = useState<VariantPlacement[]>([]);
   const [isSolving, setSolving] = useState(false);
@@ -192,6 +197,9 @@ export function DeployForm() {
           setProbeError(null);
           setNeedsToken(body.requiresAuth);
           setVariantId(body.recommendedVariantId);
+          // A different repository's candidates are a different question, so an
+          // answer to the previous one is dropped rather than carried across.
+          setBaseModelChoice(null);
           // FR-DEP-005: the architecture's ceiling caps the slider, and a value
           // already above it is pulled down rather than left invalid.
           const ceiling = body.architecture?.maxPositionEmbeddings ?? CTX_FALLBACK_MAX;
@@ -431,6 +439,11 @@ export function DeployForm() {
           pricePromptMicro: promptMicro,
           priceCompletionMicro: completionMicro,
           isPublic,
+          // Sent only when the repository declared nothing — the server ignores
+          // it otherwise, and the form does not ask in that case.
+          ...(probe.baseModel.declared === null && baseModelChoice
+            ? { baseModelChoice: decodeBaseModelChoice(baseModelChoice) }
+            : {}),
         }),
         cache: "no-store",
         headers: { "content-type": "application/json" },
@@ -477,6 +490,7 @@ export function DeployForm() {
       setPhase("editing");
     }
   }, [
+    baseModelChoice,
     canSubmit,
     completionMicro,
     contextLength,
@@ -727,6 +741,15 @@ export function DeployForm() {
             </p>
           </div>
         </section>
+
+        {/* ── Which model is this? (#25 — the resolution cascade) ────────── */}
+        {probe ? (
+          <BaseModelStep
+            baseModel={probe.baseModel}
+            onChange={setBaseModelChoice}
+            value={baseModelChoice}
+          />
+        ) : null}
 
         {/* ── Intent. No hardware input exists in this section. ──────────── */}
         {probe ? (

@@ -23,6 +23,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { resolveToolSupport } from "@nexus/hf-probe";
+import { resolveBaseModel } from "./base-model";
 
 import { toPlacement } from "../placement";
 import type { DeployRequest, Placement, ProbeSuccess, StudioVariant } from "../types";
@@ -268,6 +269,28 @@ export async function runDeployment(
     ggufFile: probe.weightsFormat === "gguf" ? (variant.files[0] ?? null) : null,
   });
 
+  // ── Stage 0f: WHICH MODEL is this, and under whose licence? (#25) ────────
+  // Resolved before the insert so the pointer and its audit trail land in the
+  // same row write rather than as a second update the stepper would see flicker
+  // through. Never fatal: `resolveBaseModel` degrades to a null pointer with a
+  // recorded reason, because the gateway does not read this column and an
+  // ungrouped listing still resolves, streams and bills.
+  const baseModel = await resolveBaseModel(admin, {
+    // Candidates are read as the creator (RLS), written as the platform.
+    reader: session,
+    repoSlug: probe.repoSlug,
+    architecture: arch,
+    license: probe.baseModel.license,
+    // The probe's own reading of the repo's declarations — this is not taken
+    // from the request, so a creator cannot claim somebody else's weights.
+    declared: probe.baseModel.declared ? [probe.baseModel.declared] : [],
+    userId,
+    // A repository that declares its own parent is authoritative about it, so a
+    // creator's answer is only consulted when nothing was declared.
+    choice: probe.baseModel.declared ? null : (request.baseModelChoice ?? null),
+    ...(request.hfToken ? { hfToken: request.hfToken } : {}),
+  });
+
   // ── Stage 1: the row exists, in `validating` ─────────────────────────────
   const { data: inserted, error: insertError } = await admin
     .from("custom_models")
@@ -306,6 +329,10 @@ export async function runDeployment(
       price_completion_micro_usd_per_mtoken: request.priceCompletionMicro,
       // Three-state on purpose. NULL is "template unreadable", not "no tools".
       supports_tools: toolSupport.supported,
+      // Catalog grouping only (#24's columns, #25's writer). Null means the
+      // listing is its own card until somebody resolves it.
+      base_model_id: baseModel.baseModelId,
+      base_model_match: baseModel.match,
       visibility: request.isPublic ? "public" : "private",
       status: "validating",
     })

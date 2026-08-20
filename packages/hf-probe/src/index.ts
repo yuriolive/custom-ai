@@ -32,6 +32,7 @@ export {
 
 export {
   architectureFromHeader,
+  baseModelsFromHeader,
   deriveAttentionLayers,
   moeFromHeader,
   parseGgufHeader,
@@ -43,6 +44,7 @@ export {
   DEFAULT_TEMPLATE_BYTES,
   DEFAULT_TEMPLATE_MAX_BYTES,
   type GgufArchitectureResult,
+  type GgufBaseModelRef,
   type GgufChatTemplateResult,
   type GgufHeader,
   type GgufReadOptions,
@@ -67,11 +69,36 @@ export {
 } from "./config.ts";
 
 export {
+  baseModelSlugFromRepo,
+  fingerprintMatches,
+  nameSimilarity,
+  nameTokens,
+  normalizeModelName,
+  normalizeRelation,
+  repoSlugFromRef,
+  resolveBaseModelIdentity,
+  scoreCandidates,
+  type BaseModelCandidate,
+  type BaseModelIdentity,
+  type Fingerprint,
+  type IdentityInput,
+  type ScoredCandidate,
+} from "./identity.ts";
+
+export {
+  commercialHostingFor,
+  licenseFromCardData,
+  normalizeLicenseId,
+  strictest,
+} from "./license.ts";
+
+export {
   getModelInfo,
   getText,
   listRepoFiles,
   resolveUrl,
   HF_ENDPOINT,
+  type HfCardData,
   type HfClientOptions,
   type HfModelInfo,
 } from "./hf.ts";

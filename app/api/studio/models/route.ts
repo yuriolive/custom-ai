@@ -19,7 +19,7 @@
 
 import { runDeployment } from "@/lib/studio/server/deploy";
 import { createAdminClient } from "@/lib/studio/server/admin";
-import type { DeployRequest } from "@/lib/studio/types";
+import type { BaseModelChoice, DeployRequest } from "@/lib/studio/types";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -103,6 +103,7 @@ function parseBody(raw: unknown): { ok: true; value: DeployRequest } | { ok: fal
   }
 
   const hfToken = typeof b.hfToken === "string" ? b.hfToken.trim() : "";
+  const baseModelChoice = parseBaseModelChoice(b.baseModelChoice);
 
   return {
     ok: true,
@@ -118,8 +119,36 @@ function parseBody(raw: unknown): { ok: true; value: DeployRequest } | { ok: fal
       pricePromptMicro,
       priceCompletionMicro,
       isPublic: b.isPublic !== false,
+      ...(baseModelChoice ? { baseModelChoice } : {}),
     },
   };
+}
+
+/**
+ * The confirm step's answer (#25). A UUID and one of three kinds, or nothing.
+ *
+ * Deliberately not an error when it is malformed: this field only ever GROUPS a
+ * listing in the catalog, the pipeline ignores it whenever the repository
+ * declared its own parent, and refusing a deployment over an unparseable
+ * grouping hint would fail the one thing the creator actually asked for.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseBaseModelChoice(raw: unknown): BaseModelChoice | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const c = raw as Record<string, unknown>;
+  if (c.kind === "none") return { kind: "none" };
+  if (c.kind === "existing" && typeof c.baseModelId === "string" && UUID_RE.test(c.baseModelId)) {
+    return { kind: "existing", baseModelId: c.baseModelId };
+  }
+  if (
+    c.kind === "child" &&
+    typeof c.parentBaseModelId === "string" &&
+    UUID_RE.test(c.parentBaseModelId)
+  ) {
+    return { kind: "child", parentBaseModelId: c.parentBaseModelId };
+  }
+  return null;
 }
 
 export async function POST(request: Request): Promise<Response> {
