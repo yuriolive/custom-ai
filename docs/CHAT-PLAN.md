@@ -174,8 +174,8 @@ Requirement ids follow the PRD's convention so code comments can reference them.
 
 | id | requirement |
 |---|---|
-| FR-CHAT-013 | `/chat/agent` as a **separate route**, with real tool calling. Hard-blocked on roadmap item #7 — the gateway 501s `tools` today, and llama.cpp needs `--jinja` or it returns prose that merely looks like a tool call. |
-| FR-CHAT-014 | Per-model `supports_tools`, detected at probe time. Tool calling in GGUF-land is per-chat-template and is not uniform; a global toggle would be a lie. |
+| FR-CHAT-013 | `/chat/agent` as a **separate route**, with real tool calling. **Unblocked:** roadmap item #7 landed — the gateway forwards `tools` / `tool_choice` and the worker passes `--jinja`, without which llama.cpp ignores `tools` and returns prose that merely looks like a tool call. |
+| FR-CHAT-014 | Offer tools only where `custom_models.supports_tools` says so. **Already exists**, measured at provisioning from the chat template, and it is THREE-state: `true`, a measured `false`, and `null` for rows provisioned before the column. The chat must treat `null` as "unknown", not as "yes" — the whole point of the flag is that GGUF tool support is per-chat-template and a global toggle would be a lie. |
 | FR-CHAT-015 | Third-party tool connectors — a catalog of integrations the user grants once and any model can then call. See §7.5. |
 
 ## 7.5 Tool connectors — the shape to leave room for
@@ -218,13 +218,13 @@ these features go wrong:
   wall-clock and often a third-party quota. `usage_transactions` has no shape for that,
   and inventing one on the fly during an agent sprint is how a billing model gets a float
   in it.
-- **Per-model capability, not a global switch.** FR-CHAT-014 already says this for tool
-  calling; connectors inherit it. A model whose chat template cannot emit a tool call must
-  not be offered a connector list.
+- **Per-model capability, not a global switch.** `supports_tools` already carries this for
+  tool calling; connectors inherit it. A model whose chat template cannot emit a tool call
+  must not be offered a connector list — and one whose flag is `null` is unknown, not
+  capable.
 
-The cheap decision that keeps the door open, and the only one worth making today: keep
-tool support a per-model capability flag from the start, rather than a property of the
-chat surface.
+The cheap decision that keeps the door open was already made elsewhere: tool support is a
+per-model capability flag, not a property of the chat surface. Connectors ride on that.
 
 **Deliberately out of scope:** image and video generation (no such worker exists);
 multi-model compare (a second GPU spin-up per prompt against a 90 s cold start is a bad
