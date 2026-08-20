@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
-import { SiteNav } from "@/components/site-nav";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
@@ -33,6 +32,22 @@ export const metadata: Metadata = {
   description: "Serverless inference marketplace — MVP-0",
 };
 
+/**
+ * `<html>`, `<body>`, the two faces, and the theme. NOTHING ELSE.
+ *
+ * This layout used to render `SiteNav` and a `max-w-6xl` `<main>` for every
+ * route, which meant a marketing page and a console page were the same shape by
+ * construction — a landing hero could not go full-bleed and a signed-out visitor
+ * on `/login` got a nav carrying a wallet balance. The shell now belongs to the
+ * four route groups (docs/UI-REDESIGN-PLAN.md §3):
+ *
+ *   (marketing)  pill nav, full-bleed sections, footer   → `/`
+ *   (catalog)    pill nav, centred column, footer        → `/models/**`
+ *   (app)        product nav, centred column             → console/studio/playground
+ *   (auth)       pill nav, one centred card              → login/signup
+ *
+ * Each owns its own `<main>`. Adding one back here would give every page two.
+ */
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     // suppressHydrationWarning is required (FR-UI-003): next-themes writes
@@ -41,10 +56,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html className={`${sans.variable} ${mono.variable}`} lang="en" suppressHydrationWarning>
       <body className="bg-background text-foreground font-sans min-h-dvh antialiased">
         {/* No <HeroUIProvider>. HeroUI v3 has no provider. */}
-        <ThemeProvider>
-          <SiteNav />
-          <main className="mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
-        </ThemeProvider>
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );
