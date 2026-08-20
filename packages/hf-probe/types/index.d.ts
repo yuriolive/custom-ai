@@ -124,3 +124,41 @@ export interface ProbeOptions {
 
 /** The single entry point the deployment form calls. FR-DEP-040 … FR-DEP-047. */
 export function probeRepo(slug: string, opts?: ProbeOptions): Promise<HfProbeResult>;
+
+// ─── Tool-calling capability (FR-TOOL-003) ───────────────────────────────────
+
+export type ToolSupportSource = "chat_template_file" | "tokenizer_config" | "gguf_header";
+
+export interface ToolSupportResult {
+  /** true / false measured; null when no template could be read at all. */
+  supported: boolean | null;
+  source: ToolSupportSource | null;
+  /** Why `supported` is null. Advisory — provisioning proceeds either way. */
+  error?: string;
+}
+
+export interface ToolSupportOptions {
+  revision?: string;
+  hfToken?: string;
+  endpoint?: string;
+  signal?: AbortSignal;
+  fetchImpl?: typeof fetch;
+  /** Repo file paths from an earlier probe; skips fetches that would 404. */
+  files?: string[];
+  /** Repo-relative GGUF file to read `tokenizer.chat_template` from. */
+  ggufFile?: string | null;
+  maxBytes?: number;
+}
+
+/**
+ * Read whichever chat template the repo ships and decide whether it can render
+ * tool definitions. Never throws; an unreadable template is `{supported: null}`,
+ * which downstream MUST treat as unknown rather than as false.
+ */
+export function resolveToolSupport(
+  slug: string,
+  opts?: ToolSupportOptions,
+): Promise<ToolSupportResult>;
+
+/** The pure half, for a template already in hand. null = absent or blank. */
+export function detectToolSupport(template: string | null | undefined): boolean | null;

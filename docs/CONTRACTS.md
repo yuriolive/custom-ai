@@ -150,7 +150,9 @@ All are `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `EXECUTE` revok
 - **I4** every balance mutation has exactly one `wallet_ledger` row
 - **I5** concurrent requests on one wallet cannot collectively overdraw
 
-Lock order is always `usage_transactions` → `profiles(payer)` → `profiles(creator)`.
+Lock order is always `usage_transactions` → `profiles(payer)` → `profiles(creator)` → `api_keys`.
+
+`api_keys` joined the order in `20260819000200`, which made `authorize_request` the only writer of `api_keys.request_count` / `last_used_at` (FR-CON-001). It is **last** and is a sink — no RPC acquires anything after it — and the bump is a plain UPDATE of non-key columns, so it takes `FOR NO KEY UPDATE` and does not conflict with the `FOR KEY SHARE` the `usage_transactions` FK check just took on the same row. Putting `request_count` under a unique index or a foreign key promotes that lock and deadlocks concurrent requests sharing a key.
 
 ## Frontend / auth contract (FROZEN — auth, console and marketplace build against this)
 
@@ -175,7 +177,7 @@ Route protection:
 | Table | Browser access |
 |---|---|
 | `profiles` | SELECT own; UPDATE only `display_name`, `avatar_url`, `bio` |
-| `api_keys` | SELECT own · UPDATE (rename/revoke) · DELETE own |
+| `api_keys` | SELECT own · UPDATE only `name`, `revoked_at` · DELETE own |
 | `usage_transactions` | SELECT own |
 | `wallet_ledger` | SELECT own |
 | `creator_earnings_feed` | SELECT own (view) |

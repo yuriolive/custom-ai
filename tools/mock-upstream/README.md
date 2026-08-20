@@ -104,11 +104,40 @@ An unrecognized or malformed value is ignored (falls through to the next level).
 | token text          | `x-mock-token-text`          | `token_text`          | `null`  | repeat this string instead of the built-in lorem                                                                                               |
 | finish reason       | `x-mock-finish-reason`       | `finish_reason`       | `stop`  | value on the final chunk                                                                                                                       |
 | model echo          | `x-mock-model`               | `model`               | `null`  | override the echoed model name (default: echo request `model`)                                                                                 |
+| tool calls          | `x-mock-tool-calls`          | `tool_calls`          | `0`     | emit N tool calls with **fragmented** `function.arguments` — see below                                                                          |
+| tool name           | `x-mock-tool-name`           | `tool_name`           | `get_weather` | function name; `_2`, `_3`… appended after the first call                                                                                  |
+| arg fragments       | `x-mock-tool-arg-fragments`  | `tool_arg_fragments`  | `3`     | how many frames each call's `arguments` string is split across                                                                                 |
 
 Programmatic names are camelCase of the same options: `coldStartMs`, `tokenDelayMs`, `tokens`,
 `usage`, `honorIncludeUsage`, `usagePlacement`, `fail`, `dropAfter`, `malformedAfter`,
-`promptTokens`, `cachedTokens`, `tokenText`, `finishReason`, `model`.
+`promptTokens`, `cachedTokens`, `tokenText`, `finishReason`, `model`, `toolCalls`, `toolName`,
+`toolArgFragments`.
 Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`.
+
+### `toolCalls` — the fragment boundaries are the point
+
+A real worker does not hand you a tool call. It hands you an opening frame carrying
+`id`, `type` and `function.name` with an **empty** arguments string, then a run of frames
+carrying only fragments of `function.arguments`, keyed by the same `index`:
+
+```
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_…","type":"function","function":{"name":"get_weather","arguments":""}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"locat"}}]}}]}
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ion\":\"city-0\"}"}}]}}]}
+data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+```
+
+The splits are by character count, so they land **mid-key and mid-value**. That is
+deliberate: a consumer that concatenates per-stream instead of per-`index`, or that tries
+to `JSON.parse` a fragment, passes a single-frame fixture and fails this one.
+
+`finish_reason` becomes `tool_calls` automatically whenever `toolCalls > 0`, unless
+`finishReason` was set to something other than its `stop` default. `usage.completion_tokens`
+grows by one per emitted frame — tool output is ordinary completion output and a real worker
+counts it (FR-TOOL-006), so a fixture that reported `tokens` unchanged would hide a consumer
+that ignores tool frames entirely.
+
+Non-streaming responses carry the same calls fully assembled, with `content: null`.
 
 ### `honorIncludeUsage` — catching a silent gateway regression
 

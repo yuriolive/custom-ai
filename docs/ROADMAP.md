@@ -104,14 +104,26 @@ exist in the schema — see the plan's §11.
 
 ## P2 — unlocks agentic clients
 
-### 7. Tool calling — do this before the Anthropic work
-Highest-leverage single change in the backlog. The gateway currently 501s `tools`,
-which makes it unusable for **Cline, Aider, OpenAI Agents SDK, LangGraph** and Claude
-Code alike.
+### 7. Tool calling — DONE (FR-TOOL-001 … 006)
+The gateway forwards `tools` / `tool_choice` / `functions` / `function_call`, the
+non-streaming assembler rebuilds `tool_calls[]` from the fragments, and the usage
+estimator counts tool arguments — a tool-only turn emits no `content`, so counting
+content alone billed a whole response at zero and voided the hold.
 
-PRD §4.5. The trap: llama.cpp needs `--jinja` so the model's own chat template drives
-tool formatting; without it the server ignores `tools` and returns prose that *looks*
-like a tool call, which parses as success.
+The trap, avoided: llama.cpp needs `--jinja` so the model's own chat template drives
+tool formatting. Without it the server ignores `tools` and returns prose that *looks*
+like a tool call, which parses as success. `tools/modal/app.py` passes it and says why.
+
+`custom_models.supports_tools` (FR-TOOL-003) is measured at provisioning by reading the
+chat template — repo `chat_template.jinja`, then `tokenizer_config.json`, then the GGUF
+`tokenizer.chat_template` key, which is the only source a llama.cpp-native repo has.
+It is THREE-state: a measured `false` gets a 400, and `null` ("template unreadable",
+which every pre-existing row carries) is forwarded. Rows provisioned before this cannot
+be backfilled from SQL — the answer is inside a GGUF file on the Hub — so re-deploying
+a model is what populates it.
+
+Still open: **FR-TOOL-007**, grammar-constrained decoding (GBNF) for models whose
+template renders tools but whose JSON is unreliable.
 
 ### 8. Anthropic Messages API → Claude Code
 `packages/anthropic-adapter` is **already built and tested** (53 tests) and unused.
@@ -119,8 +131,9 @@ Remaining: `/v1/messages` route, `x-api-key` auth, and
 `POST /v1/messages/count_tokens` — which Claude Code calls, and without which it
 fails before sending a single completion.
 
-§4.5 is a hard prerequisite: Claude Code is a tool-call loop, so shipping the wire
-adapter first yields a client that connects and can do nothing.
+§4.5 was the hard prerequisite and is now done, so this is unblocked: the adapter's
+`translateTools` / `translateToolChoice` emit exactly the shapes the gateway now
+accepts (`auto` / `required` / `none` / `{type:"function"}`).
 
 Honest viability: 14 tok/s measured. Agentic coding needs tool calling **and** a fast
 tier (~149 tok/s predicted on H100) **and** always-warm. That combination is a paid

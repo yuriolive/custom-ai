@@ -54,6 +54,22 @@ export interface MockOptions {
   finishReason: string;
   /** override the echoed model name. Default null (echo request body `model`). */
   model: string | null;
+  /**
+   * Number of tool calls to emit (FR-TOOL-004). Default 0 = none.
+   *
+   * With this set the stream ends in `finish_reason: "tool_calls"` unless
+   * `finishReason` was overridden, because that is what every real worker does
+   * and a mock that says "stop" while emitting calls tests the wrong thing.
+   */
+  toolCalls: number;
+  /** Function name for the emitted calls; `_2`, `_3`… are appended after the first. */
+  toolName: string;
+  /**
+   * How many fragments each call's `arguments` string is split into. Default 3.
+   * The splits are by CHARACTER COUNT, so they land mid-key and mid-value — the
+   * boundaries that break a consumer which concatenates without reassembling.
+   */
+  toolArgFragments: number;
 }
 
 export interface RecordedRequest {
@@ -72,6 +88,9 @@ export interface RecordedRequest {
   streamOptions: unknown;
   model: string | undefined;
   messages: unknown;
+  /** Forwarded tool parameters, so a test can assert the gateway relayed them. */
+  tools: unknown;
+  toolChoice: unknown;
   options: MockOptions;
 }
 
@@ -157,6 +176,19 @@ export const CONTROLS = {
     def: "stop",
   },
   model: { header: "x-mock-model", query: "model", kind: "string", def: null },
+  toolCalls: { header: "x-mock-tool-calls", query: "tool_calls", kind: "int", def: 0 },
+  toolName: {
+    header: "x-mock-tool-name",
+    query: "tool_name",
+    kind: "string",
+    def: "get_weather",
+  },
+  toolArgFragments: {
+    header: "x-mock-tool-arg-fragments",
+    query: "tool_arg_fragments",
+    kind: "int",
+    def: 3,
+  },
 } satisfies Record<keyof MockOptions, ControlSpec>;
 
 export const BUILTIN_DEFAULTS: MockOptions = Object.fromEntries(
@@ -236,6 +268,41 @@ function resolveOptions(
 function tokenAt(i: number, opts: MockOptions): string {
   if (opts.tokenText) return i === 0 ? opts.tokenText : ` ${opts.tokenText}`;
   return LOREM[i % LOREM.length] as string;
+}
+
+/**
+ * The arguments JSON for call `i`. A real object, so a consumer that reassembles
+ * the fragments correctly ends up with something `JSON.parse`-able and a
+ * consumer that drops one does not.
+ */
+function toolArgsFor(i: number): string {
+  return JSON.stringify({ location: `city-${i}`, unit: "celsius", detailed: i % 2 === 0 });
+}
+
+function toolNameFor(i: number, opts: MockOptions): string {
+  return i === 0 ? opts.toolName : `${opts.toolName}_${i + 1}`;
+}
+
+/** Split a string into `n` near-equal slices, by character count. */
+function fragment(s: string, n: number): string[] {
+  const count = Math.max(1, Math.min(n, s.length));
+  const size = Math.ceil(s.length / count);
+  const out: string[] = [];
+  for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size));
+  return out.length > 0 ? out : [""];
+}
+
+/** Fully-assembled tool calls, for the non-streaming shape. */
+function assembledToolCalls(opts: MockOptions, id: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < opts.toolCalls; i++) {
+    out.push({
+      id: `call_${id.slice(-8)}_${i}`,
+      type: "function",
+      function: { name: toolNameFor(i, opts), arguments: toolArgsFor(i) },
+    });
+  }
+  return out;
 }
 
 interface UsageObject {
@@ -354,6 +421,8 @@ export async function startMockUpstream(config: MockUpstreamConfig = {}): Promis
       streamOptions: isObject ? body.stream_options : undefined,
       model: isObject ? body.model : undefined,
       messages: isObject ? body.messages : undefined,
+      tools: isObject ? body.tools : undefined,
+      toolChoice: isObject ? body.tool_choice : undefined,
       options: opts,
     };
     requests.push(record);
@@ -509,6 +578,16 @@ async function nonStreaming(res: ServerResponse, ctx: RenderCtx): Promise<void> 
     if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
     content += tokenAt(i, opts);
   }
+  const calls = assembledToolCalls(opts, id);
+  const message: Record<string, unknown> = calls.length > 0
+    // A real worker sends `content: null` on a tool-only turn.
+    ? {
+      role: "assistant",
+      content: content.length > 0 ? content : null,
+      tool_calls: calls,
+    }
+    : { role: "assistant", content };
+
   const payload: Record<string, unknown> = {
     id,
     object: "chat.completion",
@@ -517,15 +596,74 @@ async function nonStreaming(res: ServerResponse, ctx: RenderCtx): Promise<void> 
     choices: [
       {
         index: 0,
-        message: { role: "assistant", content },
+        message,
         logprobs: null,
-        finish_reason: opts.finishReason,
+        finish_reason: finishReasonFor(opts),
       },
     ],
   };
-  const usage = usageObject(opts, opts.tokens);
+  const usage = usageObject(opts, completionTokensFor(opts));
   if (usage) payload.usage = usage;
   return sendJson(res, 200, payload);
+}
+
+/**
+ * Tool calls end a turn with `finish_reason: "tool_calls"`. Derived rather than
+ * configured, because "stop" is the control's default and a caller who asks for
+ * tool calls is not asking for the wrong finish reason with them.
+ */
+function finishReasonFor(opts: MockOptions): string {
+  if (opts.toolCalls > 0 && opts.finishReason === "stop") return "tool_calls";
+  return opts.finishReason;
+}
+
+/**
+ * FR-TOOL-006: tool tokens are ordinary completion tokens and a real worker
+ * counts them inside `usage.completion_tokens`. One token per emitted frame —
+ * crude, but it makes the count differ from `tokens`, which is the property a
+ * gateway test needs in order to catch a consumer that ignores tool output.
+ */
+function completionTokensFor(opts: MockOptions): number {
+  if (opts.toolCalls <= 0) return opts.tokens;
+  let frames = 0;
+  for (let i = 0; i < opts.toolCalls; i++) {
+    frames += 1 + fragment(toolArgsFor(i), opts.toolArgFragments).length;
+  }
+  return opts.tokens + frames;
+}
+
+/**
+ * Emit the tool calls as INCREMENTAL fragments (FR-TOOL-004).
+ *
+ * The opening frame of a call carries `id`, `type` and `function.name` with an
+ * EMPTY arguments string; every frame after it carries only a fragment of
+ * `function.arguments`, keyed by the same `index`. Calls are emitted one after
+ * another rather than interleaved, which is what llama.cpp does.
+ *
+ * `emit` takes the DELTA only — the caller owns the chunk envelope, so this
+ * cannot drift from the framing the rest of the stream uses.
+ */
+async function emitToolCallFrames(
+  opts: MockOptions,
+  id: string,
+  signal: AbortSignal,
+  emit: (delta: Record<string, unknown>) => void,
+): Promise<void> {
+  for (let i = 0; i < opts.toolCalls; i++) {
+    if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
+    emit({
+      tool_calls: [{
+        index: i,
+        id: `call_${id.slice(-8)}_${i}`,
+        type: "function",
+        function: { name: toolNameFor(i, opts), arguments: "" },
+      }],
+    });
+    for (const piece of fragment(toolArgsFor(i), opts.toolArgFragments)) {
+      if (opts.tokenDelayMs > 0) await sleep(opts.tokenDelayMs, signal);
+      emit({ tool_calls: [{ index: i, function: { arguments: piece } }] });
+    }
+  }
 }
 
 async function streamingResponse(res: ServerResponse, ctx: RenderCtx): Promise<void> {
@@ -582,11 +720,15 @@ async function streamingResponse(res: ServerResponse, ctx: RenderCtx): Promise<v
     );
   }
 
-  const usage = usageObject(opts, opts.tokens);
+  await emitToolCallFrames(opts, id, signal, (delta) => {
+    frame(chunk([{ index: 0, delta, logprobs: null, finish_reason: null }]));
+  });
+
+  const usage = usageObject(opts, completionTokensFor(opts));
   const placement = placementFor(opts);
 
   const finishChunk = chunk(
-    [{ index: 0, delta: {}, logprobs: null, finish_reason: opts.finishReason }],
+    [{ index: 0, delta: {}, logprobs: null, finish_reason: finishReasonFor(opts) }],
     usage && placement === "final" ? { usage } : {},
   );
   frame(finishChunk);
