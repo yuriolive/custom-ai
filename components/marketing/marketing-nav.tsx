@@ -25,11 +25,25 @@ import { Wordmark } from "@/components/wordmark";
  *    from the page by sitting a step lighter (`--surface-secondary`) inside its
  *    own hairline ring. That reads as floating in both themes; a shadow only
  *    reads at all in light.
- *  - No backdrop blur. Modal does not use one either, and it costs a
- *    compositor layer on every scroll frame for an effect nothing here needs.
  *  - Our accent is not spent on the link text. Modal tints theirs `#ddffdc`.
  *    One green element per viewport (DESIGN.md §4 item 2) and on this surface
  *    it is the CTA.
+ *
+ * IT IS GLASS NOW. This comment used to end with "No backdrop blur. Modal does
+ * not use one either, and it costs a compositor layer on every scroll frame for
+ * an effect nothing here needs." The owner asked for the opposite (2026-08-19),
+ * and the cost objection was the weaker half of that argument anyway: this is
+ * ONE `position: sticky` element, which the compositor has already promoted to
+ * its own layer for the sticky, so the blur rides a layer that exists either way.
+ * The `.glass` recipe in `globals.css` carries the contrast reasoning and the
+ * no-`backdrop-filter` fallback — the fill floor is not adjustable by taste,
+ * because `--muted` at 14px was picked against a solid surface.
+ *
+ * `sticky top-4` DEPENDS ON NO ANCESTOR BEING A SCROLL CONTAINER. It shipped
+ * broken once: `overflow-x-hidden` on the marketing layout root made that div a
+ * scroll container, so this stuck to ITS scrollport — i.e. never — and the nav
+ * scrolled away with the page. If it stops following the scroll, look for an
+ * `overflow` above it before looking here.
  *
  * A SERVER COMPONENT: it reads the session here and passes a plain handle
  * string down, because `@heroui/react` is client-only (PRD §4.1.0).
@@ -43,7 +57,7 @@ export async function MarketingNav() {
     <header className="sticky top-4 z-40 px-4 sm:px-6">
       <nav
         aria-label="Main"
-        className="border-border bg-surface-secondary mx-auto grid h-12 w-full max-w-7xl grid-cols-[1fr_auto] items-center gap-4 rounded-full border px-2 pl-4 sm:px-3 sm:pl-5 md:grid-cols-[1fr_auto_1fr]"
+        className="glass border-border mx-auto grid h-12 w-full max-w-7xl grid-cols-[1fr_auto] items-center gap-4 rounded-full border px-2 pl-4 sm:px-3 sm:pl-5 md:grid-cols-[1fr_auto_1fr]"
       >
         <Wordmark />
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, Drawer } from "@heroui/react";
+import { Drawer } from "@heroui/react";
+import { buttonVariants } from "@heroui/styles";
 import Link from "next/link";
 
 import type { MarketingLink } from "./links";
@@ -13,6 +14,15 @@ import type { MarketingLink } from "./links";
  * else moves into a Drawer. Client-only, because `@heroui/react` is
  * (PRD §4.1.0) — which is why the nav itself stays a Server Component and hands
  * this component plain serializable props.
+ *
+ * `Drawer.Trigger` IS THE BUTTON (a React Aria `Button`), so the content goes
+ * directly inside it. This file used to nest a HeroUI `<Button>` in there, which
+ * renders `<button><button>` — invalid HTML that React reports as
+ * "Hydration failed because the server rendered HTML didn't match" and then
+ * regenerates the whole tree client-side. It was invisible until the marketing
+ * nav was actually mounted, at which point it fired on EVERY page. `buttonVariants`
+ * gives the trigger the same look without the second element.
+ * `components/auth/user-menu.tsx` documents the identical trap.
  */
 export function MarketingMenu({
   links,
@@ -20,17 +30,18 @@ export function MarketingMenu({
 }: Readonly<{ links: readonly MarketingLink[]; isSignedIn: boolean }>) {
   return (
     <Drawer>
-      <Drawer.Trigger>
-        <Button aria-label="Open menu" size="sm" variant="ghost">
-          {/* A hamburger is the one glyph that carries meaning no word fits in
-              the space available, so it is allowed under DESIGN.md §4 item 4.
-              Three <span>s rather than an icon dependency. */}
-          <span aria-hidden className="flex flex-col gap-[3px]">
-            <span className="bg-foreground block h-px w-4" />
-            <span className="bg-foreground block h-px w-4" />
-            <span className="bg-foreground block h-px w-4" />
-          </span>
-        </Button>
+      <Drawer.Trigger
+        aria-label="Open menu"
+        className={buttonVariants({ size: "sm", variant: "ghost" })}
+      >
+        {/* A hamburger is the one glyph that carries meaning no word fits in
+            the space available, so it is allowed under DESIGN.md §4 item 4.
+            Three <span>s rather than an icon dependency. */}
+        <span aria-hidden className="flex flex-col gap-[3px]">
+          <span className="bg-foreground block h-px w-4" />
+          <span className="bg-foreground block h-px w-4" />
+          <span className="bg-foreground block h-px w-4" />
+        </span>
       </Drawer.Trigger>
 
       <Drawer.Backdrop>

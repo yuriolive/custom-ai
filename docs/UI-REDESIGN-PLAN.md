@@ -332,12 +332,78 @@ hairline). Below `md:` it degrades to wordmark + hamburger opening a HeroUI `Dra
 | 8 | Closing CTA + footer | — | |
 
 **Explicitly not built:** the particle globe, the scroll-linked hero, the horizontal
-auto-scroll band, any 3D render (`DESIGN.md` §4 item 3). Motion on this page is limited to
-`opacity`/`transform` reveal on section enter, ≤200ms, disabled under
+auto-scroll band. Motion is `opacity`/`transform` only, and inert under
 `prefers-reduced-motion`.
 
-**The `HomeIntro` component survives.** Its Alert and its 3-step block move into sections
-4 and 6 nearly verbatim. The copy is good; only its container changes.
+> **AMENDED 2026-08-19 — the 3D render was built, then removed. The hero's
+> artifact is a running request. §4 item 3 stays overruled for one thing only.**
+>
+> The owner asked for 3D motion in as many words, having seen the page shipped
+> without it: *"seria legal ter animações 3d tipo resend.com… tem que parecer
+> profissional."* A CSS-3D cube lattice was built — 15 cubes on four nested
+> `preserve-3d` layers, ambient spin, cube relocation between cells, pointer
+> parallax, drag-to-rotate, per-face shading, film grain, and a four-`box-shadow`
+> stand-in for a bloom pass, the last three reverse-engineered from modal.com's
+> own bundle (`EffectComposer`, `emissiveIntensity`, `ACESFilmicToneMapping`).
+>
+> **It was then deleted, and the lesson is the part worth keeping.** Three passes
+> went into making an abstract glowing solid look right and it never did — the
+> owner's verdict was that the colours had gone weird, and they had. The failure
+> was not execution. This plan already forbade the thing:
+>
+> - `docs/DESIGN.md` §4 item 4 bans decoration outright.
+> - §2.5 of this document says every section is "display heading → one muted
+>   sentence → a **product artifact**. Never an illustration."
+>
+> A rotating cube is an illustration. Building one and then trying to justify it
+> as "cubes are workers" was the tell — an artifact that needs a paragraph to
+> explain what it depicts is not depicting anything.
+>
+> **What replaced it.** Four candidates were built and compared side by side
+> behind a temporary `?hero=` switch: a looping terminal, a wake-curve chart, a
+> typographic endpoint specimen, and an artifact-free centred hero. The terminal
+> won and the other three were deleted with the switch.
+> `components/marketing/hero-terminal.tsx` runs one request start to finish on a
+> loop — the OpenAI-compatible call, the cold start counting up, tokens arriving,
+> and one usage row settling with the 80/20 split. That is four claims this page
+> makes, shown rather than asserted, in the space the cube occupied.
+>
+> **§4 item 3 is still overruled, by one mechanism instead of five:** the
+> terminal's `setInterval`. Everything else on the hero is static — two blurred
+> `.glow-blob` ellipses, a masked `.hero-grid`, and a `.grain-overlay` that
+> dithers the washes. No keyframes, no transforms, no timers. Scope is `/`; §4
+> item 3's argument is about the console ("a tool someone opens forty times a day…
+> motion in that context is friction with a bill attached") and stands untouched.
+>
+> **A separate amendment, which survives:** `marketing-nav.tsx` used to state "No
+> backdrop blur… it costs a compositor layer on every scroll frame". The owner
+> asked for glassmorphism and the cost objection was the weaker half of that
+> argument anyway — the nav is one `position: sticky` element, already promoted to
+> its own layer, so the blur rides a layer that exists either way. The `.glass`
+> recipe carries the contrast floor and the no-`backdrop-filter` fallback.
+>
+> **The copy audit this triggered mattered more than the hero.** Putting measured
+> numbers into an artifact meant reading `docs/HANDOFF.md`, which showed the page
+> was overstating itself in three places: the proof strip claimed "~100s" for a
+> cold start measured at **115 s**; it and the cold-start section both said warm
+> calls answer "well under a second" when HANDOFF records **926 ms** as a MISS
+> against NFR-CS-002's 400 ms and says so explicitly ("recorded as a miss, not
+> restated to match what we measured"); and the meta description said "instantly".
+> All three are corrected, and every figure now interpolates
+> `components/marketing/measured.ts` rather than being retyped — so the hero, the
+> strip and the tradeoff section cannot drift apart again. A proof strip whose
+> whole defence is that its figures are checkable cannot afford one that flatters
+> us.
+
+**`HomeIntro` is deleted, not moved.** The intent below was that its container
+change and its copy survive. What shipped keeps the copy's *arguments* and drops its
+*form*: the 3-step block became §6's creator steps (turned around — it walked a caller
+through picking a model, and the creator is the audience at zero supply), and the
+cold-start Alert became §4 as three plain columns. The amber `Alert` itself is gone
+deliberately — amber is the colour of "something is wrong", and spending it on the
+property that makes the product cheap framed the pitch as a defect notice. The figure is
+still stated at its worst and the timeout is still the explicit instruction; only the
+alarm is gone.
 
 ---
 
