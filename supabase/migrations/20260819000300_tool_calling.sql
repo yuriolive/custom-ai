@@ -1,5 +1,5 @@
 -- ============================================================================
--- 20260819000200_tool_calling.sql
+-- 20260819000300_tool_calling.sql
 --
 -- FR-TOOL-003: a per-model capability flag for tool calling.
 --
@@ -19,10 +19,19 @@
 -- carries it and there is no way to backfill from SQL — the answer lives in a
 -- Jinja template inside a GGUF file on the Hub. Refusing those rows would break
 -- calls that work today; refusing a measured `false` prevents a silent failure.
+--
+-- ── Why every statement below is re-runnable ─────────────────────────────
+-- This file has been renumbered twice: 0100 collided with gpu_tiers_modal_catalog,
+-- then 0200 with api_key_usage_counters. `version` is the PRIMARY KEY of
+-- supabase_migrations.schema_migrations, so a renumber makes the file APPLY AGAIN
+-- on any database that recorded it under the old number. Bare `add column` and
+-- `create policy` would abort that re-apply mid-file, leaving the schema half
+-- migrated — hence `if not exists` / `drop … if exists` on every DDL statement
+-- here, and `create or replace` on the function.
 -- ============================================================================
 
 alter table public.custom_models
-  add column supports_tools boolean;
+  add column if not exists supports_tools boolean;
 
 comment on column public.custom_models.supports_tools is
   'FR-TOOL-003. Whether this model''s chat template can render tool definitions, '
@@ -39,7 +48,7 @@ comment on column public.custom_models.supports_tools is
 -- prevent. Both policies are otherwise byte-identical to their previous
 -- definitions (20260817000700 for insert, 20260817002300 for update).
 
-drop policy custom_models_insert_own on public.custom_models;
+drop policy if exists custom_models_insert_own on public.custom_models;
 
 create policy custom_models_insert_own on public.custom_models
   for insert to authenticated
@@ -59,7 +68,7 @@ create policy custom_models_insert_own on public.custom_models
     and supports_tools is null
   );
 
-drop policy custom_models_update_own on public.custom_models;
+drop policy if exists custom_models_update_own on public.custom_models;
 
 create policy custom_models_update_own on public.custom_models
   for update to authenticated
