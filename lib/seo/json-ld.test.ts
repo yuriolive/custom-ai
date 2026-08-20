@@ -158,7 +158,7 @@ test("every URL position on the model node is absolute", () => {
   assert.equal(node["@id"], url);
   // The author links to the catalog filtered by creator — a real page, and the
   // `creator` parameter the catalog actually parses.
-  assert.equal(node.author.url, `${ORIGIN}/?creator=jonathancoletti`);
+  assert.equal(node.author.url, `${ORIGIN}/models?creator=jonathancoletti`);
   assert.equal(node.identifier, "jonathancoletti/qwen3.8-27b-uncensored-gguf");
 
   assertNoRelativeUrls(jsonLdScriptContent(node));
@@ -180,7 +180,7 @@ test("the site's SearchAction names the catalog's real query parameter", () => {
 
   // `q`, from `parseCatalogQuery`. A wrong name here does not error anywhere —
   // it just sends every searchbox visitor to an unfiltered catalog.
-  assert.equal(node.potentialAction.target.urlTemplate, `${ORIGIN}/?q={search_term_string}`);
+  assert.equal(node.potentialAction.target.urlTemplate, `${ORIGIN}/models?q={search_term_string}`);
   assert.equal(node.potentialAction["query-input"], "required name=search_term_string");
 
   // The braces must survive un-encoded: the consumer substitutes into them.
@@ -210,9 +210,10 @@ test("the breadcrumb trail is catalog -> creator -> model, positions in order", 
   assert.deepEqual(
     node.itemListElement.map((item) => item.item),
     [
-      // `/models` permanently redirects to `/`, so the catalog's crumb is `/`.
-      `${ORIGIN}/`,
-      `${ORIGIN}/?creator=jonathancoletti`,
+      // The catalog crumb is `/models`. It was `/` while the catalog lived
+      // there and `/models` was a redirect; the landing rebuild swapped them.
+      `${ORIGIN}/models`,
+      `${ORIGIN}/models?creator=jonathancoletti`,
       `${ORIGIN}/models/jonathancoletti/qwen3.8-27b-uncensored-gguf`,
     ],
   );

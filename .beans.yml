@@ -1,0 +1,11 @@
+# Beans — flat-file issue tracker (https://github.com/hmans/beans).
+# Beans are Markdown files under .beans/ and are committed with the code they describe.
+beans:
+  path: .beans
+  # Repo-derived, NOT worktree-derived: `beans init` seeds the prefix from the directory
+  # name, which inside a git worktree is the branch name — every bean created from a
+  # worktree would then carry a different prefix.
+  prefix: ca-
+  id_length: 4
+  default_status: todo
+  default_type: task

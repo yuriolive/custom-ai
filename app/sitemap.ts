@@ -33,10 +33,15 @@ export const dynamic = "force-dynamic";
  *                set of identical pages.
  *   /console/**, /studio/**   Session-only, and per-user besides.
  *
- * That leaves `/`, `/pricing`, `/about`, the three `/legal` pages and `/signup`
- * as the
- * static entries, plus one URL per public model — which is the set that actually
- * earns traffic (FR-MKT-007: the model page is the addressable artifact).
+ * That leaves `/`, `/models`, `/pricing`, `/about`, the three `/legal` pages and
+ * `/signup` as the static entries, plus one URL per public model — which is the
+ * set that actually earns traffic (FR-MKT-007: the model page is the addressable
+ * artifact).
+ *
+ * `/models` EARNED ITS PLACE BACK. It used to be a 308 to `/` and was excluded
+ * for exactly that reason; the landing rebuild inverted the pair, so `/` sells
+ * and `/models` is the catalog. A stale exclusion here would have quietly
+ * withheld the most crawlable page on the site.
  *
  * THIS LIST IS HAND-MAINTAINED and nothing fails when it falls behind: a public
  * route missing from here is simply never announced, and the omission is
@@ -51,17 +56,19 @@ export const dynamic = "force-dynamic";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const models = await readModels();
 
-  // The home page IS the catalog, so its freshness is the freshness of the
-  // newest model. Rows arrive newest-updated-first, so index 0 is the max — no
-  // sort needed. Stamping `new Date()` here instead would claim the front page
-  // changed on every crawl, which is both false and self-defeating: a
-  // `lastModified` that is always "now" carries no information and gets
-  // discounted.
+  // Rows arrive newest-updated-first, so index 0 is the max — no sort needed.
+  // Stamping `new Date()` instead would claim the catalog changed on every
+  // crawl, which is both false and self-defeating: a `lastModified` that is
+  // always "now" carries no information and gets discounted.
   const catalogUpdatedAt = models[0]?.updatedAt;
 
   const staticRoutes: MetadataRoute.Sitemap = [
+    { url: absoluteUrl("/") },
+    // The catalog's freshness is the freshness of its newest model. `/` no
+    // longer carries that date: it is a landing page whose copy changes on
+    // deploy, not when a model does.
     {
-      url: absoluteUrl("/"),
+      url: absoluteUrl("/models"),
       ...(catalogUpdatedAt ? { lastModified: new Date(catalogUpdatedAt) } : {}),
     },
     // No `lastModified` on either of these: they are hand-written copy whose

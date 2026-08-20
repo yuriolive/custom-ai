@@ -42,11 +42,13 @@ const CATALOG_SEARCH_PARAM = "q";
 const CATALOG_CREATOR_PARAM = "creator";
 
 /**
- * The catalog lives at `/`; `/models` is a permanent redirect to it
- * (`app/models/page.tsx`). Structured data therefore points at `/` — naming the
- * redirect would publish a URL that never serves a 200.
+ * The catalog lives at `/models`. It used to live at `/`, with `/models`
+ * redirecting to it, and this constant pointed there for that reason — the
+ * landing rebuild inverted the pair, so `/` now sells and `/models` is the
+ * searchable list. Structured data has to follow, or the sitelinks searchbox
+ * sends people to a page with no search on it.
  */
-const CATALOG_PATH = "/";
+const CATALOG_PATH = "/models";
 
 export type OrganizationNode = {
   "@context": SchemaContext;

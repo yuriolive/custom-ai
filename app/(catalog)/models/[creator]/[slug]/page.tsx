@@ -106,10 +106,11 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
       description,
       type: "article",
       path: `/models/${model.creatorHandle}/${model.slug}`,
-      // This page has a card of its own (`opengraph-image.tsx` beside this
-      // file). Naming it is not optional: declaring `openGraph` at all replaces
-      // the object Next attached that file to.
-      imagePath: `/models/${model.creatorHandle}/${model.slug}/opengraph-image`,
+      // `null`, not a path. The card lives in `opengraph-image.tsx` beside this
+      // file, and Next serves a DYNAMIC route's generated image at a hashed
+      // segment — so any path written here is both wrong and a 404. Leaving
+      // `images` unset lets the file convention name its own route.
+      imagePath: null,
     }),
     twitter: { card: "summary", title, description },
   };

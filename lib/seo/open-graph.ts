@@ -45,16 +45,21 @@ export function pageOpenGraph({
   /** `"article"` for a model page, which has an author and a subject. */
   type?: "website" | "article";
   /**
-   * A route serving a card specific to this page, e.g. a model's own
-   * `opengraph-image`. Defaults to the site card.
+   * Which card this page unfurls with.
    *
-   * IT HAS TO BE PASSED EXPLICITLY. Next attaches an `opengraph-image` file to
-   * the `openGraph` object it builds, and a page that declares its own object
-   * replaces that one — so a per-route card silently loses to this function's
-   * default unless the caller names it. The same replacement rule this helper
-   * exists to work around applies one level down.
+   * Omit it for the site card, which is the right answer for every page whose
+   * subject is the site. Pass `null` when the page has an `opengraph-image` file
+   * COLOCATED WITH IT: Next fills `images` in from that file, but only if this
+   * object does not already set it, so naming a path here would beat the very
+   * card it was meant to select.
+   *
+   * DO NOT HARDCODE A DYNAMIC ROUTE'S CARD PATH. For a route with params Next
+   * serves the generated image at a hashed segment
+   * (`/models/[creator]/[slug]/opengraph-image-1hsxkq`), so `…/opengraph-image`
+   * is a 404 — which is exactly what a hardcoded path here produced until the
+   * landing rebuild surfaced it. `null` lets Next name its own route.
    */
-  imagePath?: string;
+  imagePath?: string | null;
 }>): NonNullable<Metadata["openGraph"]> {
   return {
     type,
@@ -63,6 +68,8 @@ export function pageOpenGraph({
     url: path,
     title,
     description,
-    images: [imagePath],
+    // Absent, not empty: an `images: []` would still count as "set" and would
+    // suppress the colocated file convention just as a wrong path did.
+    ...(imagePath === null ? {} : { images: [imagePath] }),
   };
 }
