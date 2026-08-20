@@ -38,7 +38,7 @@ To resume: check out the branch, re-read the **frozen** "Frontend / auth contrac
 
 1. **Modal proxy token.** The endpoints were shipping publicly reachable (`requires_proxy_auth` defaults to `False`); that is fixed and verified in both directions. But the agent deleted the token it minted, so a real inference run needs `modal workspace proxy-tokens create` and `MODAL_KEY` / `MODAL_SECRET` in `supabase/functions/.env`. **Without them the next run returns 500 `internal_error`, which looks like a gateway bug but is a missing credential.**
 2. **The authenticated Modal path is unverified.** The passing acceptance run hit the endpoint *before* proxy auth was enabled. The code path exists and is untested.
-3. **Hosted Supabase untouched.** 23 migrations apply cleanly to local Postgres; project `gexxzdlppbplfpfqhszf` has never seen them. Needs `SUPABASE_ACCESS_TOKEN`.
+3. **Hosted Supabase is NOT untouched — this entry was wrong.** The Supabase GitHub integration has been applying migrations to `gexxzdlppbplfpfqhszf` on every merge to main since PR #13, which deployed `20260819000200_tool_calling.sql` there. Its `Supabase Preview` check is the only signal we get, and nothing in this repo reads it. `SUPABASE_ACCESS_TOKEN` is still needed to inspect remote migration history directly — the state above was reconstructed from check-run summaries.
 
 ## Measured facts worth not re-deriving
 
@@ -79,15 +79,14 @@ upstream, which cannot prove an agent loop completes at 14 tok/s.
 - **MFU is a guessed 0.75.** Tier selection and $0.85/hr rest on it — A10 vs L40S flips on this constant.
 - **`active_weights_bytes`** equals total weights. Correct for this dense model; diverges only for MoE.
 - No Stripe by decision. Wallet balance and ledger read fine without it.
-- **A local database created before the `20260819000200` collision was fixed has a stale
-  migration history.** Both colliding files were renumbered (`_tool_calling` → `…000300`,
-  `_api_key_usage_counters` → `…000400`), so `supabase migration up` stops with
-  `LegacyMigrationMissingLocalError` on the orphan `20260819000200` row. That is the intended
-  outcome — leaving either file at `…000200` would have made the CLI *skip* it and silently
-  omit its schema. Fix with `supabase db reset`, or `supabase migration repair --local
-  --status reverted 20260819000200` followed by `supabase migration up`; both files are
-  guarded (`if not exists` / `drop … if exists`), so re-applying them over existing objects
-  is a no-op.
+- **`20260819000200` is a burned migration version.** Two files collided on it (see
+  `20260819000200_collided_version_placeholder.sql`); both were renumbered to `…000300` and
+  `…000400`, and a no-op placeholder holds the original version so that databases which
+  already recorded it — including the hosted project — still resolve it to a local file.
+  `_tool_calling` and `_api_key_usage_counters` are both written to be re-runnable
+  (`if not exists` / `drop … if exists`), so they apply cleanly over objects that already
+  exist. No `migration repair` is needed anywhere. Do not reuse that version number;
+  `npm run check:migrations` now rejects it along with any other duplicate.
 
 ## The lesson this session kept teaching
 
