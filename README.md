@@ -36,9 +36,10 @@ Two things that surprise people:
 
 MVP-0 is deployed: the gateway Edge Function is live on Supabase, the llama.cpp worker
 is deployed on Modal at $0 idle, migrations are applied, and the web app is on Vercel.
-316 node tests and 48 Python tests pass; CI additionally runs the pgTAP suite,
-`deno check` / `lint` / `fmt` on the gateway, and ruff. A real billed inference has been
-verified end to end **locally** and against an **authenticated** Modal endpoint.
+CI is green across its four jobs — node, python, deno and pgTAP — plus ruff and both
+formatters; the commands below reproduce each suite locally rather than trusting a
+count frozen here. A real billed inference has been verified end to end **locally**
+and against an **authenticated** Modal endpoint.
 
 Deployed does **not** yet mean populated: production has zero models, zero users, and
 zero API keys, because models can currently only be added by SQL. Creator Studio is the
@@ -73,10 +74,10 @@ npx supabase db reset --local
 ## Commands
 
 ```bash
-npm run check     # check:env + lint (oxlint + eslint) + typecheck across all 5 tsconfigs
+npm run check     # check:env + check:migrations + lint (oxlint + eslint) + typecheck
 npm test          # node --test across app, hf-probe, gateway, mock-upstream, keygen, adapter
 npm run dev       # Next dev server
-npm run build     # production build (runs check:env)
+npm run build     # production build; `npm run build:local` runs check first
 ```
 
 Two suites live outside `npm test`:
