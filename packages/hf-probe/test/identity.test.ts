@@ -277,7 +277,8 @@ test("packaging and quant tokens are not part of a model's name", () => {
 test("nameSimilarity never calls a containing name identical", () => {
   assert.equal(nameSimilarity("Qwen3-8B-GGUF", "Qwen3-8B"), 1);
   const finetune = nameSimilarity("Qwen3-8B-Uncensored", "Qwen3-8B");
-  assert.ok(finetune > 0.5 && finetune < 1, `fine-tune scored ${finetune}`);
+  assert.ok(finetune > 0.5, `a containing name is still a strong match: ${finetune}`);
+  assert.ok(finetune < 1, `but never identical: ${finetune}`);
   assert.ok(nameSimilarity("Qwen3-8B", "Llama-3.1-8B-Instruct") < 0.3);
 });
 

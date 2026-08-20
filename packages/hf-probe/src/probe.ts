@@ -182,6 +182,12 @@ export async function probeRepo(slug: string, opts: ProbeOptions = {}): Promise<
   return result;
 }
 
+/** A scalar or a list, as a list. `base_model` and `license` are both written both ways. */
+function asList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
+  return typeof value === "string" ? [value] : [];
+}
+
 /**
  * `cardData.base_model` is a string on most repos and an ARRAY on merges, which
  * name every ingredient. The relation applies to all of them, and the first
@@ -189,8 +195,7 @@ export async function probeRepo(slug: string, opts: ProbeOptions = {}): Promise<
  */
 function declaredFromCardData(cardData: HfCardData | null): DeclaredBaseModel[] {
   if (!cardData) return [];
-  const raw = cardData.base_model;
-  const entries = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
+  const entries = asList(cardData.base_model);
   const relation = normalizeRelation(cardData.base_model_relation);
 
   const out: DeclaredBaseModel[] = [];

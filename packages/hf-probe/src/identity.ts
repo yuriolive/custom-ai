@@ -88,8 +88,31 @@ export function normalizeRelation(raw: unknown): BaseModelRelation | null {
  * repo; this does it for repo names across repos, which is a different input
  * (no quant tag position to lean on) and therefore a different function.
  */
-const PACKAGING_TOKEN_RE =
-  /^(gguf|ggml|awq|gptq|exl2|exl3|mlx|onnx|i1|imat|imatrix|quantized|quants?|weights|hf|fp8|fp16|bf16|int8|int4|4bit|8bit)$/i;
+const PACKAGING_TOKENS = new Set([
+  "gguf",
+  "ggml",
+  "awq",
+  "gptq",
+  "exl2",
+  "exl3",
+  "mlx",
+  "onnx",
+  "i1",
+  "imat",
+  "imatrix",
+  "quantized",
+  "quant",
+  "quants",
+  "weights",
+  "hf",
+  "fp8",
+  "fp16",
+  "bf16",
+  "int8",
+  "int4",
+  "4bit",
+  "8bit",
+]);
 
 /**
  * A llama.cpp quant tag anywhere in a repo name, INCLUDING its underscores:
@@ -110,7 +133,7 @@ export function nameTokens(name: string): string[] {
     .replace(QUANT_TAG_IN_NAME_RE, "$1")
     .split(/[-_.\s/]+/)
     .map((t) => t.trim().toLowerCase())
-    .filter((t) => t.length > 0 && !PACKAGING_TOKEN_RE.test(t) && !QUANT_TOKEN_RE.test(t));
+    .filter((t) => t.length > 0 && !PACKAGING_TOKENS.has(t) && !QUANT_TOKEN_RE.test(t));
 }
 
 /** The comparison key: tokens joined, separators gone. `null` for an empty name. */
@@ -329,49 +352,8 @@ export function resolveBaseModelIdentity(input: IdentityInput): BaseModelIdentit
   const self = repoSlugFromRef(input.repoSlug);
 
   for (const declaration of input.declared) {
-    const parent = repoSlugFromRef(declaration.repoSlug);
-    if (parent === null) continue;
-    // A repo that names itself as its own base model declares nothing.
-    if (self !== null && parent.toLowerCase() === self.toLowerCase()) continue;
-
-    const signal: BaseModelSignal =
-      declaration.source === "card_data" ? "card_data" : "gguf_header";
-    const declaredRelation = normalizeRelation(declaration.relation);
-
-    if (declaredRelation !== null) {
-      return {
-        autoLink: true,
-        signal,
-        relation: declaredRelation,
-        parentRepoSlug: parent,
-        ownModel: declaredRelation !== "quantized",
-        // The repository stated both halves. Nothing this path can infer beats it.
-        confidence: signal === "card_data" ? 1 : 0.95,
-        suggestions: [],
-        reason:
-          `${parent} is declared as this repository's base model with relation ` +
-          `"${declaredRelation}" (${signal.replace("_", " ")}).`,
-      };
-    }
-
-    const sameName =
-      normalizeModelName(input.repoSlug.slice(input.repoSlug.indexOf("/") + 1)) ===
-      normalizeModelName(parent.slice(parent.indexOf("/") + 1));
-
-    return {
-      autoLink: true,
-      signal,
-      relation: sameName ? "quantized" : null,
-      parentRepoSlug: parent,
-      ownModel: !sameName,
-      confidence: sameName ? 0.85 : 0.7,
-      suggestions: [],
-      reason: sameName
-        ? `${parent} is declared as this repository's base model and carries the same ` +
-          `name, so these are the same weights repackaged.`
-        : `${parent} is declared as this repository's base model but names no relation, ` +
-          `and the names differ — recorded as a derived model rather than merged into it.`,
-    };
+    const linked = fromDeclaration(input, declaration, self);
+    if (linked !== null) return linked;
   }
 
   const suggestions = scoreCandidates(
@@ -388,5 +370,57 @@ export function resolveBaseModelIdentity(input: IdentityInput): BaseModelIdentit
           "name match suggest candidates, and neither may link on its own — a fine-tune " +
           "matches its parent on every one of them."
         : "No base model is declared by this repository and nothing in the catalog resembles it.",
+  };
+}
+
+/**
+ * One declaration, taken at its word — or `null` when it says nothing usable:
+ * an unparseable reference, or a repo naming ITSELF as its own base model.
+ */
+function fromDeclaration(
+  input: IdentityInput,
+  declaration: DeclaredBaseModel,
+  self: string | null,
+): BaseModelIdentity | null {
+  const parent = repoSlugFromRef(declaration.repoSlug);
+  if (parent === null) return null;
+  if (self !== null && parent.toLowerCase() === self.toLowerCase()) return null;
+
+  const signal: BaseModelSignal = declaration.source === "card_data" ? "card_data" : "gguf_header";
+  const declaredRelation = normalizeRelation(declaration.relation);
+
+  if (declaredRelation !== null) {
+    return {
+      autoLink: true,
+      signal,
+      relation: declaredRelation,
+      parentRepoSlug: parent,
+      ownModel: declaredRelation !== "quantized",
+      // The repository stated both halves. Nothing this path can infer beats it.
+      confidence: signal === "card_data" ? 1 : 0.95,
+      suggestions: [],
+      reason:
+        `${parent} is declared as this repository's base model with relation ` +
+        `"${declaredRelation}" (${signal.replace("_", " ")}).`,
+    };
+  }
+
+  const sameName =
+    normalizeModelName(input.repoSlug.slice(input.repoSlug.indexOf("/") + 1)) ===
+    normalizeModelName(parent.slice(parent.indexOf("/") + 1));
+
+  return {
+    autoLink: true,
+    signal,
+    relation: sameName ? "quantized" : null,
+    parentRepoSlug: parent,
+    ownModel: !sameName,
+    confidence: sameName ? 0.85 : 0.7,
+    suggestions: [],
+    reason: sameName
+      ? `${parent} is declared as this repository's base model and carries the same ` +
+        `name, so these are the same weights repackaged.`
+      : `${parent} is declared as this repository's base model but names no relation, ` +
+        `and the names differ — recorded as a derived model rather than merged into it.`,
   };
 }

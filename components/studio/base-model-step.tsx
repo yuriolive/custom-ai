@@ -56,11 +56,11 @@ export function BaseModelStep({
   baseModel,
   onChange,
   value,
-}: {
+}: Readonly<{
   baseModel: ProbeBaseModel;
   onChange: (next: string) => void;
   value: string | null;
-}) {
+}>) {
   const license = baseModel.license;
   const licenceLine = license ? (
     <p className="text-muted text-sm">
@@ -72,7 +72,7 @@ export function BaseModelStep({
           <a className="underline" href={license.url} rel="noreferrer" target="_blank">
             Read the terms
           </a>
-          .
+          {"."}
         </>
       ) : null}
     </p>
