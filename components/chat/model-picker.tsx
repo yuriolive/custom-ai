@@ -3,6 +3,7 @@
 import { Modal, useOverlayState } from "@heroui/react";
 import { useEffect, useMemo, useState } from "react";
 
+import { CreatorBadge } from "@/components/chat/creator-badge";
 import { CheckIcon, ChevronUpDownIcon, SearchIcon } from "@/components/chat/icons";
 import { formatContext, formatPricePerMtoken, formatSpeed } from "@/components/marketplace/format";
 import type { CatalogModel } from "@/components/marketplace/types";
@@ -79,6 +80,7 @@ export function ModelPicker({
         onClick={() => overlay.open()}
         type="button"
       >
+        {selected ? <CreatorBadge handle={selected.creatorHandle} /> : null}
         <span className="truncate font-medium">
           {selected ? selected.displayName : "Choose a model"}
         </span>
@@ -159,6 +161,7 @@ export function ModelPicker({
                               }}
                               type="button"
                             >
+                              <CreatorBadge handle={model.creatorHandle} size="md" />
                               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                                 <span className="truncate text-sm font-medium">
                                   {model.displayName}

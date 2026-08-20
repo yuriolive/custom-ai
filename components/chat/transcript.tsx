@@ -1,6 +1,7 @@
 "use client";
 
 import { CopyButton } from "@/components/chat/copy-button";
+import { CreatorBadge } from "@/components/chat/creator-badge";
 import { MessageBody } from "@/components/chat/message-body";
 import type { CatalogModel } from "@/components/marketplace/types";
 import { formatMicroUsd, formatRate, formatTokens } from "@/lib/format";
@@ -100,13 +101,22 @@ export function Transcript({
           );
         }
 
+        const model = modelForMessage(message.id);
+
         return (
           <li key={message.id} className="group flex flex-col">
+            {/* Which model said this, on the message itself. A thread can switch
+                models mid-conversation, and without this the reader has no way
+                to tell which of them wrote the paragraph they are reading. */}
+            {model ? (
+              <span className="text-muted mb-1.5 flex items-center gap-1.5 text-xs">
+                <CreatorBadge handle={model.creatorHandle} />
+                {model.displayName}
+              </span>
+            ) : null}
+
             <div
-              className={[
-                "text-foreground max-w-[52rem] min-w-0",
-                isLive ? "streaming-caret" : "",
-              ]
+              className={["text-foreground max-w-[52rem] min-w-0", isLive ? "streaming-caret" : ""]
                 .filter(Boolean)
                 .join(" ")}
             >
@@ -114,7 +124,7 @@ export function Transcript({
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <TurnFooter metrics={message.metadata} model={modelForMessage(message.id)} />
+              <TurnFooter metrics={message.metadata} model={model} />
               {/* Only once the reply is finished: a copy button on a half-written
                   answer copies half an answer. */}
               {!isLive && text.length > 0 ? (

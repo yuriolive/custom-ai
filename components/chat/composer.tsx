@@ -38,7 +38,6 @@ export function Composer({
   onSubmit: () => void;
   value: string;
 }>) {
-
   // Grow to `MAX_ROWS`, then scroll inside.
   useLayoutEffect(() => {
     const el = ref.current;

@@ -5,10 +5,20 @@ import { Alert, AlertDialog, Button, Dropdown } from "@heroui/react";
 import { DefaultChatTransport } from "ai";
 import type { Route } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
-import { EllipsisIcon, PlusIcon, TrashIcon } from "@/components/chat/icons";
+import {
+  CalendarIcon,
+  EllipsisIcon,
+  LightbulbIcon,
+  MailIcon,
+  MessageIcon,
+  PlusIcon,
+  ScalesIcon,
+  TrashIcon,
+} from "@/components/chat/icons";
 import { ModelFooterNote, ModelPicker } from "@/components/chat/model-picker";
 import { Transcript, messageText } from "@/components/chat/transcript";
 import { ColdStartNotice } from "@/components/cold-start-notice";
@@ -40,18 +50,22 @@ import type { ChatUIMessage } from "@/lib/types";
  */
 const SUGGESTIONS = [
   {
+    Icon: LightbulbIcon,
     title: "Explain it simply",
     prompt: "Explain what a VPN actually does, in plain language, to someone non-technical.",
   },
   {
+    Icon: MailIcon,
     title: "Write a reply",
     prompt: "Help me write a polite message declining a meeting invitation I have no time for.",
   },
   {
+    Icon: CalendarIcon,
     title: "Plan the week",
     prompt: "Give me a week of simple dinners for two, with one combined shopping list.",
   },
   {
+    Icon: ScalesIcon,
     title: "Both sides",
     prompt: "Summarise the argument for and against nuclear power in ten lines, evenly.",
   },
@@ -475,20 +489,36 @@ export function ChatApp({
 function Suggestions({ onSeed }: Readonly<{ onSeed: (prompt: string) => void }>) {
   return (
     <ul className="grid grid-cols-2 gap-2">
-      {SUGGESTIONS.map((suggestion) => (
-        <li key={suggestion.title}>
+      {SUGGESTIONS.map(({ Icon, prompt, title }) => (
+        <li key={title}>
           <button
-            className="border-border bg-surface hover:border-muted flex h-full w-full flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors"
-            onClick={() => onSeed(suggestion.prompt)}
+            className="border-border bg-surface hover:border-muted flex h-full w-full items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors"
+            onClick={() => onSeed(prompt)}
             type="button"
           >
-            <span className="text-sm font-medium">{suggestion.title}</span>
-            <span className="text-muted line-clamp-2 text-xs leading-5">{suggestion.prompt}</span>
+            {/* Shape before words: four cards of the same size and colour are
+                told apart by their glyph long before the titles are read. */}
+            <Icon className="text-muted mt-0.5 size-4" />
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-sm font-medium">{title}</span>
+              <span className="text-muted line-clamp-2 text-xs leading-5">{prompt}</span>
+            </span>
           </button>
         </li>
       ))}
     </ul>
   );
+}
+
+/**
+ * A menu row's glyph.
+ *
+ * One wrapper rather than the class list repeated at each call site: menu items
+ * whose icons drift a pixel or a shade apart are the thing that makes a menu
+ * look assembled instead of designed.
+ */
+function MenuIcon({ Icon }: Readonly<{ Icon: (props: { className?: string }) => ReactNode }>) {
+  return <Icon className="text-muted size-4 shrink-0" />;
 }
 
 type RailProps = {
@@ -541,7 +571,10 @@ function ThreadRail({
                   aria-label="Conversation list actions"
                   onAction={() => onDeleteAll()}
                 >
-                  <Dropdown.Item id="delete-all">Delete all conversations</Dropdown.Item>
+                  <Dropdown.Item id="delete-all">
+                    <MenuIcon Icon={TrashIcon} />
+                    Delete all conversations
+                  </Dropdown.Item>
                 </Dropdown.Menu>
               </Dropdown.Popover>
             </Dropdown>
@@ -632,16 +665,28 @@ function ThreadMenu({
             if (thread) onOpen(thread);
           }}
         >
-          <Dropdown.Item id="new">New chat</Dropdown.Item>
+          <Dropdown.Item id="new">
+            <MenuIcon Icon={PlusIcon} />
+            New chat
+          </Dropdown.Item>
           {threads.map((thread) => (
             <Dropdown.Item id={thread.id} key={thread.id}>
+              <MenuIcon Icon={MessageIcon} />
               {thread.id === activeId ? `• ${thread.title}` : thread.title}
             </Dropdown.Item>
           ))}
           {threads.some((thread) => thread.id === activeId) ? (
-            <Dropdown.Item id="delete-current">Delete this chat</Dropdown.Item>
+            <Dropdown.Item id="delete-current">
+              <MenuIcon Icon={TrashIcon} />
+              Delete this chat
+            </Dropdown.Item>
           ) : null}
-          {threads.length > 0 ? <Dropdown.Item id="clear">Delete all</Dropdown.Item> : null}
+          {threads.length > 0 ? (
+            <Dropdown.Item id="clear">
+              <MenuIcon Icon={TrashIcon} />
+              Delete all
+            </Dropdown.Item>
+          ) : null}
         </Dropdown.Menu>
       </Dropdown.Popover>
     </Dropdown>
