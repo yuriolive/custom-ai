@@ -7,16 +7,13 @@
  * one navigation and buys all four.
  *
  * Pure module: imported by both the Server Component that reads
- * `searchParams` and the `"use client"` filter rail that writes them.
+ * `searchParams` and the `"use client"` filter rail that writes them — and by
+ * `node --test`, which is why `./types` carries its `.ts` extension (see the
+ * header of `format.ts`).
  */
 
-import type {
-  CatalogQuery,
-  CatalogSort,
-  PriceBand,
-  QualityTier,
-} from "./types";
-import { CATALOG_SORTS, PRICE_BANDS, QUALITY_TIERS } from "./types";
+import type { CatalogQuery, CatalogSort, ModelCategory, PriceBand, QualityTier } from "./types.ts";
+import { CATALOG_SORTS, MODEL_CATEGORIES, PRICE_BANDS, QUALITY_TIERS } from "./types.ts";
 
 export const PAGE_SIZE = 24;
 
@@ -37,10 +34,7 @@ function positiveInt(value: string | undefined): number | null {
   return n;
 }
 
-function oneOf<T extends string>(
-  value: string | undefined,
-  allowed: readonly T[],
-): T | null {
+function oneOf<T extends string>(value: string | undefined, allowed: readonly T[]): T | null {
   if (!value) return null;
   return allowed.includes(value as T) ? (value as T) : null;
 }
@@ -64,6 +58,9 @@ export function parseCatalogQuery(raw: RawSearchParams): CatalogQuery {
     // Handles are `^[a-z0-9][a-z0-9-]{1,38}$` by schema CHECK. Anything else
     // cannot match a row, so it is dropped rather than sent to Postgres.
     creator: /^[a-z0-9][a-z0-9-]{1,38}$/.test(handle) ? handle : null,
+    // `use`, not `category`: it is the shortest thing that reads correctly in a
+    // shared URL, and it matches the column it filters (`base_models.use_cases`).
+    category: oneOf<ModelCategory>(first(raw.use), MODEL_CATEGORIES),
     sort: oneOf<CatalogSort>(first(raw.sort), CATALOG_SORTS) ?? DEFAULT_SORT,
     page: positiveInt(first(raw.page)) ?? 1,
   };
@@ -74,9 +71,7 @@ export function parseCatalogQuery(raw: RawSearchParams): CatalogQuery {
  * catalog URL is a bare `/models` — which is also what belongs in the
  * `<link rel=canonical>`.
  */
-export function catalogQueryToSearchParams(
-  query: CatalogQuery,
-): URLSearchParams {
+export function catalogQueryToSearchParams(query: CatalogQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
   if (query.minSpeed != null) params.set("speed", String(query.minSpeed));
@@ -84,6 +79,7 @@ export function catalogQueryToSearchParams(
   if (query.quality) params.set("quality", query.quality);
   if (query.price) params.set("price", query.price);
   if (query.creator) params.set("creator", query.creator);
+  if (query.category) params.set("use", query.category);
   if (query.sort !== DEFAULT_SORT) params.set("sort", query.sort);
   if (query.page > 1) params.set("page", String(query.page));
   return params;
@@ -108,24 +104,31 @@ export function catalogHref(query: CatalogQuery, pathname = "/models"): string {
  * landing on page 4 of a two-page result set is a dead end the user did not ask
  * for.
  */
-export function withCatalogQuery(
-  query: CatalogQuery,
-  patch: Partial<CatalogQuery>,
-): CatalogQuery {
+export function withCatalogQuery(query: CatalogQuery, patch: Partial<CatalogQuery>): CatalogQuery {
   const next = { ...query, ...patch };
   if (patch.page === undefined) next.page = 1;
   return next;
 }
 
-/** True when any filter or search term is active — drives the zero-results copy. */
+/**
+ * True when any filter, search term or category tab is active — drives the
+ * zero-results copy.
+ *
+ * The category tab counts. It is not on the facet rail, but it narrows the grid
+ * exactly as a facet does, so an empty grid under an active tab must say "nothing
+ * matched" rather than "nobody has published anything" (FR-MKT-011). The counted
+ * tabs make an empty tab hard to reach — they only render when they have rows —
+ * but a hand-edited `?use=math` gets there directly.
+ */
 export function hasActiveFilters(query: CatalogQuery): boolean {
   return Boolean(
     query.q ||
-      query.minSpeed != null ||
-      query.minContext != null ||
-      query.quality ||
-      query.price ||
-      query.creator,
+    query.minSpeed != null ||
+    query.minContext != null ||
+    query.quality ||
+    query.price ||
+    query.creator ||
+    query.category,
   );
 }
 
@@ -136,6 +139,7 @@ export const EMPTY_QUERY: CatalogQuery = {
   quality: null,
   price: null,
   creator: null,
+  category: null,
   sort: DEFAULT_SORT,
   page: 1,
 };

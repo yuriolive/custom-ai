@@ -8,7 +8,7 @@ import { Hero } from "@/components/marketing/hero";
 import { ProofStrip } from "@/components/marketing/proof-strip";
 import { Quickstart } from "@/components/marketing/quickstart";
 import { MarketingContainer } from "@/components/marketing/section";
-import { fetchCatalogPage } from "@/components/marketplace/queries";
+import { fetchCatalogGroups } from "@/components/marketplace/queries";
 import { EMPTY_QUERY } from "@/components/marketplace/search-params";
 import { gatewayBaseUrl } from "@/components/marketplace/snippets";
 import { publicEnv } from "@/lib/public-env";
@@ -48,7 +48,7 @@ export const dynamic = "force-dynamic";
  * renders live rows or makes the creator pitch instead of showing placeholder
  * cards. Tool calling is a roadmap item and is named as one.
  *
- * ONE `await`, DEGRADING. `fetchCatalogPage` catches its own errors and returns
+ * ONE `await`, DEGRADING. `fetchCatalogGroups` catches its own errors and returns
  * an empty page rather than throwing (see its comment), so the front door
  * survives Supabase being briefly unreachable — it renders the zero-models
  * branch instead of a 500.
@@ -90,8 +90,8 @@ export default async function LandingPage() {
   // answers both questions the page has: how many public models exist, and which
   // three to show. A separate count query would be a second round trip for a
   // number this result already carries.
-  const catalog = await fetchCatalogPage(supabase, EMPTY_QUERY);
-  const featured = catalog.models.slice(0, FEATURED_COUNT);
+  const catalog = await fetchCatalogGroups(supabase, EMPTY_QUERY);
+  const featured = catalog.groups.slice(0, FEATURED_COUNT);
 
   // The snippet has to name a model, and it should name a real one. Falling back
   // to `NEXT_PUBLIC_DEFAULT_MODEL` LOWERCASED: platform ids are lowercase by
@@ -99,6 +99,9 @@ export default async function LandingPage() {
   // resolve — `resolve.ts` lowercases each half — but rendering the HF casing
   // here would teach a visitor an id shape that only works by coincidence
   // (UI-REDESIGN-PLAN.md §1.1, L6).
+  // `featured[0].modelId` is the QUOTED listing's platform id, which is what
+  // `/v1/chat/completions` resolves — not the base model's `publisher/name` slug,
+  // which looks identical in shape and resolves to nothing.
   const snippetModelId = featured[0]?.modelId ?? publicEnv.defaultModel.toLowerCase();
 
   return (
@@ -114,7 +117,7 @@ export default async function LandingPage() {
       <MarketingContainer>
         <Quickstart baseUrl={baseUrl} modelId={snippetModelId} />
         <ColdStart />
-        <FeaturedModels baseUrl={baseUrl} models={featured} total={catalog.total} />
+        <FeaturedModels baseUrl={baseUrl} groups={featured} total={catalog.total} />
         <ForCreators />
       </MarketingContainer>
 

@@ -13,9 +13,12 @@ State at the end of the first build session. Read this first tomorrow.
 
 Billing checked against real rows: `ceil(53×0.5)+ceil(42×1.5) = 90` micro-USD, platform `18`, creator `72` — exact. One `wallet_ledger` row per transaction, `v_balance_drift` returns zero rows, and a client that hung up mid-stream was still billed its full 400 tokens.
 
-**Tests:** 349 node across 6 test groups (348 pass, 1 skipped) · 289 pgTAP · 48 Python.
-CI runs all of them. Node re-measured 2026-08-20 (it had drifted from 336); Python
-2026-08-19. The pgTAP figure is the sum of the `plan()` declarations in `supabase/tests/`.
+**Tests:** 363 node across 6 test groups (362 pass, 1 skipped) · 339 pgTAP · 48 Python.
+CI runs all of them. Node and pgTAP re-measured 2026-08-20 — the pgTAP figure by RUNNING
+them (`npx supabase test db --local supabase/tests` reports its own total), not by summing
+`plan()` declarations, which is what the two figures before this one were. `npm run test:app`
+now also globs `components/**/*.test.ts`, so a pure module under `components/` is testable
+where it was not before.
 
 ## Branches
 

@@ -326,3 +326,138 @@ update public.custom_models
          'at', now(),
          'note', 'seeded by supabase/seed.sql, not resolved by the #25 cascade')
  where id = '00000000-0000-0000-0000-0000000000c1';
+
+-- ── 4d. Two more listings of the SAME base model ────────────────────────────
+-- Without these the local catalog cannot show the thing #26 built: every
+-- aggregate over a single listing is that listing, so a one-listing fixture
+-- renders a grouped card that is indistinguishable from the ungrouped one it
+-- replaced. Three listings of one base model is the smallest fixture where
+-- "3 listings", "best tok/s", "max context" and "from $x" are all visibly
+-- different numbers, and where the quality facet has a variant to pick INSIDE
+-- the group instead of a card to delete.
+--
+-- THESE TWO DO NOT SERVE. `upstream_endpoint_ref` names quant files that the
+-- upstream repo may not hold, so a chat completion against either will fail at
+-- the worker. That is deliberate and is the honest trade: they exist to populate
+-- the CATALOG, which is a read surface, and the MVP-0 acceptance run goes through
+-- `…c1` — the one listing whose ref was verified against a live Modal worker.
+-- Do not point a smoke test at these.
+--
+-- Same creator, same repo, same revision, different quantization, which is
+-- exactly what `custom_models_variant_uniq` (20260820000100) permits: one
+-- creator, one repo, one revision, one variant = one listing.
+--
+-- Inserted as `draft` and flipped to `ready` by the update below, the same two
+-- steps §4a/§4b take for `…c1`: `custom_models_ready_needs_endpoint` and
+-- `custom_models_ready_needs_placement` both fire on INSERT, so a row cannot be
+-- born `ready` before the solver has run over it.
+insert into public.custom_models (
+  id, user_id, slug, display_name, description,
+  hf_repo_slug, served_model_name, weights_format, runtime,
+  variant_quant_tag, variant_files,
+  weights_bytes, active_weights_bytes,
+  n_layers, n_attention_layers, full_attention_interval,
+  n_kv_heads, head_dim, kv_dtype_bytes, max_position_embeddings,
+  ssm_state_size, ssm_inner_size, ssm_group_count, ssm_conv_kernel,
+  ssm_state_bytes_per_seq,
+  context_length, context_verified, target_tokens_per_second,
+  price_prompt_micro_usd_per_mtoken, price_completion_micro_usd_per_mtoken,
+  platform_fee_bps, visibility, status, base_model_id
+) values
+  ('00000000-0000-0000-0000-0000000000c2',
+   '00000000-0000-0000-0000-0000000000a1',
+   'qwen3.8-27b-uncensored-q6', 'Qwen3.8 27B Uncensored (Q6_K)',
+   'Six-bit build of the same weights: effectively indistinguishable from FP16, '
+   'and slower and dearer than the Q4 for it.',
+   'JonathanColetti/Qwen3.8-27B-Uncensored-GGUF', 'qwen3.8-27b-uncensored-q6',
+   'gguf', 'llamacpp', 'Q6_K',
+   array['Qwen3.8-27B-Uncensored-Q6_K.gguf'],
+   -- Six-bit is ~1.5x the four-bit weight set. The same dense-compute
+   -- PLACEHOLDER as `…c1`: active == total.
+   24500000000, 24500000000,
+   65, 16, 4,
+   4, 256, 2, 262144,
+   128, 6144, 16, 4,
+   public.calc_ssm_state_bytes(65 - 16, 128, 6144, 16, 4, 2::smallint),
+   32768, false, 30,
+   900000, 2400000,
+   2000, 'public', 'draft', '00000000-0000-0000-0000-0000000000d1'),
+  ('00000000-0000-0000-0000-0000000000c3',
+   '00000000-0000-0000-0000-0000000000a1',
+   'qwen3.8-27b-uncensored-q8', 'Qwen3.8 27B Uncensored (Q8_0)',
+   'Eight-bit build at the architecture''s full 262k context — the long-context '
+   'end of this model, and the dearest.',
+   'JonathanColetti/Qwen3.8-27B-Uncensored-GGUF', 'qwen3.8-27b-uncensored-q8',
+   'gguf', 'llamacpp', 'Q8_0',
+   array['Qwen3.8-27B-Uncensored-Q8_0.gguf'],
+   32000000000, 32000000000,
+   65, 16, 4,
+   4, 256, 2, 262144,
+   128, 6144, 16, 4,
+   public.calc_ssm_state_bytes(65 - 16, 128, 6144, 16, 4, 2::smallint),
+   262144, true, 30,
+   1800000, 4800000,
+   2000, 'public', 'draft', '00000000-0000-0000-0000-0000000000d1')
+on conflict (id) do nothing;
+
+-- The same solver call §4a makes for `…c1`, for the same reason: placement is
+-- never hand-written (FR-DB-008), and `custom_models_ready_needs_placement`
+-- refuses a `ready` row without it. Running it here also means a `db reset`
+-- smoke-tests the solver on a 262k-context row, which `…c1` (8k) does not.
+with r as (
+  select m.id,
+         public.resolve_placement(
+           m.weights_bytes, m.active_weights_bytes,
+           m.n_layers, m.n_kv_heads, m.head_dim,
+           m.context_length, m.target_tokens_per_second,
+           m.kv_dtype_bytes, null,
+           m.n_attention_layers, m.ssm_state_bytes_per_seq
+         ) as p
+    from public.custom_models m
+   where m.id in ('00000000-0000-0000-0000-0000000000c2',
+                  '00000000-0000-0000-0000-0000000000c3')
+)
+update public.custom_models m
+   set gpu_tier_id                     = r.p->>'gpu_tier_id',
+       gpu_usd_per_hour_micro_snapshot = (r.p->>'usd_per_hour_micro')::bigint,
+       predicted_tokens_per_second     = (r.p->>'predicted_tokens_per_second')::integer,
+       max_concurrent_streams          = (r.p->>'max_concurrent_streams')::integer,
+       kv_bytes_per_token              = (r.p->>'kv_bytes_per_token')::bigint,
+       cost_floor_micro_per_mtoken     = (r.p->>'cost_floor_micro_per_mtoken')::bigint,
+       cold_start_budget_s             = (r.p->>'cold_start_budget_s')::integer,
+       volume_gb                       = coalesce((r.p->>'volume_gb')::integer, 0),
+       placement_rationale             = r.p,
+       -- PLACEHOLDER, exactly as in §4b: the smoke test that would measure this
+       -- has not run against these two, so the prediction stands in for it.
+       measured_tokens_per_second      = (r.p->>'predicted_tokens_per_second')::integer,
+       -- The Modal pool reference is a pure function of
+       -- (repo, file, ctx_size, parallel) — see §4b — so it is assembled from
+       -- the row rather than pasted, and `ctx_size` cannot drift away from
+       -- `context_length` the way a hand-written one would.
+       upstream_endpoint_ref =
+         'model_repo=JonathanColetti%2FQwen3.8-27B-Uncensored-GGUF'
+         '&model_file=' || m.variant_files[1]
+         || '&ctx_size=' || m.context_length || '&parallel=1',
+       status                          = 'ready',
+       ready_at                        = now()
+  from r
+ where m.id = r.id
+   and (r.p->>'feasible')::boolean;
+
+-- A row the solver refused stays a `draft` and never reaches the catalog, which
+-- is correct but SILENT — and what it would be silent about is the tier catalog
+-- no longer fitting these weights, which is worth knowing on a `db reset`.
+do $$
+declare v_stuck integer;
+begin
+  select count(*) into v_stuck
+    from public.custom_models
+   where id in ('00000000-0000-0000-0000-0000000000c2',
+                '00000000-0000-0000-0000-0000000000c3')
+     and status <> 'ready';
+  if v_stuck > 0 then
+    raise warning 'seed: % of the grouped-catalog listings did not fit any GPU tier '
+                  'and stayed drafts; the grouped card will show fewer listings',
+                  v_stuck;
+  end if;
+end $$;

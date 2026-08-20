@@ -24,7 +24,7 @@
     "typecheck:mock-upstream": "tsc -p tools/mock-upstream --noEmit",
     "typecheck:gateway": "tsc -p supabase/functions/gateway --noEmit",
     "typecheck": "npm run typecheck:app && npm run typecheck:hf-probe && npm run typecheck:mock-upstream && npm run typecheck:gateway && npm run typecheck:keygen && npm run typecheck:anthropic-adapter",
-    "test:app": "node --test \"lib/**/*.test.ts\"",
+    "test:app": "node --test \"lib/**/*.test.ts\" \"components/**/*.test.ts\"",
     "test:hf-probe": "npm test --workspace @nexus/hf-probe",
     "test:gateway": "node --test \"supabase/functions/gateway/*.test.ts\" \"supabase/functions/gateway/tests/*_test.ts\"",
     "test:mock-upstream": "npm test --workspace @custom-ai/mock-upstream",

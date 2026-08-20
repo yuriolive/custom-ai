@@ -1,18 +1,24 @@
 import Link from "next/link";
 
 import { CatalogGrid } from "@/components/marketplace/catalog-grid";
-import type { CatalogModel } from "@/components/marketplace/types";
+import type { CatalogGroup } from "@/components/marketplace/types";
 
 import { Section } from "./section";
 
 /**
  * Section 5 — featured models (docs/UI-REDESIGN-PLAN.md §4).
  *
- * The real `ModelCard`, not a marketing lookalike. Three of them, live from the
+ * The real `GroupCard`, not a marketing lookalike. Three of them, live from the
  * catalog, over a link into the full list. It sells the supply side and doubles
  * as the catalog's entry point — and because it is the same component the catalog
  * renders, a card that regresses regresses in both places at once instead of
  * only in the place nobody checks.
+ *
+ * A CARD IS A MODEL HERE TOO (#26). Three cards used to be three deployments, so
+ * this section could show the same model three times over — a landing page whose
+ * whole point is "look how much is here" advertising one model as its entire
+ * inventory. `total` is now a count of models, which is also what the hero's
+ * "N models" claims.
  *
  * WITH NO PUBLIC MODELS, THIS SECTION RENDERS NOTHING. That is the state
  * production is in today (`docs/ROADMAP.md`, "what deployed does not yet mean"),
@@ -33,11 +39,11 @@ import { Section } from "./section";
  * apology, and the section reappears on its own the moment a model is published.
  */
 export function FeaturedModels({
-  models,
+  groups,
   total,
   baseUrl,
-}: Readonly<{ models: CatalogModel[]; total: number; baseUrl: string }>) {
-  if (models.length === 0) return null;
+}: Readonly<{ groups: CatalogGroup[]; total: number; baseUrl: string }>) {
+  if (groups.length === 0) return null;
 
   return (
     <Section
@@ -47,12 +53,12 @@ export function FeaturedModels({
       title="Models people have already shipped"
     >
       <div className="flex flex-col gap-6">
-        <CatalogGrid baseUrl={baseUrl} models={models} />
+        <CatalogGrid baseUrl={baseUrl} groups={groups} />
         <Link
           className="text-foreground hover:text-accent focus-visible:ring-accent self-start rounded-sm text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
           href="/models"
         >
-          {total > models.length ? `Browse all ${total} models →` : "Browse the catalog →"}
+          {total > groups.length ? `Browse all ${total} models →` : "Browse the catalog →"}
         </Link>
       </div>
     </Section>
