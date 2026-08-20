@@ -66,6 +66,18 @@ export type SessionProfile = {
    * balance chip at all in that case rather than a $0.00 that is not true.
    */
   balanceMicroUsd: number | null;
+  /**
+   * Platform moderator (§5.5). Read here rather than in a second query because
+   * the nav needs it on every render and this row is already being fetched.
+   *
+   * NOT a security boundary — it only decides whether a link is drawn. The
+   * operator RPCs each re-check `is_platform_operator(auth.uid())` in Postgres
+   * and raise 42501 regardless (migration 20260820002000, and
+   * supabase/tests/08). It is safe to read here for the same reason it is safe
+   * to store: `profiles_update_own` is an allowlist over three columns, so the
+   * flag is read-only to its owner.
+   */
+  isOperator: boolean;
 };
 
 /**
@@ -86,7 +98,7 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
 
   const { data } = await supabase
     .from("profiles")
-    .select("id, handle, display_name, avatar_url, balance_micro_usd")
+    .select("id, handle, display_name, avatar_url, balance_micro_usd, is_operator")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -97,6 +109,7 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
       displayName: null,
       avatarUrl: null,
       balanceMicroUsd: null,
+      isOperator: false,
     };
   }
 
@@ -106,5 +119,6 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
     displayName: (data.display_name as string | null) ?? null,
     avatarUrl: (data.avatar_url as string | null) ?? null,
     balanceMicroUsd: (data.balance_micro_usd as number | null) ?? null,
+    isOperator: data.is_operator === true,
   };
 }

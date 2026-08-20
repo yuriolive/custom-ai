@@ -3,12 +3,23 @@
  *
  * CACHING BOUNDARY (FR-GW-052/053 — this is a security boundary, not an optimization):
  *   CACHEABLE (60 s, per-isolate)  model row: endpoint, served name, prices, status,
- *                                  visibility, owner. Staleness is bounded and prices
+ *                                  visibility, owner, and the per-listing
+ *                                  `suspended_at`. Staleness is bounded and prices
  *                                  are snapshot per transaction anyway (FR-GW-024).
- *   NEVER CACHED                   api key validity, wallet balance, suspension state.
+ *   NEVER CACHED                   api key validity, wallet balance, ACCOUNT suspension.
  *                                  Caching a key creates a revocation window in which
  *                                  a leaked key still works; caching balance
  *                                  reintroduces the overdraft race.
+ *
+ * THE TWO SUSPENSIONS ARE NOT THE SAME THING and land on opposite sides of that
+ * line. `profiles.is_suspended` is the PAYER's account, read inside the
+ * authorize_request transaction on every call and never cached. `suspended_at` is
+ * one LISTING's operator takedown (§5.5): a property of the model row, cached with
+ * it, and therefore observable up to 60 s late on a warm isolate. That is the same
+ * bound a creator flipping `visibility` to private already lives with, which is
+ * the behavior a suspension is specified to match — and `invalidateModelCache()`
+ * exists to collapse it to zero once the Realtime `custom_models` subscription
+ * (FR-GW-054) is wired up.
  *   Balance is deliberately absent from ResolvedRequest: it is read INSIDE the
  *   authorize_request transaction (FR-GW-053).
  */
@@ -87,6 +98,13 @@ export interface RawModelRow {
   status: string;
   visibility: string;
   deleted_at: string | null;
+  /**
+   * Operator-only per-listing takedown (§5.5). Non-null => 404, for EVERY
+   * caller including the owner. Optional on this row type so a fixture written
+   * before the column existed keeps meaning "not suspended" rather than
+   * failing to typecheck.
+   */
+  suspended_at?: string | null;
   runpod_endpoint_id: string | null;
   served_model_name: string;
   runtime: ModelRuntime;
@@ -190,9 +208,18 @@ export interface ResolveOutcome {
  * Check order (each failure is as cheap as the one before it):
  *   1. key exists                          -> 401 invalid_api_key
  *   2. key not revoked                     -> 401 revoked_api_key
- *   3. model exists / not soft-deleted     -> 404 model_not_found
+ *   3. model exists / not soft-deleted /
+ *      not suspended                       -> 404 model_not_found
  *   4. visibility: private && not owner    -> 404 model_not_found  (NEVER 403)
  *   5. status === 'ready'                  -> 503 model_unavailable
+ *
+ * SUSPENSION SITS IN STEP 3, NOT STEP 4, and the difference is the whole point of
+ * the column (§5.5). Step 4 has an owner branch: a private model still serves the
+ * creator who owns it. Step 3 has none — a soft-deleted listing serves nobody, and
+ * neither does a suspended one. A takedown that leaves the offender's own API key
+ * streaming has not taken anything down, so the owner gets the same 404 as a
+ * stranger. It is also not a 503: `model_unavailable` says "exists, try later",
+ * which both tells a stranger the listing exists and tells the creator to retry.
  *
  * NOTE ON ORDER: the PRD table lists status (step 5) before visibility (step 6).
  * That ordering leaks existence: a stranger probing a PRIVATE, not-yet-ready model
@@ -233,7 +260,9 @@ export async function resolveRequest(
   }
 
   const model = cached ?? row?.model ?? null;
-  if (!model || model.deleted_at) throw notFound(parsed);
+  // `suspended_at` is here rather than below the visibility branch on purpose:
+  // no owner exemption. See the check-order note above.
+  if (!model || model.deleted_at || model.suspended_at) throw notFound(parsed);
 
   // Visibility BEFORE status — see note above.
   if (model.visibility === "private" && model.user_id !== key.user_id) {
@@ -320,6 +349,7 @@ interface GatewayResolveEnvelope {
   modelStatus?: string;
   modelVisibility?: string;
   modelDeletedAt?: string | null;
+  modelSuspendedAt?: string | null;
 }
 
 function envelopeToRow(env: GatewayResolveEnvelope): RawResolveRow {
@@ -336,6 +366,7 @@ function envelopeToRow(env: GatewayResolveEnvelope): RawResolveRow {
       status: env.modelStatus ?? "",
       visibility: env.modelVisibility ?? "",
       deleted_at: env.modelDeletedAt ?? null,
+      suspended_at: env.modelSuspendedAt ?? null,
       runpod_endpoint_id: env.upstreamEndpointRef ?? null,
       served_model_name: env.servedModelName ?? "",
       runtime: env.runtime as ModelRuntime,

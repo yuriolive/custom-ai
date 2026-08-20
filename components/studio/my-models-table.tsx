@@ -241,6 +241,22 @@ export function MyModelsTable({
                             {model.remediationHint}
                           </span>
                         ) : null}
+                        {/* §5.5 / #31. The takedown, on the row, with its reason.
+                            This is the ONLY place its target can learn about it:
+                            the listing is gone from the catalog, gone from the
+                            model page, and 404s at the gateway, and the owner
+                            policy is the last one that still admits the row. A
+                            suspension nobody can read is a support ticket with
+                            no answer — and it is not a status, so
+                            `ModelStatusChip` will never carry it. */}
+                        {model.suspendedAt ? (
+                          <span className="text-danger max-w-md text-xs">
+                            Suspended by an operator
+                            {model.suspensionReason ? `: ${model.suspensionReason}` : ""}. It is
+                            not listed and the API returns 404. Reply to your signup email to
+                            appeal — you cannot lift this yourself.
+                          </span>
+                        ) : null}
                       </div>
                     </Table.Cell>
                     <Table.Cell>

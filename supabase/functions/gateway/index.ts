@@ -1416,7 +1416,20 @@ export interface CatalogRow {
   createdAt: string;
 }
 
-/** The models this key may address: every public `ready` model plus its owner's own. */
+/**
+ * The models this key may address: every public `ready` model plus its owner's own.
+ *
+ * `suspended_at` is filtered here and NOT inside the `or(...)`, which is what
+ * makes it apply to the owner branch as well: a suspended listing leaves this
+ * catalog for its creator too. `/v1/models` answers "what can this key call",
+ * and after §5.5 the honest answer for a suspended listing is "nothing" — the
+ * same 404 `resolveRequest` gives it. Listing a model that is guaranteed to 404
+ * is worse than omitting it.
+ *
+ * This runs with the service-role key, which is BYPASSRLS, so
+ * `custom_models_select_public` does not do it for us — the predicate has to be
+ * written out, exactly as `status` and `deleted_at` already are.
+ */
 export async function listModels(
   key: { user_id: string },
   deps: GatewayDeps,
@@ -1426,6 +1439,7 @@ export async function listModels(
     select: "slug,created_at,visibility,user_id,profiles!inner(handle)",
     status: "eq.ready",
     deleted_at: "is.null",
+    suspended_at: "is.null",
     or: `(visibility.eq.public,user_id.eq.${key.user_id})`,
     order: "created_at.desc",
     limit: "1000",

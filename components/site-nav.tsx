@@ -40,6 +40,19 @@ export async function SiteNav() {
           </Link>
         ) : null}
 
+        {/* Operators only, and only because a moderation queue nobody can find
+            is a queue nobody works. Hiding the link is not the access control —
+            `/operator` 404s for everyone else and every RPC behind it re-checks
+            in Postgres (§5.5). */}
+        {profile?.isOperator ? (
+          <Link
+            className="text-muted hover:text-foreground hidden text-sm transition-colors sm:inline"
+            href="/operator"
+          >
+            Operator
+          </Link>
+        ) : null}
+
         {/* min-w-0 lets this cluster shrink; without it the handle's intrinsic
             width forced a 37px document overflow at 375px. */}
         <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">

@@ -125,7 +125,7 @@ Errors always use the OpenAI envelope:
 | 400 | `invalid_model_format` | `model` has no `/` |
 | 401 | `invalid_api_key` / `revoked_api_key` | bad or revoked key |
 | 402 | `insufficient_balance` | available balance below hold |
-| 404 | `model_not_found` | unknown, **or private and caller is not owner** |
+| 404 | `model_not_found` | unknown, **or private and caller is not owner**, **or operator-suspended (owner included)** |
 | 503 | `model_unavailable` | not `ready` |
 | 504 | `cold_start_timeout` / `stream_timeout` | budget exceeded |
 

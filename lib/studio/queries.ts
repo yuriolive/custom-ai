@@ -28,7 +28,11 @@ const MODEL_COLUMNS =
   "id, slug, display_name, status, visibility, context_length, " +
   "measured_tokens_per_second, predicted_tokens_per_second, cost_floor_micro_per_mtoken, " +
   "price_prompt_micro_usd_per_mtoken, price_completion_micro_usd_per_mtoken, pricing_version, " +
-  "total_requests, remediation_hint, provisioning_error, created_at, ready_at";
+  "total_requests, remediation_hint, provisioning_error, created_at, ready_at, " +
+  // §5.5 / #31. Read here so a takedown is not SILENT to its target: the owner
+  // policy is the only one that still admits a suspended row, which makes Studio
+  // the only place a creator can find out their listing is gone and why.
+  "suspended_at, suspension_reason";
 
 /** Rows shaped as PostgREST returns them, before renaming. */
 type RawModel = {
@@ -49,6 +53,8 @@ type RawModel = {
   provisioning_error: unknown;
   created_at: string;
   ready_at: string | null;
+  suspended_at: string | null;
+  suspension_reason: string | null;
 };
 
 /** The upstream's own message out of the `provisioning_error` envelope. */
@@ -105,6 +111,8 @@ export async function fetchMyModels(
       provisioningError: errorMessage(m.provisioning_error),
       createdAt: m.created_at,
       readyAt: m.ready_at,
+      suspendedAt: m.suspended_at,
+      suspensionReason: m.suspension_reason,
     };
   });
 }
