@@ -24,8 +24,18 @@ export async function SiteNav() {
           <span className="text-muted font-normal"> / inference</span>
         </Link>
 
+        {/* Chat before Playground: it is the surface most visitors want, and
+            the Playground is the one for people who already know they want
+            parameters. Both are protected routes, so both are shown only to a
+            signed-in visitor — a link to a redirect is not a link. */}
+        {profile ? (
+          <Link className="text-muted hover:text-foreground text-sm transition-colors" href="/chat">
+            Chat
+          </Link>
+        ) : null}
+
         <Link
-          className="text-muted hover:text-foreground text-sm transition-colors"
+          className="text-muted hover:text-foreground hidden text-sm transition-colors sm:inline"
           href="/playground"
         >
           Playground

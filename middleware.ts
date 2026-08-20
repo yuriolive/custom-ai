@@ -7,7 +7,7 @@ import { updateSession } from "@/lib/supabase/middleware";
  * route table in CONTRACTS.md:
  *
  *   public         /  ·  /models/**  ·  /login  ·  /signup  ·  /auth/**
- *   authenticated  /console/**  ·  /studio/**  ·  /playground/**
+ *   authenticated  /chat/**  ·  /console/**  ·  /studio/**  ·  /playground/**
  *
  * The whole route table lives in `lib/supabase/middleware.ts` so it is testable
  * without booting a request.

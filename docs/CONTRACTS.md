@@ -197,7 +197,9 @@ Route protection:
 
 | Public | Authenticated |
 |---|---|
-| `/`, `/models/**`, `/login`, `/signup`, `/auth/**` | `/console/**`, `/studio/**`, `/playground/**` |
+| `/`, `/models/**`, `/login`, `/signup`, `/auth/**` | `/chat/**`, `/console/**`, `/studio/**`, `/playground/**` |
+
+`/chat` is authenticated for a reason that is not "it feels internal": every turn wakes a metered GPU, so an anonymous turn is inference the platform pays for outright, with no wallet to charge and no creator to pay. That is the same free-inference shape the `GREATEST(1, …)` minimum billable unit above exists to close. Guest mode is a budget and a rate limit, not a flag — see `docs/CHAT-PLAN.md` §7.
 
 **What the browser may do directly** (RLS enforces all of it — no route handler needed):
 
@@ -213,6 +215,7 @@ Route protection:
 **What it may NOT**, and therefore needs a server route with the service role:
 
 - **Creating an API key.** `api_keys` has no client INSERT policy, by design — the plaintext must be generated server-side, returned exactly once, and never persisted. Reuse `generateApiKey`/`hashApiKey` from `supabase/functions/gateway/auth.ts`; do not write a second implementation of the format.
+- **Holding the chat session key.** `/chat` bills the signed-in user, so its browser session carries a real `sk-plat-` key minted by `lib/chat/session-key.ts`, named `Web chat (browser session)` and scoped `['inference','chat']`. The plaintext lives in ONE httpOnly cookie (`__Host-nx_chat_key`, or `nx_chat_key` in development where a `Secure` cookie cannot be set) and is read only by `/api/chat`. It is never in a column, never in a log line, never in a response body. The gateway is unchanged by this: chat turns travel the ordinary authenticated path. Do not add a second credential type to the gateway to avoid the cookie — that trade is written up in `docs/CHAT-PLAN.md` §4.
 - Anything touching `usage_transactions`, `wallet_ledger`, `creator_earnings` as a write. Those are RPC-only.
 
 `profiles` rows are created automatically by a trigger on `auth.users`, and `handle` is **immutable** by RLS — there is no handle-claim flow to build. Display it; do not offer to edit it.

@@ -12,8 +12,16 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./public-config";
  * session dies silently one JWT lifetime after sign-in.
  */
 
-/** Prefixes that require a session. Everything else is public. */
-const PROTECTED_PREFIXES = ["/console", "/studio", "/playground"] as const;
+/**
+ * Prefixes that require a session. Everything else is public.
+ *
+ * `/chat` is on the list for a reason that is not "it feels internal": every
+ * turn wakes a metered GPU, so an anonymous one is inference the platform pays
+ * for outright, with no wallet to charge and no creator to pay. That is the
+ * same free-inference shape the minimum-billable-unit rule exists to close
+ * (CONTRACTS.md §Money). Guest mode is a budget and a rate limit, not a flag.
+ */
+const PROTECTED_PREFIXES = ["/chat", "/console", "/studio", "/playground"] as const;
 
 /** Auth pages an already-signed-in user should not sit on. */
 const AUTH_PAGES = ["/login", "/signup"] as const;

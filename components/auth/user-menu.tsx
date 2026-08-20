@@ -53,6 +53,7 @@ export function UserMenu({ handle }: { handle: string }) {
 
       <Dropdown.Popover placement="bottom end">
         <Dropdown.Menu aria-label="Account" onAction={onAction}>
+          <Dropdown.Item id="/chat">Chat</Dropdown.Item>
           <Dropdown.Item id="/console">Console</Dropdown.Item>
           <Dropdown.Item id="/playground">Playground</Dropdown.Item>
           <Dropdown.Item id="sign-out">Sign out</Dropdown.Item>

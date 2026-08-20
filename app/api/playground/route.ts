@@ -3,7 +3,8 @@ import { convertToModelMessages, streamText } from "ai";
 import { z } from "zod";
 
 import { serverEnv } from "@/lib/env";
-import { emptyTurnMetrics, type PlaygroundUIMessage, type TurnMetrics } from "@/lib/types";
+import { createTurnMeter } from "@/lib/turn-metrics";
+import type { PlaygroundUIMessage } from "@/lib/types";
 
 /**
  * Playground → gateway proxy (FR-PLAY-001).
@@ -72,10 +73,7 @@ export async function POST(req: Request) {
 
   const modelMessages = await convertToModelMessages(messages as PlaygroundUIMessage[]);
 
-  const startedAt = Date.now();
-  let ttftMs: number | null = null;
-  let firstTokenAt: number | null = null;
-  let completionTokens = 0;
+  const meter = createTurnMeter(Date.now());
 
   const result = streamText({
     model: gateway.chatModel(model ?? "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF"),
@@ -94,62 +92,11 @@ export async function POST(req: Request) {
      * Per-turn metering rides along as UI message metadata (FR-PLAY-005) so the
      * cost footer renders from the same object as the message.
      *
-     * TTFT is measured here, at the proxy — the only place that sees both the
-     * request start and the first byte. Cost is left null until the gateway
-     * reports settlement; the shape is wired now so nothing downstream changes
-     * when it lands.
+     * The meter is shared with /api/chat (`lib/turn-metrics.ts`): both surfaces
+     * proxy the same gateway and report the same numbers, and two copies of
+     * this drift in the same direction every time.
      */
-    messageMetadata({ part }): TurnMetrics | undefined {
-      if (part.type === "start") {
-        return { ...emptyTurnMetrics };
-      }
-
-      if (part.type === "text-delta") {
-        if (firstTokenAt === null) {
-          firstTokenAt = Date.now();
-          ttftMs = firstTokenAt - startedAt;
-          return {
-            ...emptyTurnMetrics,
-            ttftMs,
-            // A cold start is the honest read of a multi-second TTFT on a
-            // scale-to-zero worker.
-            coldStart: ttftMs > 10_000,
-          };
-        }
-        completionTokens += 1; // rough live counter; replaced at finish
-        return undefined;
-      }
-
-      if (part.type === "finish") {
-        const elapsedStreamingMs = firstTokenAt ? Date.now() - firstTokenAt : null;
-        const inputTokens = part.totalUsage.inputTokens ?? null;
-        const outputTokens = part.totalUsage.outputTokens ?? null;
-
-        // llama.cpp does not guarantee usage on the final chunk
-        // (CONTRACTS.md §Upstream), so fall back to the streamed delta count
-        // and label it honestly rather than showing a confident zero.
-        const usageSource: TurnMetrics["usageSource"] =
-          outputTokens != null ? "upstream" : "estimated";
-        const completion = outputTokens ?? completionTokens;
-
-        return {
-          promptTokens: inputTokens,
-          completionTokens: completion,
-          // TODO(gateway): populate from the settlement response once
-          // deduct_token_cost surfaces cost_micro_usd through the gateway.
-          costMicroUsd: null,
-          ttftMs,
-          tokensPerSecond:
-            elapsedStreamingMs && elapsedStreamingMs > 0 && completion > 0
-              ? (completion / elapsedStreamingMs) * 1_000
-              : null,
-          coldStart: ttftMs != null ? ttftMs > 10_000 : null,
-          usageSource,
-        };
-      }
-
-      return undefined;
-    },
+    messageMetadata: (input) => meter.messageMetadata(input),
     onError(error) {
       // Message shown to the user in the inline danger Alert (FR-PLAY-009).
       return error instanceof Error ? error.message : "The gateway request failed.";

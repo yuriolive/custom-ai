@@ -356,6 +356,43 @@ export async function fetchModelByHandleAndSlug(
   return toCatalogModel(data as unknown as CatalogRow);
 }
 
+/** * Every public, ready model, for the chat model picker (FR-CHAT-002).
+ *
+ * It lives here rather than in `lib/chat/` because of `CATALOG_COLUMNS`: that
+ * projection is the security boundary described at the top of this file, and a
+ * second `select` list elsewhere in the app would be a second thing to keep
+ * hardware and endpoint refs out of. The chat picker gets the same allow-list
+ * the anonymous catalog gets, or nothing.
+ *
+ * Unpaged, with a hard ceiling. A picker is a list someone scrolls once, and
+ * pagination inside a dropdown is a worse answer than a bounded list plus a
+ * link to the full catalog. The ceiling is not decoration — without it this
+ * grows into an unbounded payload on a page that renders before the user has
+ * typed anything.
+ */
+export const CHAT_PICKER_LIMIT = 100;
+
+export async function fetchChatModels(supabase: SupabaseClient): Promise<CatalogModel[]> {
+  const { data, error } = await supabase
+    .from("custom_models")
+    .select(CATALOG_COLUMNS)
+    .eq("visibility", "public")
+    .eq("status", "ready")
+    .is("deleted_at", null)
+    // Most-called first: the chat defaults to the head of this list, and on a
+    // scale-to-zero fleet the busiest model is the one most likely to answer
+    // without a cold start (see lib/chat/models.ts).
+    .order("total_requests", { ascending: false })
+    .order("ready_at", { ascending: false, nullsFirst: false })
+    .limit(CHAT_PICKER_LIMIT);
+
+  if (error || !data) return [];
+
+  return (data as unknown as CatalogRow[])
+    .map(toCatalogModel)
+    .filter((model): model is CatalogModel => model !== null);
+}
+
 /**
  * Hard ceiling on the number of model URLs `app/sitemap.ts` will emit.
  *

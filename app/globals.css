@@ -236,6 +236,18 @@
     font-feature-settings: "cv11";
   }
 
+  /* Tailwind v4 changed its preflight: `button` now inherits `cursor: default`
+     rather than getting `pointer`. Every control in the app lost its hand
+     cursor in the upgrade, which reads as "this is not clickable" on exactly
+     the elements that are. Restored here rather than as a `cursor-pointer`
+     class on each button, because the next button someone adds would not have
+     it. Disabled controls keep the default arrow, which is the correct signal
+     for a control that will not respond. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
   /* A developer copying `!=` out of a snippet must see the two characters that
      are actually there. */
   code,

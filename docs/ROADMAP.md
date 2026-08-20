@@ -90,6 +90,19 @@ need it.
 The Playground serves one hardcoded model. Correct with one public model; broken the
 moment a second exists, and the marketplace cards already link to it.
 
+**Related, unnumbered — consumer chat (`docs/CHAT-PLAN.md`). v1 is built.** A
+parameter-free `/chat` reachable from every model page, for the audience that will never
+open the Playground; scoped as demand generation for the creator side, not as a second
+playground. It bills the signed-in user through the gateway on a session-scoped key
+(`lib/chat/session-key.ts`) rather than the Playground's `PLATFORM_API_KEY`, so creators
+earn from it. Left unnumbered because its priority against #4 and #6 was never decided —
+it was built because it was asked for.
+
+**Still open on it:** the acceptance test in the plan's §9 (one real billed turn from the
+UI, settling exactly one `usage_transactions` row) has not been run against a funded
+wallet; and per-model warmth labelling needs a `last_request_at` signal that does not
+exist in the schema — see the plan's §11.
+
 ---
 
 ## P2 — unlocks agentic clients
