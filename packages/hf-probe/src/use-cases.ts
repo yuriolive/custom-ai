@@ -178,6 +178,31 @@ const NAME_PATTERNS: readonly { readonly pattern: RegExp; readonly useCase: UseC
   { pattern: /\bembed(ding)?\b|\bgte\b|\bbge\b/, useCase: "embeddings" },
 ];
 
+/** Every use case a repo's declared metadata states outright. */
+function fromDeclaredMetadata(tags: readonly string[], pipelineTag: string | undefined): UseCase[] {
+  const found: UseCase[] = [];
+
+  for (const tag of tags) found.push(...(TAG_USE_CASES[tag] ?? []));
+  if (pipelineTag) found.push(...(PIPELINE_USE_CASES[pipelineTag] ?? []));
+
+  // Two or more declared languages is the signal — not the presence of one
+  // non-English tag, which is how a monolingual Portuguese model is tagged and
+  // which `multilingual` would misdescribe.
+  const languages = new Set(tags.filter((tag) => LANGUAGE_TAG.test(tag)));
+  if (languages.size >= 2) found.push("multilingual");
+
+  return found;
+}
+
+/** Every use case a body of text claims, by pattern. */
+function fromText(
+  text: string,
+  patterns: readonly { readonly pattern: RegExp; readonly useCase: UseCase }[],
+): UseCase[] {
+  if (!text) return [];
+  return patterns.filter(({ pattern }) => pattern.test(text)).map(({ useCase }) => useCase);
+}
+
 /**
  * A repo's metadata → its use cases, deduplicated and in vocabulary order.
  *
@@ -188,45 +213,16 @@ const NAME_PATTERNS: readonly { readonly pattern: RegExp; readonly useCase: UseC
  * other, which is exactly where a model nobody has described belongs.
  */
 export function classifyUseCases(input: UseCaseInput): UseCase[] {
-  const found = new Set<UseCase>();
-  const add = (values: readonly UseCase[]) => {
-    for (const value of values) found.add(value);
-  };
-
   const tags = (input.tags ?? []).map((t) => t.toLowerCase().trim()).filter(Boolean);
 
-  for (const tag of tags) {
-    const direct = TAG_USE_CASES[tag];
-    if (direct) add(direct);
-  }
-
-  const pipeline = input.pipelineTag?.toLowerCase().trim();
-  if (pipeline) {
-    const direct = PIPELINE_USE_CASES[pipeline];
-    if (direct) add(direct);
-  }
-
-  // Two or more declared languages is the signal — not the presence of one
-  // non-English tag, which is how a monolingual Portuguese model is tagged and
-  // which `multilingual` would misdescribe.
-  const languages = new Set(tags.filter((tag) => LANGUAGE_TAG.test(tag)));
-  if (languages.size >= 2) found.add("multilingual");
-
-  const name = (input.repoSlug ?? "").toLowerCase();
-  if (name) {
-    for (const { pattern, useCase } of NAME_PATTERNS) {
-      if (pattern.test(name)) found.add(useCase);
-    }
-  }
-
-  // The card is read LAST and lowercased once. Bounded, because a model card is
-  // occasionally a megabyte of benchmark tables and the claims are at the top.
-  const card = (input.cardText ?? "").slice(0, 20_000).toLowerCase();
-  if (card) {
-    for (const { pattern, useCase } of CARD_PATTERNS) {
-      if (pattern.test(card)) found.add(useCase);
-    }
-  }
+  const found = new Set<UseCase>([
+    ...fromDeclaredMetadata(tags, input.pipelineTag?.toLowerCase().trim()),
+    // A name is read only where the name IS the claim; the card is read for
+    // phrases, and BOUNDED, because a model card is occasionally a megabyte of
+    // benchmark tables and the claims are at the top.
+    ...fromText((input.repoSlug ?? "").toLowerCase(), NAME_PATTERNS),
+    ...fromText((input.cardText ?? "").slice(0, 20_000).toLowerCase(), CARD_PATTERNS),
+  ]);
 
   // Structural, and therefore the most reliable signal here: this one is a fact
   // about the architecture rather than a claim about the weights.

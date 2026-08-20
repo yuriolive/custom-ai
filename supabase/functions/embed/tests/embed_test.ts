@@ -150,7 +150,8 @@ test("normalizeQuery collapses whitespace and bounds length", () => {
 });
 
 test("bearerToken reads the header the write path is gated on", () => {
-  const req = (headers: Record<string, string>) => new Request("http://x/", { headers });
+  const req = (headers: Record<string, string>) =>
+    new Request("https://embed.test/", { headers });
   assert.equal(bearerToken(req({ authorization: "Bearer abc123" })), "abc123");
   assert.equal(bearerToken(req({ authorization: "bearer abc123" })), "abc123");
   assert.equal(bearerToken(req({ authorization: "abc123" })), undefined);

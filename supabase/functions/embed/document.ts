@@ -59,7 +59,7 @@ export function baseModelDocument(row: BaseModelDocumentInput): string {
   // The slug carries the WEIGHTS PUBLISHER (`qwen/qwen3-8b`), which is a real
   // retrieval signal: people search for "a mistral model" as often as for a
   // model by name.
-  if (row.slug) parts.push(row.slug.replace(/[/_-]+/g, " "));
+  if (row.slug) parts.push(row.slug.replaceAll(/[/_-]+/g, " "));
   if (row.family) parts.push(row.family);
 
   const params = formatParameters(row.parameter_count);
@@ -67,12 +67,12 @@ export function baseModelDocument(row: BaseModelDocumentInput): string {
 
   const useCases = (row.use_cases ?? []).filter((u) => typeof u === "string" && u.length > 0);
   if (useCases.length > 0) {
-    parts.push(`Used for ${useCases.map((u) => u.replace(/-/g, " ")).join(", ")}.`);
+    parts.push(`Used for ${useCases.map((u) => u.replaceAll("-", " ")).join(", ")}.`);
   }
 
   if (row.summary) parts.push(row.summary);
 
-  return parts.join(". ").replace(/\.\s*\./g, ".").trim();
+  return parts.join(". ").replaceAll(/\.\s*\./g, ".").trim();
 }
 
 /**
@@ -84,5 +84,5 @@ export function baseModelDocument(row: BaseModelDocumentInput): string {
  * text no human ever writes, which is exactly what it was not trained on.
  */
 export function normalizeQuery(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS);
+  return text.replaceAll(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS);
 }

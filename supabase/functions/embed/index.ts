@@ -104,11 +104,19 @@ export function secretEquals(a: string | undefined, b: string | undefined): bool
   return diff === 0;
 }
 
-/** The bearer token on the request, if any. */
+/**
+ * The bearer token on the request, if any.
+ *
+ * Split rather than matched. `/^Bearer\s+(.+)$/` reads better and backtracks
+ * super-linearly on a long header, because `\s` and `.` overlap — and this runs
+ * on an unauthenticated request, which is the one place a quadratic parse is
+ * somebody else's lever.
+ */
 export function bearerToken(req: Request): string | undefined {
-  const header = req.headers.get("authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  return match?.[1]?.trim() || undefined;
+  const parts = (req.headers.get("authorization") ?? "").trim().split(/\s+/);
+  if (parts.length !== 2) return undefined;
+  if (parts[0]?.toLowerCase() !== "bearer") return undefined;
+  return parts[1] || undefined;
 }
 
 // ─── Embedding ───────────────────────────────────────────────────────────────
@@ -123,7 +131,7 @@ let session: InstanceType<typeof Supabase.ai.Session> | null = null;
  * body), and the write path's cold start is already the slowest thing here.
  */
 function getSession() {
-  if (!session) session = new Supabase.ai.Session(EMBEDDING_MODEL);
+  session ??= new Supabase.ai.Session(EMBEDDING_MODEL);
   return session;
 }
 
